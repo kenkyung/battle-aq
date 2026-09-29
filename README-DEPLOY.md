@@ -64,23 +64,75 @@ Available maps: `de_aq_dust`, `de_aq_inferno`, `de_aq_aztec`.
 
 ---
 
-## 3. Join from your MacBook (same LAN)
+## 3. Get the project onto a second machine
+
+The repo is public: **<https://github.com/kenkyung/battle-aq>**
+
+Pick whichever is easiest — no Git required for the ZIP route:
+
+```bash
+# a) git (macOS ships it, or prompts to install the Xcode tools)
+git clone https://github.com/kenkyung/battle-aq.git
+cd battle-aq
+
+# b) plain ZIP download — no git needed
+#    https://github.com/kenkyung/battle-aq/archive/refs/heads/main.zip
+#    unzip it, then cd into battle-aq-main
+
+# c) copy the folder straight over your LAN from the Omarchy box
+#    (run this ON the Omarchy box)
+scp -r ~/Projects/battle-aq you@macbook.local:~/
+```
+
+### First run on a new machine: open the project in the editor ONCE
+
+**This step is mandatory and it is not obvious.** `.godot/` is gitignored, and
+the game's `class_name` types (`Player`, `NetworkCodec`, `MapData`, …) only
+resolve once that directory exists. A freshly cloned copy fails on first launch
+with:
+
+```
+SCRIPT ERROR: Parse Error: Identifier "NetworkCodec" not declared in the current scope.
+SCRIPT ERROR: Parse Error: Could not find type "Player" in the current scope.
+```
+
+That is not a broken download — it just has not been imported yet. Fix it by
+opening the project in the editor one time:
+
+1. Launch Godot.
+2. **Import** → navigate into the `battle-aq` folder → select `project.godot` →
+   **Import & Edit**.
+3. Let the file scan finish (a second or two). You can close the editor now.
+
+The equivalent headless command, if you prefer:
+
+```bash
+# macOS
+/Applications/Godot.app/Contents/MacOS/Godot --headless --editor --quit-after 60 --path .
+
+# Windows (PowerShell)
+.\Godot_v4.3-stable_win64.exe --headless --editor --quit-after 60 --path .
+```
+
+Every later run works straight from the command line.
+
+---
+
+## 4. Join from your MacBook (same LAN)
 
 1. Install **Godot 4.3 or newer, standard build** (not the .NET/Mono build) from
    <https://godotengine.org/download/macos/>. Drop it in `/Applications`.
-2. Get the project onto the Mac — either clone it, or copy the folder across:
-   ```bash
-   git clone https://github.com/kenkyung/battle-aq.git
-   cd battle-aq
-   ```
+2. Get the project (section 3) and do the one-time editor import (section 3).
 3. Run the client, pointing at the LAN address the server printed:
+
    ```bash
+   cd battle-aq
    /Applications/Godot.app/Contents/MacOS/Godot --path . \
        -- --connect 192.168.1.113 --port 24816
    ```
 
-Or launch Godot with no arguments, open the project, and use the in-game menu:
-type the address in the box and press **Join**.
+Or just open the project in the editor and press ▶ (Play), then type the address
+in the menu and press **Join**.
 
 macOS will complain that Godot is from an unidentified developer the first time.
 Right-click → **Open**, then **Open** again in the dialog. After that it launches
@@ -88,7 +140,7 @@ normally.
 
 ---
 
-## 4. Join from your friend's Windows PC (remote)
+## 5. Join from your friend's Windows PC (remote)
 
 Your friend needs to be **on your tailnet** first:
 
@@ -101,7 +153,10 @@ Then:
 
 1. They install Godot 4.3+ standard build from
    <https://godotengine.org/download/windows/> and unzip it.
-2. They get the project (clone it, or you send them a zip of the folder).
+2. They get the project (section 3 — clone, ZIP, or you send them the folder)
+   and do the **one-time editor import** (section 3). Skipping that step is the
+   single most likely reason they will see `Could not find type "Player"` on
+   first launch.
 3. They run, from inside the project folder:
 
    ```powershell
@@ -123,7 +178,7 @@ the port to the internet; Tailscale is the supported path here.
 
 ---
 
-## 5. Firewall
+## 6. Firewall
 
 `ufw` is active on the server. Two rules were added on 2026-09-29:
 
@@ -141,7 +196,7 @@ sudo ufw allow from 192.168.1.0/24 to any port 24816 proto udp comment 'battle-a
 
 ---
 
-## 6. What to expect (and what is not built yet)
+## 7. What to expect (and what is not built yet)
 
 Working today:
 
@@ -169,7 +224,12 @@ because the HP readout on the victim does not update yet.
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
+
+**`Could not find type "Player"` / `Identifier "NetworkCodec" not declared`** —
+the project has never been imported on this machine. Open it in the editor once
+(section 3). `.godot/` is gitignored, so it does not travel with a clone or a
+ZIP, and those are the exact errors a missing import produces.
 
 **`Failed to host on UDP 24816`** — something already holds the port:
 
@@ -205,7 +265,7 @@ and read the `has no MultiplayerSpawner (explicit spawning)` lines.
 
 ---
 
-## 8. Standalone builds (optional, later)
+## 9. Standalone builds (optional, later)
 
 Run-from-source is enough to play, and it is what has been verified. For
 double-clickable builds you need the Godot **export templates** once (~1 GB, all
@@ -227,11 +287,14 @@ first export in the editor, then commit the generated file.
 
 ---
 
-## 9. Quick reference
+## 10. Quick reference
 
 ```bash
 # server (this box)
 cd ~/Projects/battle-aq && tools/run_server.sh --map de_aq_dust
+
+# FIRST TIME on any new machine — required once, or types will not resolve
+godot --headless --editor --quit-after 60 --path .
 
 # MacBook on the LAN
 /Applications/Godot.app/Contents/MacOS/Godot --path . -- --connect 192.168.1.113 --port 24816
