@@ -27,7 +27,11 @@ const SHARED_DIR = path.join(__dirname, '..', 'shared');
 // ------------------------------------------------------------------ cli args
 
 function parseArgs() {
-  const out = { port: 8080, map: 'de_aq_dust', host: '0.0.0.0' };
+  const out = {
+    port: parseInt(process.env.PORT || '8080', 10),
+    map: process.env.MAP || 'de_aq_dust',
+    host: process.env.HOST || '0.0.0.0',
+  };
   const a = process.argv.slice(2);
   for (let i = 0; i < a.length; i++) {
     const k = a[i].replace(/^--/, '');
@@ -56,12 +60,19 @@ const MIME = {
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.map': 'application/json',
+  '.webp': 'image/webp',
+  '.glb': 'model/gltf-binary',
+  '.jpg': 'image/jpeg',
 };
 
-function send(res, code, body, type = 'text/plain') {
-  res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-cache' });
+function send(res, code, body, type = 'text/plain', cache = 'no-cache') {
+  res.writeHead(code, { 'Content-Type': type, 'Cache-Control': cache });
   res.end(body);
 }
+
+// Baked assets and the vendored three.js change only on deploy; let browsers
+// keep them for a day instead of re-downloading ~6 MB on every visit.
+const LONG_CACHE = /^\/(assets|vendor)\//;
 
 const server = http.createServer((req, res) => {
   let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
@@ -70,6 +81,11 @@ const server = http.createServer((req, res) => {
     baseDir = SHARED_DIR;
     urlPath = urlPath.slice('/shared'.length);
   }
+  if (urlPath === '/info') {
+    return send(res, 200, JSON.stringify({
+      map: game.map.id, players: game.players.size, phase: game.phase,
+    }), 'application/json');
+  }
   if (urlPath === '/') urlPath = '/index.html';
   // prevent path traversal
   const filePath = path.normalize(path.join(baseDir, urlPath));
@@ -77,7 +93,8 @@ const server = http.createServer((req, res) => {
   fs.readFile(filePath, (err, data) => {
     if (err) return send(res, 404, 'not found: ' + urlPath);
     const ext = path.extname(filePath).toLowerCase();
-    send(res, 200, data, MIME[ext] || 'application/octet-stream');
+    send(res, 200, data, MIME[ext] || 'application/octet-stream',
+      baseDir === PUBLIC_DIR && LONG_CACHE.test(urlPath) ? 'public, max-age=86400' : 'no-cache');
   });
 });
 

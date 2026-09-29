@@ -150,6 +150,17 @@ export function playerBox(pos, crouching) {
   };
 }
 
+// Box that bullets test against. Standing it equals the hull; crouched it is
+// taller than the 36 u movement hull because the crouched model's head is.
+export function hitBox(pos, crouching) {
+  const h = crouching ? PLAYER.crouchHitHeight : PLAYER.standHeight;
+  const hw = PLAYER.halfWidth;
+  return {
+    min: [pos[0] - hw, pos[1], pos[2] - hw],
+    max: [pos[0] + hw, pos[1] + h, pos[2] + hw],
+  };
+}
+
 export function aabbOverlap(a, b) {
   return a.min[0] < b.max[0] && a.max[0] > b.min[0]
       && a.min[1] < b.max[1] && a.max[1] > b.min[1]

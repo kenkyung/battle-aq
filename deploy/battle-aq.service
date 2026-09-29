@@ -1,0 +1,21 @@
+# /etc/systemd/system/battle-aq.service — installed by deploy/install.sh
+[Unit]
+Description=Battle-AQ game server (HTTP + WebSocket)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Environment=PORT=__PORT__
+Environment=HOST=127.0.0.1
+Environment=MAP=__MAP__
+ExecStart=/usr/bin/env node /opt/battle-aq/current/server/index.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

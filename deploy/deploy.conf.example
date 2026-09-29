@@ -1,0 +1,6 @@
+# Copy to deploy/deploy.conf (gitignored — this repo is public) and fill in:
+#     cp deploy/deploy.conf.example deploy/deploy.conf
+HOST="user@your-vps"      # ssh target
+PORT=8095                 # local port the game listens on (nginx proxies /battle/ to it)
+MAP="de_aq_dust"          # de_aq_dust | de_aq_inferno | de_aq_aztec
+SSH_KEY=""                # optional identity file

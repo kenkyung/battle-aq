@@ -28,13 +28,16 @@ Project, scenes, scripts, license, README, .gitignore.
       scout, every value from CS16_REFERENCE.md §2-§3).
 - [ ] Weapon runtime: cone sampling, recoil, hit registration wired through
       `NetworkCodec.compute_damage` / `current_cone_deg` / `sample_shot_direction`.
-- [ ] Buy menu (buy-time only).
-- [ ] Ammo + reload state.
+- [x] Buy menu (buy-time only) — web build: `shared/economy.js`, `js/hud.js`.
+- [x] Ammo + reload state — magazine + reserve, timed server-side reloads.
+- [x] Money: start $800, kill/win/loss-streak bonuses, $16000 cap.
+- [x] Armour: kevlar / kevlar + helmet (CS damage absorption).
+- [x] Team-restricted weapons (AK-47 T, M4A1 CT) and default pistols.
 
 ## M3 — Round system
-- [ ] `GameState` round loop (buy → round → end → loop).
-- [ ] Two-team spawn selection (`team` already on Player).
-- [ ] Scoreboard UI.
+- [x] Round loop (warmup → buy → round → end), web build `server/game.js`.
+- [x] Two-team spawns + auto-balance.
+- [x] Scoreboard UI (Tab), spectating teammates while dead.
 
 ## M4 — First proper maps
 - [x] Replace `world.gd` blockout with three real arena scenes

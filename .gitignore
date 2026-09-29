@@ -26,3 +26,8 @@ build/
 # Web build
 node_modules/
 web/node_modules/
+# Deploy target (contains the VPS address)
+deploy/deploy.conf
+
+# Blender build scratch
+art/build/
