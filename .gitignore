@@ -1,0 +1,24 @@
+# Godot 4+
+.godot/
+.import/
+*.translation
+addons/*/importer.cfg
+addons/*/plugin.cfg
+
+# Editor & build
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Generated
+*.gen.cpp
+*.gen.h
+screenshot.png
+build/
+*.import
+
+# IDE
+.vscode/
+.idea/
