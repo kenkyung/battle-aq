@@ -5,9 +5,13 @@ extends Node
 const DEFAULT_PORT := 24816
 const DEFAULT_MAX_PLAYERS := 16
 
+## Node name the local player's HUD is added under (see `_attach_hud`).
+const HUD_NODE_NAME := "HUD"
+
 const SCENE_MAIN_MENU := "res://scenes/main_menu.tscn"
 const SCENE_WORLD := "res://scenes/world.tscn"
 const SCENE_PLAYER := "res://scenes/player.tscn"
+const SCENE_HUD := "res://scenes/hud.tscn"
 
 # Map catalogue. Keys are the public map_id (matches MapData.map_id and the
 # loadable scene path under scenes/maps/). Adding a map = add an entry here,
@@ -22,6 +26,7 @@ const MAP_CATALOGUE := {
 # Tracks per-peer identity. Authoritative on the server.
 var peer_id_to_player: Dictionary = {}
 var player_scene: PackedScene = preload(SCENE_PLAYER)
+var hud_scene: PackedScene = preload(SCENE_HUD)
 
 
 func _ready() -> void:
@@ -74,7 +79,11 @@ func _enter_world_as_server(map_id: String = "") -> void:
     # Wait a frame for the scene to be ready, then spawn the host's own player.
     await get_tree().process_frame
     _spawn_player(1)  # server peer id is always 1 in ENet
-    GameState.start_round()
+    # GameState is registered as an autoload in project.godot (AGENTS.md keeps
+    # it singleton so the HUD polls it without a tree walk).
+    var gs := get_node_or_null("/root/GameState")
+    if gs and gs.has_method("start_round"):
+        gs.start_round()
 
 
 ## Resolve a map_id into a scene path and load it. Empty map_id = legacy
@@ -106,6 +115,52 @@ func _spawn_player(peer_id: int) -> void:
     world.add_child(player, true)
     peer_id_to_player[peer_id] = player
 
+    # HUD for the local player only (AGENTS-style rule: no HUD on remote
+    # players). Health/ammo/score all get to the server authoritatively; the
+    # home peer's own view is the one the user is looking at.
+    if peer_id == _local_peer_id():
+        _attach_hud(player, world)
+
+
+## Instantiates `scenes/hud.tscn` under the local player. The HUD resolves its
+## Player by walking up the tree from its own parent.
+func _attach_hud(player: Node, world: Node) -> void:
+    if hud_scene == null:
+        push_error("HUD scene missing (%s)" % SCENE_HUD)
+        return
+    var existing := player.get_node_or_null(HUD_NODE_NAME)
+    if existing != null:
+        existing.queue_free()
+    var hud := hud_scene.instantiate()
+    hud.name = HUD_NODE_NAME
+    player.add_child(hud)
+    # Hand the HUD its player + world up front (same result as the tree walk,
+    # but it also carries the world handle for kill-feed name resolution).
+    if hud.has_method("bind_player"):
+        hud.bind_player(player, world)
+
+
+## Detach + free the HUD that belongs to `player` (disconnect, or the whole
+## player being freed). Called from `_on_peer_disconnected`.
+func _remove_hud(player: Node) -> void:
+    if player == null or not is_instance_valid(player):
+        return
+    for child in player.get_children():
+        if child is CanvasLayer:
+            child.queue_free()
+
+
+## The peer id this process plays as. `multiplayer.get_unique_id()` only reports
+## the real id once the peer exists; before that, a host is peer 1 (ENet's
+## server id) and an unconnected client is 0.
+func _local_peer_id() -> int:
+    if multiplayer.multiplayer_peer != null:
+        var uid := multiplayer.get_unique_id()
+        # 1 is ENet's server id; 0 means "not connected yet".
+        if uid != 0:
+            return uid
+    return 1 if multiplayer.is_server() else 0
+
 
 func _find_spawn_point(world: Node) -> Vector3:
     var points := world.get_node_or_null("SpawnPoints")
@@ -127,6 +182,9 @@ func _on_peer_disconnected(peer_id: int) -> void:
     print("[net] Peer disconnected: %d" % peer_id)
     var player: Node = peer_id_to_player.get(peer_id)
     if player and is_instance_valid(player):
+        # Drop the HUD explicitly before the player goes: the HUD polls the
+        # world for kill-feed names every 0.5 s, so it must not outlive it.
+        _remove_hud(player)
         player.queue_free()
     peer_id_to_player.erase(peer_id)
 

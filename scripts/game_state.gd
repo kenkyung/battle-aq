@@ -15,6 +15,7 @@ const ROUNDS_TO_WIN := 8
 
 signal phase_changed(phase: int)
 signal score_changed(team_t: int, team_ct: int)
+signal kill_recorded(kill: Dictionary)
 
 enum Phase { WAITING, BUY_TIME, ROUND_TIME, ROUND_END }
 
@@ -22,6 +23,30 @@ var phase: int = Phase.WAITING
 var score_t: int = 0
 var score_ct: int = 0
 var timer: float = 0.0
+
+## Kill events waiting to be drawn. Each entry is a Dictionary:
+##   { "killer_name": String, "victim_name": String, "weapon_id": String }
+##
+## The authority appends here in `player.gd::_server_fire_weapon`; the local
+## HUD drains it every 0.5 s (2 Hz) and renders the last 5 lines. A queue
+## instead of an RPC is deliberate: the ARCHITECTURE §3 surface already carries
+## `kill_feed(killer_id, victim_id, weapon_id)` for M3's scoreboard, and M1's
+## feed must not widen that surface (AGENTS.md hard rule 2).
+##
+## `static` because the HUD has no autoload handle at parse time and this queue
+## is per-process state: every peer's HUD drains the same array.
+static var kill_feed_queue: Array = []
+
+
+## Authority: record one kill for the local HUD's feed. Callers are server-side
+## only (see `player.gd::_server_fire_weapon`). Emits `kill_recorded` so a
+## future scoreboard can react without polling.
+static func queue_kill(killer_name: String, victim_name: String, weapon_id: String) -> void:
+    kill_feed_queue.append({
+        "killer_name": killer_name,
+        "victim_name": victim_name,
+        "weapon_id": weapon_id,
+    })
 
 
 func _process(delta: float) -> void:

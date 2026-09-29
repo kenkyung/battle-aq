@@ -1,4 +1,5 @@
 extends Node
+class_name MapData
 ## Per-map environment + identity data. One `MapData` child sits in every map
 ## scene under `scenes/maps/`; `world.gd` reads it (`apply_map_data`) and pushes
 ## the values onto the WorldEnvironment + DirectionalLight3D.
@@ -7,8 +8,6 @@ extends Node
 ## Godot 4 GL Compatibility only — fog is `Environment.fog_enabled` with a
 ## linear depth fog, the sky is a ProceduralSkyMaterial gradient (no SDFGI, no
 ## volumetric fog, no MSAA).
-
-class_name MapData
 
 @export var map_id: String
 @export var display_name: String

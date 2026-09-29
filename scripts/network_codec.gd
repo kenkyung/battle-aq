@@ -1,4 +1,5 @@
 extends Node
+class_name NetworkCodec
 ## Centralised network surface. Every RPC this game ships lives here. Raw
 ## `rpc()` / `rpc_id()` calls outside this file are a CI-grep violation —
 ## see ARCHITECTURE.md §3 and the grep gate in ci/godot_check.yml.
@@ -46,7 +47,7 @@ static func send_chat(shooter_node: Node, text: String) -> void:
 ## max_range. CS 1.6's actual falloff is more nuanced (per-weapon curves),
 ## but this approximation is what the existing player.gd assumes and is
 ## close enough for body shots; head/arms/legs pick a different value.
-static func compute_damage(data, hitbox: String, distance: float) -> float:
+static func compute_damage(data: WeaponData, hitbox: String, distance: float) -> float:
 	var base: float
 	match hitbox:
 		"head":
@@ -61,15 +62,15 @@ static func compute_damage(data, hitbox: String, distance: float) -> float:
 		return base
 	if distance >= data.max_range:
 		return 0.0
-	var t := (distance - data.range_mod) / maxf(data.max_range - data.range_mod, 1.0)
+	var t: float = (distance - data.range_mod) / maxf(data.max_range - data.range_mod, 1.0)
 	return base * (1.0 - t)
 
 
 ## Returns the weapon's cone (in degrees) for the current shot, with the
 ## running / airborne multiplier applied. CS 1.6 jumps hit the cone 3x,
 ## running hits it 2x; static fire uses the raw cone.
-static func current_cone_deg(data, burst_count: int, is_running: bool, is_airborne: bool) -> float:
-	var cone := data.cone_after_shot(burst_count)
+static func current_cone_deg(data: WeaponData, burst_count: int, is_running: bool, is_airborne: bool) -> float:
+	var cone: float = data.cone_after_shot(burst_count)
 	if is_airborne:
 		cone *= data.air_multiplier
 	elif is_running:
@@ -89,6 +90,6 @@ static func sample_shot_direction(forward: Vector3, cone_deg: float, rng: Random
 	var right := forward.cross(up).normalized()
 	if right.length_squared() < 0.001:
 		right = Vector3.RIGHT
-	var local := (right * cosf(theta) + up * sinf(theta)) * sinf(phi)
-	var out := (forward * cosf(phi) + local).normalized()
+	var local := (right * cos(theta) + up * sin(theta)) * sin(phi)
+	var out := (forward * cos(phi) + local).normalized()
 	return out

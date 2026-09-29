@@ -48,65 +48,65 @@ var _is_crouching: bool = false
 
 
 func _ready() -> void:
-    if is_multiplayer_authority():
-        Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-        hp = max_hp
-        ammo = 30
+	if is_multiplayer_authority():
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		hp = max_hp
+		ammo = 30
 
 
 func _unhandled_input(event: InputEvent) -> void:
-    if not is_multiplayer_authority():
-        return
-    if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-        var mm := event as InputEventMouseMotion
-        look_yaw -= mm.relative.x * MOUSE_SENSITIVITY
-        look_pitch -= mm.relative.y * MOUSE_SENSITIVITY
-        look_pitch = clamp(look_pitch, -MOUSE_FREE_PITCH_LIMIT, MOUSE_FREE_PITCH_LIMIT)
-    elif event.is_action_pressed("ui_cancel"):
-        Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if not is_multiplayer_authority():
+		return
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		var mm := event as InputEventMouseMotion
+		look_yaw -= mm.relative.x * MOUSE_SENSITIVITY
+		look_pitch -= mm.relative.y * MOUSE_SENSITIVITY
+		look_pitch = clamp(look_pitch, -MOUSE_FREE_PITCH_LIMIT, MOUSE_FREE_PITCH_LIMIT)
+	elif event.is_action_pressed("ui_cancel"):
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func _physics_process(delta: float) -> void:
-    if not is_multiplayer_authority():
-        return
-    # Movement input.
-    var input_vec := Vector2(
-        Input.get_action_strength("move_right") - Input.get_action_strength("move_left"),
-        Input.get_action_strength("move_backward") - Input.get_action_strength("move_forward")
-    )
-    var direction := (transform.basis * Vector3(input_vec.x, 0, input_vec.y)).normalized()
+	if not is_multiplayer_authority():
+		return
+	# Movement input.
+	var input_vec := Vector2(
+		Input.get_action_strength("move_right") - Input.get_action_strength("move_left"),
+		Input.get_action_strength("move_backward") - Input.get_action_strength("move_forward")
+	)
+	var direction := (transform.basis * Vector3(input_vec.x, 0, input_vec.y)).normalized()
 
-    	# Crouch is a speed state only in this batch (CS16_REFERENCE.md §1: duck
-    	# multiplier 0.4). Guard with has_action so a rebind/removal can't crash.
-    	_is_crouching = InputMap.has_action("crouch") and Input.is_action_pressed("crouch")
-    	var speed := WALK_SPEED * (CROUCH_SPEED_MULTIPLIER if _is_crouching else 1.0)
+	# Crouch is a speed state only in this batch (CS16_REFERENCE.md §1: duck
+	# multiplier 0.4). Guard with has_action so a rebind/removal can't crash.
+	_is_crouching = InputMap.has_action("crouch") and Input.is_action_pressed("crouch")
+	var speed := WALK_SPEED * (CROUCH_SPEED_MULTIPLIER if _is_crouching else 1.0)
 
-    	# Gravity (CS 1.6 fall is fast; see GRAVITY above).
-    	if not is_on_floor():
-    		velocity.y -= GRAVITY * delta
+	# Gravity (CS 1.6 fall is fast; see GRAVITY above).
+	if not is_on_floor():
+		velocity.y -= GRAVITY * delta
 
-    	# Jump.
-    	if Input.is_action_just_pressed("jump") and is_on_floor():
-    		velocity.y = JUMP_VELOCITY
+	# Jump.
+	if Input.is_action_just_pressed("jump") and is_on_floor():
+		velocity.y = JUMP_VELOCITY
 
-    	# Flat, instantaneous run speed with no acceleration curve — that is the
-    	# 1.6 model. Ground friction comes from move_and_slide's own damping; the
-    	# "sticky" 1.6 feel is a playtest item, not a code item yet.
-    	velocity.x = direction.x * speed
-    	velocity.z = direction.z * speed
-    	move_and_slide()
+	# Flat, instantaneous run speed with no acceleration curve — that is the
+	# 1.6 model. Ground friction comes from move_and_slide's own damping; the
+	# "sticky" 1.6 feel is a playtest item, not a code item yet.
+	velocity.x = direction.x * speed
+	velocity.z = direction.z * speed
+	move_and_slide()
 
-    	# Apply look to rig. Position is already replicated. No head-bob: the
-    	# camera stays exactly where Head puts it (HEAD_BOB_ENABLED == false).
-    	rotation.y = look_yaw
-    	head.rotation.x = look_pitch
+	# Apply look to rig. Position is already replicated. No head-bob: the
+	# camera stays exactly where Head puts it (HEAD_BOB_ENABLED == false).
+	rotation.y = look_yaw
+	head.rotation.x = look_pitch
 
 
 func _process(_delta: float) -> void:
-    if not is_multiplayer_authority():
-        return
-    if Input.is_action_pressed("fire"):
-        _try_fire()
+	if not is_multiplayer_authority():
+		return
+	if Input.is_action_pressed("fire"):
+		_try_fire()
 
 
 func _try_fire() -> void:
@@ -125,38 +125,71 @@ func _try_fire() -> void:
 
 @rpc("any_peer", "call_local", "reliable")
 func _server_fire_weapon(_origin: Vector3, _direction: Vector3) -> void:
-    if not multiplayer.is_server():
-        return
-    var shooter_id := multiplayer.get_remote_sender_id()
-    # Server-side rate limit / ammo check lives here. We re-broadcast HP/ammo
-    # via the synchronizer; clients trust that.
-    var shooter := get_node_or_null("/root/Main/World/%d" % shooter_id)
-    if not shooter:
-        return
-    shooter.ammo = max(0, shooter.ammo - 1)
+	if not multiplayer.is_server():
+		return
+	var shooter_id := multiplayer.get_remote_sender_id()
+	# Server-side rate limit / ammo check lives here. We re-broadcast HP/ammo
+	# via the synchronizer; clients trust that.
+	var shooter := get_node_or_null("/root/Main/World/%d" % shooter_id)
+	if not shooter:
+		return
+	shooter.ammo = max(0, shooter.ammo - 1)
 
-    # Authoritative hit scan.
-    var space := get_world_3d().direct_space_state
-    var query := PhysicsRayQueryParameters3D.create(
-        _origin, _origin + _direction * 200.0,
-        collision_mask
-    )
-    var hit := space.intersect_ray(query)
-    if hit.is_empty():
-        return
-    var victim := hit.collider
-    if victim is Player and victim.team != shooter.team:
-        victim.hp -= 34
-        if victim.hp <= 0:
-            victim.respawn.rpc()
+	# Authoritative hit scan.
+	var space := get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(
+		_origin, _origin + _direction * 200.0,
+		collision_mask
+	)
+	var hit: Dictionary = space.intersect_ray(query)
+	if hit.is_empty():
+		return
+	var victim: Object = hit.collider
+	if victim is Player and victim.team != shooter.team:
+		victim.hp -= 34
+		if victim.hp <= 0:
+			# Death: hand the event to GameState's kill queue, which the local
+			# HUD polls at 2 Hz (no new RPC — AGENTS.md hard rule 2). Recorded
+			# before the respawn so the victim is still readable.
+			_record_kill(shooter, victim)
+			victim.respawn.rpc()
+
+
+## Server-side kill bookkeeping. Names are resolved from the world's peer-id
+## child nodes (`main.gd` names each player node after its peer id); ids are
+## used as the fallback so the feed still says something useful.
+func _record_kill(shooter: Player, victim: Player) -> void:
+	var world := get_parent()
+	var gs := get_node_or_null("/root/GameState")
+	if gs and gs.has_method("queue_kill"):
+		gs.queue_kill(_peer_name(world, _self_peer_id(shooter)),
+			_peer_name(world, _self_peer_id(victim)), shooter.weapon_id)
+
+
+func _self_peer_id(p: Player) -> int:
+	var name_str := str(p.name)
+	return int(name_str) if name_str.is_valid_int() else 0
+
+
+func _peer_name(world: Node, peer_id: int) -> String:
+	if world != null and is_instance_valid(world) and peer_id > 0:
+		var node := world.get_node_or_null(str(peer_id))
+		if node != null and node is Player and "player_name" in node:
+			var display := String(node.player_name)
+			if not display.is_empty():
+				return display
+		if peer_id == 1:
+			return "Host"
+		return "Player %d" % peer_id
+	return "?"
 
 
 @rpc("authority", "call_local", "reliable")
 func respawn() -> void:
-    hp = max_hp
-    ammo = 30
-    # Reposition via the world's spawn-point logic (see main.gd).
-    var world := get_tree().current_scene
-    var points := world.get_node_or_null("SpawnPoints")
-    if points and points.get_child_count() > 0:
-        global_position = points.get_child(randi() % points.get_child_count()).global_position
+	hp = max_hp
+	ammo = 30
+	# Reposition via the world's spawn-point logic (see main.gd).
+	var world := get_tree().current_scene
+	var points := world.get_node_or_null("SpawnPoints")
+	if points and points.get_child_count() > 0:
+		global_position = points.get_child(randi() % points.get_child_count()).global_position

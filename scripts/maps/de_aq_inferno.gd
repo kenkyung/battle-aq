@@ -160,7 +160,7 @@ func _ready() -> void:
 
     MG.add_spawn_points(self, Vector3(-1600, 0, -1216))
     MG.add_bomb_sites(self, Vector3(1536, 0, -768), Vector3(-1152, -64, 896))
-    MG.add_cover_crates(self, _cover_zones(), 30, mats[MG.MAT_COVER], 0x1NF)
+    MG.add_cover_crates(self, _cover_zones(), 30, mats[MG.MAT_COVER], 0x1F)
     MG.add_nav_region(self, 0.0, 3840.0, 3136.0, mats[MG.MAT_FLOOR])
     MG.add_map_data(self, "de_aq_inferno",
         Color(0.55, 0.5, 0.45), 0.6,
