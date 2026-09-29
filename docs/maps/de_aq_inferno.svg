@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700" viewBox="0 0 900 700"
+     font-family="monospace" font-size="11">
+  <!-- de_aq_inferno blockout sketch, top-down, 3800 x 3000 u footprint on the 64u grid -->
+  <rect x="0" y="0" width="900" height="700" fill="#1b1b1b"/>
+  <text x="12" y="20" fill="#e0d8b0" font-size="14">de_aq_inferno — blockout (top-down, +x right, +z down)</text>
+
+  <defs>
+    <pattern id="g2" width="12.8" height="12.8" patternUnits="userSpaceOnUse">
+      <path d="M12.8 0 L0 0 0 12.8" fill="none" stroke="#2a2a2a" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+  <rect x="100" y="40" width="486" height="384" fill="url(#g2)"/>
+  <rect x="100" y="40" width="486" height="384" fill="none" stroke="#8a8060" stroke-width="2"/>
+  <text x="104" y="54" fill="#8a8060">(-1920,-1536)</text>
+  <text x="510" y="418" fill="#8a8060">(1920,1536)</text>
+
+  <!-- 1 Godot unit = 0.1266 px; centre (0,0) = (343,232) -->
+  <rect x="339" y="224" width="8" height="14" fill="#c8c8c8"/>
+  <text x="352" y="228" fill="#c8c8c8">mid connector</text>
+
+  <!-- apartments (two-storey, deck y=128) -->
+  <rect x="244" y="160" width="98" height="98" fill="#2a2320" stroke="#c07a3a"/>
+  <text x="246" y="156" fill="#c07a3a">Apartments (-512..256, 256..1024)</text>
+  <text x="246" y="272" fill="#c07a3a">ground 0-128 · upper 128-192 · roof 256</text>
+
+  <!-- A site + balcony -->
+  <rect x="380" y="80" width="110" height="110" fill="none" stroke="#ffcc44" stroke-dasharray="4 3"/>
+  <circle cx="531" cy="136" r="3" fill="#ffcc44"/>
+  <text x="382" y="76" fill="#ffcc44">A Site (1500,-800)</text>
+  <rect x="466" y="120" width="56" height="12" fill="#a35a20"/>
+  <text x="430" y="146" fill="#a35a20">balcony x1280..1728, y128..192</text>
+
+  <!-- B site -->
+  <rect x="170" y="245" width="95" height="95" fill="none" stroke="#ff8844" stroke-dasharray="4 3"/>
+  <circle cx="197" cy="345" r="3" fill="#ff8844"/>
+  <text x="150" y="355" fill="#ff8844">B Site (-1200,1000)</text>
+
+  <!-- spawns -->
+  <circle cx="140" cy="78" r="5" fill="#ff5555"/>
+  <text x="60" y="70" fill="#ff5555">T Spawn (-1600,-1200)</text>
+  <circle cx="533" cy="371" r="5" fill="#5588ff"/>
+  <text x="440" y="388" fill="#5588ff">CT Spawn (1500,1100)</text>
+
+  <!-- banana curve: T spawn -> mid -->
+  <path d="M150 110 L116 160 L124 200 L160 240 L226 272" stroke="#a08050" stroke-width="3" fill="none"/>
+  <text x="86" y="212" fill="#a08050" transform="rotate(-64 86 212)">Banana (~200u)</text>
+
+  <path d="M226 272 L310 240 L343 232 L430 210 L520 190 L545 175" stroke="#888" stroke-width="2" fill="none"/>
+  <text x="380" y="204" fill="#888">Mid</text>
+
+  <path d="M244 258 L300 300 L360 320 L440 340 L520 360" stroke="#70a070" stroke-width="2" fill="none" stroke-dasharray="3 3"/>
+  <text x="330" y="336" fill="#70a070">Ramp (pit → A)</text>
+
+  <path d="M200 340 L250 356 L290 380 L330 400 L420 396 L500 380" stroke="#a08050" stroke-width="2" fill="none"/>
+  <text x="300" y="412" fill="#a08050">B ↔ CT</text>
+
+  <!-- stair tower -->
+  <rect x="280" y="180" width="14" height="18" fill="#c8c8c8"/>
+  <text x="296" y="196" fill="#c8c8c8">stair tower 128/192</text>
+
+  <text x="12" y="500" fill="#9c9c9c">key coords: T Spawn (-1600,0,-1200) · CT Spawn (1500,0,1100)</text>
+  <text x="12" y="516" fill="#9c9c9c">A Site (1500,0,-800) + balcony overhang · B pit (-1200,0,1000) y=-64</text>
+  <text x="12" y="532" fill="#9c9c9c">two-storey building at (-400,0,400): ground y0..128, upper deck y=128</text>
+  <text x="12" y="548" fill="#9c9c9c">spawns: T1-T4 around (-1600,0,-1216) · CT1-CT4 around (1536,0,1152)</text>
+  <text x="12" y="564" fill="#9c9c9c">cover: 30 crates (64u, 1-3 tall) deterministic from seed 0x01NF</text>
+  <text x="12" y="588" fill="#6f6f6f">blockout only — geometry built by scripts/maps/de_aq_inferno.gd; 64u grid, snapped</text>
+  <text x="12" y="604" fill="#6f6f6f">materials: cobblestone / plaster / wood beams / terracotta tile + 3 trim (7 &lt;= 8)</text>
+</svg>

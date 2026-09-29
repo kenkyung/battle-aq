@@ -9,6 +9,16 @@ const SCENE_MAIN_MENU := "res://scenes/main_menu.tscn"
 const SCENE_WORLD := "res://scenes/world.tscn"
 const SCENE_PLAYER := "res://scenes/player.tscn"
 
+# Map catalogue. Keys are the public map_id (matches MapData.map_id and the
+# loadable scene path under scenes/maps/). Adding a map = add an entry here,
+# create scenes/maps/<id>.gd (which is what scenes/maps/<id>.tscn instances
+# at load), and create scenes/maps/<id>.tscn that attaches the script.
+const MAP_CATALOGUE := {
+    "de_aq_dust": "res://scenes/maps/de_aq_dust.tscn",
+    "de_aq_inferno": "res://scenes/maps/de_aq_inferno.tscn",
+    "de_aq_aztec": "res://scenes/maps/de_aq_aztec.tscn",
+}
+
 # Tracks per-peer identity. Authoritative on the server.
 var peer_id_to_player: Dictionary = {}
 var player_scene: PackedScene = preload(SCENE_PLAYER)
@@ -26,15 +36,16 @@ func _ready() -> void:
 
 # ---------------------------------------------------------------- networking
 
-func host_game(port: int = DEFAULT_PORT, max_clients: int = DEFAULT_MAX_PLAYERS) -> Error:
+func host_game(port: int = DEFAULT_PORT, max_clients: int = DEFAULT_MAX_PLAYERS,
+        map_id: String = "") -> Error:
     var peer := ENetMultiplayerPeer.new()
     var err := peer.create_server(port, max_clients)
     if err != OK:
         push_error("Failed to host on port %d: %s" % [port, error_string(err)])
         return err
     multiplayer.multiplayer_peer = peer
-    print("[net] Hosting on port %d (max %d clients)" % [port, max_clients])
-    _enter_world_as_server()
+    print("[net] Hosting on port %d (max %d clients, map=%s)" % [port, max_clients, map_id])
+    _enter_world_as_server(map_id)
     return OK
 
 
@@ -58,12 +69,27 @@ func disconnect_from_game() -> void:
 
 # ---------------------------------------------------------------- lifecycle
 
-func _enter_world_as_server() -> void:
-    var world := get_tree().change_scene_to_file(SCENE_WORLD)
+func _enter_world_as_server(map_id: String = "") -> void:
+    _load_world_scene(map_id)
     # Wait a frame for the scene to be ready, then spawn the host's own player.
     await get_tree().process_frame
     _spawn_player(1)  # server peer id is always 1 in ENet
     GameState.start_round()
+
+
+## Resolve a map_id into a scene path and load it. Empty map_id = legacy
+## scaffold scene (M0 smoke test). Pushes an error and falls back to the
+## scaffold when the map is unknown.
+func _load_world_scene(map_id: String) -> void:
+    if map_id.is_empty():
+        get_tree().change_scene_to_file(SCENE_WORLD)
+        return
+    var path: String = MAP_CATALOGUE.get(map_id, "")
+    if path.is_empty():
+        push_error("Unknown map_id '%s' — falling back to scaffold" % map_id)
+        get_tree().change_scene_to_file(SCENE_WORLD)
+        return
+    get_tree().change_scene_to_file(path)
 
 
 func _spawn_player(peer_id: int) -> void:

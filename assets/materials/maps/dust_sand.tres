@@ -1,0 +1,14 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://ba0020"]
+
+; de_aq_dust — sand floor. One of the 4 spec materials; the remaining three
+; (adobe walls, wood crates, metal grates) plus trim live as constants in
+; scripts/map_geometry.gd's dust_materials() so the blockout stays blockout.
+; Textures land in the art pass; this is the flat albedo the blockout reads
+; against for now.
+
+[resource]
+resource_name = "map_dust_sand"
+albedo_color = Color(0.72, 0.64, 0.46, 1)
+roughness = 1.0
+metallic = 0.0
+specular = 0.2

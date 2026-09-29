@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="WeaponData" load_steps=2 format=3 uid="uid://ba0030"]
+
+[ext_resource type="Script" path="res://scripts/weapon_data.gd" id="1_weapon_data"]
+
+; AK-47 — CS16_REFERENCE.md §2 / §3. Do not edit these values without editing
+; the reference doc in the same PR (see scripts/weapons/weapons_manifest.gd,
+; which is the code source of truth and validates against the doc).
+
+[resource]
+script = ExtResource("1_weapon_data")
+id = "ak47"
+display_name = "AK-47"
+price = 2500
+damage_body = 31.0
+damage_head = 96.0
+damage_legs = 18.0
+damage_arms = 22.0
+range_mod = 1716.0
+max_range = 2200.0
+rate_of_fire = 0.1
+magazine_size = 30
+reload_time = 2.5
+static_cone_deg = 0.75
+max_cone_deg = 6.3
+per_shot_increment_deg = 0.41
+recovery_per_second = 2.5
+air_multiplier = 3.0
+run_multiplier = 2.0
+kills_bullets_per_kill = 1
+is_automatic = true
+zoom_fov = 0.0
+zoom_time = 0.0
+viewmodel_scene = "res://scenes/weapons/ak47_viewmodel.tscn"
+worldmodel_scene = "res://scenes/weapons/ak47_worldmodel.tscn"

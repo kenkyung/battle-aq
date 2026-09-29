@@ -1,0 +1,12 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://ba0021"]
+
+; de_aq_inferno — cobblestone floor. Companion to scripts/map_geometry.gd's
+; inferno_materials(); the spec's other three (plaster walls, wood beams,
+; terracotta tile) are built alongside it in code for the blockout pass.
+
+[resource]
+resource_name = "map_inferno_cobblestone"
+albedo_color = Color(0.5, 0.47, 0.43, 1)
+roughness = 1.0
+metallic = 0.0
+specular = 0.2

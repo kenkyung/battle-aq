@@ -1,0 +1,15 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://ba0022"]
+
+; de_aq_aztec — stone walls. Companion to scripts/map_geometry.gd's
+; aztec_materials(); wood bridge / water / foliage are built alongside it.
+;
+; NOTE: this .tres is the opaque stone surface only. The translucent canal
+; plane (y = -64) is created in code with TRANSPARENCY_ALPHA and is the single
+; exception AGENTS.md #4 allows, because the brief specifies a water plane.
+
+[resource]
+resource_name = "map_aztec_stone"
+albedo_color = Color(0.6, 0.58, 0.52, 1)
+roughness = 0.95
+metallic = 0.0
+specular = 0.2

@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3 uid="uid://ba0012"]
+
+[ext_resource type="Script" path="res://scripts/maps/de_aq_aztec.gd" id="1_map"]
+
+[node name="DeAqAztec" type="Node3D"]
+script = ExtResource("1_map")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 20, 0)
+light_energy = 0.7
+shadow_enabled = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+
+; Layout, spawns, bomb sites, cover and MapData are built by de_aq_aztec.gd
+; in _ready(). The water plane at y = -64 is the only transparent surface.

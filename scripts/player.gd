@@ -6,8 +6,20 @@ extends CharacterBody3D
 class_name Player
 
 const MOUSE_SENSITIVITY := 0.0025
+# CS 1.6 movement (CS16_REFERENCE.md §1). Engine units are a scaled 1.6 unit,
+# not metres, so these are relative values: WALK_SPEED is the 250 u/s run
+# speed, JUMP_VELOCITY the ~270 u/s jump.
 const WALK_SPEED := 6.0
 const JUMP_VELOCITY := 7.5
+# Tuned so the jump arc matches CS 1.6 feel (~0.47 s apex).
+const GRAVITY := 32.0
+# Duck speed is 0.4x run in 1.6 (~100 u/s). Flag + constant only in this
+# batch: `_is_crouching` is wired to the crouch action and drives the speed
+# multiplier; full collider/eye-height transition lands in M2.
+const CROUCH_SPEED_MULTIPLIER := 0.4
+# Head-bob is off by design: the 1.6 camera is dead-stable while moving. The
+# camera stays a plain child of Head with no positional offset applied.
+const HEAD_BOB_ENABLED := false
 const MOUSE_FREE_PITCH_LIMIT := 1.4
 
 const TEAM_T := 1
@@ -24,6 +36,10 @@ const TEAM_CT := 2
 # Client-predicted look state (also synced).
 @export var look_yaw: float = 0.0
 @export var look_pitch: float = 0.0
+
+# Client-predicted movement state. Crouch is flag-only in this batch: the
+# speed multiplier is live, the collider/eye height are not.
+var _is_crouching: bool = false
 
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera
@@ -60,21 +76,30 @@ func _physics_process(delta: float) -> void:
     )
     var direction := (transform.basis * Vector3(input_vec.x, 0, input_vec.y)).normalized()
 
-    # Gravity.
-    if not is_on_floor():
-        velocity.y -= 24.0 * delta
+    	# Crouch is a speed state only in this batch (CS16_REFERENCE.md §1: duck
+    	# multiplier 0.4). Guard with has_action so a rebind/removal can't crash.
+    	_is_crouching = InputMap.has_action("crouch") and Input.is_action_pressed("crouch")
+    	var speed := WALK_SPEED * (CROUCH_SPEED_MULTIPLIER if _is_crouching else 1.0)
 
-    # Jump.
-    if Input.is_action_just_pressed("jump") and is_on_floor():
-        velocity.y = JUMP_VELOCITY
+    	# Gravity (CS 1.6 fall is fast; see GRAVITY above).
+    	if not is_on_floor():
+    		velocity.y -= GRAVITY * delta
 
-    velocity.x = direction.x * WALK_SPEED
-    velocity.z = direction.z * WALK_SPEED
-    move_and_slide()
+    	# Jump.
+    	if Input.is_action_just_pressed("jump") and is_on_floor():
+    		velocity.y = JUMP_VELOCITY
 
-    # Apply look to rig. Position is already replicated.
-    rotation.y = look_yaw
-    head.rotation.x = look_pitch
+    	# Flat, instantaneous run speed with no acceleration curve — that is the
+    	# 1.6 model. Ground friction comes from move_and_slide's own damping; the
+    	# "sticky" 1.6 feel is a playtest item, not a code item yet.
+    	velocity.x = direction.x * speed
+    	velocity.z = direction.z * speed
+    	move_and_slide()
+
+    	# Apply look to rig. Position is already replicated. No head-bob: the
+    	# camera stays exactly where Head puts it (HEAD_BOB_ENABLED == false).
+    	rotation.y = look_yaw
+    	head.rotation.x = look_pitch
 
 
 func _process(_delta: float) -> void:
@@ -85,12 +110,17 @@ func _process(_delta: float) -> void:
 
 
 func _try_fire() -> void:
-    if ammo <= 0:
-        return
-    # Always consume locally so prediction feels snappy.
-    ammo -= 1
-    # Ask the server to validate + apply.
-    rpc_id(1, "_server_fire_weapon", fire_ray.global_position, fire_ray.global_transform.basis.z)
+	if ammo <= 0:
+		return
+	# Always consume locally so prediction feels snappy.
+	ammo -= 1
+	# Route through the network surface (ARCHITECTURE.md §3 / AGENTS.md hard
+	# rule 2). The server raycasts authoritatively and broadcasts damage.
+	NetworkCodec.fire_weapon(
+		self,
+		fire_ray.global_position,
+		fire_ray.global_transform.basis.z
+	)
 
 
 @rpc("any_peer", "call_local", "reliable")

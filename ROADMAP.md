@@ -7,14 +7,20 @@ A lightweight online multiplayer FPS, CS-inspired, runs on modest hardware
 Project, scenes, scripts, license, README, .gitignore.
 
 ## M1 — Core FPS loop
-- [ ] Real `Player.gd` movement + mouse look (already scaffolded).
-- [ ] Server-authoritative hit scan (already wired).
+- [x] Real `Player.gd` movement + mouse look.
+- [x] CS 1.6 physics tuning: gravity 32, crouch speed multiplier 0.4,
+      head-bob disabled (CS16_REFERENCE.md §1).
+- [x] Server-authoritative hit scan via `network_codec.gd`.
 - [ ] HUD: crosshair, HP bar, ammo counter, kill feed.
 - [ ] MultiplayerSynchronizer config so position/rotation/HP replicate.
 - [ ] Manual smoke test: host + 1 client, walk + shoot each other.
 
 ## M2 — Weapons + economy
-- [ ] Weapon archetypes (rifle, smg, pistol, knife) via a `WeaponData` Resource.
+- [x] Weapon archetypes via `WeaponData` Resource + `weapons_manifest.gd`
+      (9 weapons: knife + glock + usp + deagle + mp5 + ak47 + m4a1 + awp +
+      scout, every value from CS16_REFERENCE.md §2-§3).
+- [ ] Weapon runtime: cone sampling, recoil, hit registration wired through
+      `NetworkCodec.compute_damage` / `current_cone_deg` / `sample_shot_direction`.
 - [ ] Buy menu (buy-time only).
 - [ ] Ammo + reload state.
 
@@ -23,8 +29,14 @@ Project, scenes, scripts, license, README, .gitignore.
 - [ ] Two-team spawn selection (`team` already on Player).
 - [ ] Scoreboard UI.
 
-## M4 — First proper map
-- [ ] Replace `world.gd` blockout with a real arena scene.
+## M4 — First proper maps
+- [x] Replace `world.gd` blockout with three real arena scenes
+      (`scenes/maps/de_aq_{dust, inferno, aztec}.tscn`). All geometry
+      built from spec tables via `scripts/map_geometry.gd`, snap to the
+      CS 1.6 64-unit grid (CS16_REFERENCE.md §6).
+- [x] Per-map `MapData` node driving WorldEnvironment (fog, sky gradient,
+      ambient) — see `scripts/world.gd::apply_map_data`.
+- [x] Map catalogue in `scripts/main.gd::MAP_CATALOGUE`.
 - [ ] Lightmap bake settings for the mobile renderer.
 
 ## M5 — Server build

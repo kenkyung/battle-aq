@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3 uid="uid://ba0011"]
+
+[ext_resource type="Script" path="res://scripts/maps/de_aq_inferno.gd" id="1_map"]
+
+[node name="DeAqInferno" type="Node3D"]
+script = ExtResource("1_map")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 20, 0)
+light_energy = 0.6
+shadow_enabled = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+
+; Layout, spawns, bomb sites, cover and MapData are built by de_aq_inferno.gd
+; in _ready(). See the spec tables at the top of that script.
