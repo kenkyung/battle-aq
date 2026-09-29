@@ -27,8 +27,25 @@ assets/         materials, sounds, maps, icons
 ## Running locally
 
 1. Install Godot 4.3+ (standard, not Mono).
-2. `godot --path . --headless` for a server, or `godot --path .` to launch the
-   client. The Main menu has **Host** / **Join** / **LAN Browser** buttons.
+2. Start a server on this machine:
+
+   ```bash
+   tools/run_server.sh                    # dedicated + headless, de_aq_dust
+   tools/run_server.sh --listen           # you also play here
+   tools/run_server.sh --map de_aq_aztec  # pick a map
+   ```
+
+3. Join from another machine — it prints the addresses to use:
+
+   ```bash
+   godot --path . -- --connect <server-address> --port 24816
+   ```
+
+   Or launch the client with no arguments and use the in-game **Host** /
+   **Join** menu.
+
+**Full walkthrough, including playing from a MacBook and letting a remote
+friend in over Tailscale: [`README-DEPLOY.md`](README-DEPLOY.md).**
 
 ## Network model
 
