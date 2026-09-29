@@ -264,6 +264,10 @@ func _spawn_player(peer_id: int) -> void:
         return
     var spawn := _find_spawn_point(world)
     var player := _build_player(peer_id, spawn)
+    # Mute movement sync until each peer has been told this player exists:
+    # otherwise the synchronizer's first packet races the spawn message and the
+    # client logs "Node not found: <Map>/<id>/MultiplayerSynchronizer".
+    _set_public_sync(player, false)
     world.add_child(player, true)
     peer_id_to_player[peer_id] = player
     print("[net] Spawned player '%s' for peer %d at %s" % [player.name, peer_id, spawn])
@@ -271,9 +275,26 @@ func _spawn_player(peer_id: int) -> void:
         _attach_hud(player, world)
     # Mirror on every client, including its owner: the owning client needs a
     # local avatar to look through. See `_client_spawn_player` for why this is
-    # done by hand rather than with a MultiplayerSpawner.
+    # done by hand rather than with a MultiplayerSpawner. Sync for a given peer
+    # is only unmuted AFTER that peer's spawn message has gone out.
     for other in multiplayer.get_peers():
         NetworkCodec.spawn_player_on(self, other, peer_id, spawn)
+        _set_peer_sync(player, other, true)
+
+
+## Master switch for a player's movement sync; `false` keeps the synchronizer
+## quiet for every peer until `_set_peer_sync` opts one back in.
+func _set_public_sync(player: Node, visible: bool) -> void:
+    var sync := player.get_node_or_null("MultiplayerSynchronizer") as MultiplayerSynchronizer
+    if sync != null:
+        sync.public_visibility = visible
+
+
+## Opt one peer in/out of a player's movement sync.
+func _set_peer_sync(player: Node, peer_id: int, visible: bool) -> void:
+    var sync := player.get_node_or_null("MultiplayerSynchronizer") as MultiplayerSynchronizer
+    if sync != null:
+        sync.set_visibility_for(peer_id, visible)
 
 
 ## Build a player node with `peer_id` as its multiplayer authority.
@@ -396,6 +417,10 @@ func _server_client_ready() -> void:
         if existing != null and is_instance_valid(existing):
             NetworkCodec.spawn_player_on(self, peer_id, int(existing_id),
                 (existing as Node3D).position)
+            # Unmute only now: the spawn message for this player has just gone
+            # out, so the joiner's tree has (or is about to have) the node the
+            # synchronizer is about to address.
+            _set_peer_sync(existing, peer_id, true)
     # 2. Spawn the joiner's own player, which also announces it to the others.
     _spawn_player(peer_id)
 
