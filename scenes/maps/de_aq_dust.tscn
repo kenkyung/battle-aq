@@ -12,5 +12,9 @@ shadow_enabled = true
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 
+; Player spawning is driven explicitly by scripts/main.gd
+; (`_client_spawn_player`), not by a MultiplayerSpawner: the spawner replicates
+; on peer-connect, before the client has loaded this map.
+
 ; Layout, spawns, bomb sites, cover and MapData are built by de_aq_dust.gd
 ; in _ready(). See the spec tables at the top of that script.

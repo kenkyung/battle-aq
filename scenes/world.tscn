@@ -56,6 +56,7 @@ position = Vector3(20, 1, 20)
 [node name="SpawnCT2" type="Marker3D" parent="SpawnPoints"]
 position = Vector3(20, 1, -20)
 
-[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
-_spawnable_scenes = PackedStringArray("res://scenes/player.tscn")
-spawn_path = NodePath("..")
+; Legacy M0 scaffold. Player spawning is driven by scripts/main.gd
+; (`_client_spawn_player`), so this scene needs no MultiplayerSpawner — and the
+; scaffold has no synchronizer either; the real maps carry the spawn points and
+; scenes/player.tscn carries the movement replication.

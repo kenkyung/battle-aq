@@ -141,8 +141,9 @@ func _process(delta: float) -> void:
         _drain_kill_queue()
 
 
-## Locate the GameState singleton: `/root/Main/GameState` (scenes/main.tscn), or
-## the autoload `/root/GameState` if the node is ever promoted to one.
+## Locate the GameState singleton. It is an autoload (project.godot), so it
+## lives at `/root/GameState`; the `/root/Main/GameState` probe is kept as a
+## fallback for a hand-built test scene that parents it explicitly.
 func _resolve_game_state() -> bool:
     if _game_state != null and is_instance_valid(_game_state):
         return true

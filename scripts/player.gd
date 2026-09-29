@@ -48,6 +48,8 @@ var _is_crouching: bool = false
 
 
 func _ready() -> void:
+	print("[player] node '%s' ready — authority=%d, local=%s" % [
+		name, get_multiplayer_authority(), str(is_multiplayer_authority())])
 	if is_multiplayer_authority():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		hp = max_hp
@@ -184,8 +186,17 @@ func _peer_name(world: Node, peer_id: int) -> String:
 	return "?"
 
 
-@rpc("authority", "call_local", "reliable")
+## Server-ordered respawn.
+##
+## NOT `@rpc("authority")`: the server is not the multiplayer authority of a
+## player node (its owner is — see Net._build_player), so an authority-gated RPC
+## sent by the server would be silently rejected on the receiving client.
+@rpc("any_peer", "call_local", "reliable")
 func respawn() -> void:
+	# Only the server may order a respawn. `call_local` means this also runs on
+	# the sender, where get_remote_sender_id() is 0.
+	if not multiplayer.is_server() and multiplayer.get_remote_sender_id() != 1:
+		return
 	hp = max_hp
 	ammo = 30
 	# Reposition via the world's spawn-point logic (see main.gd).

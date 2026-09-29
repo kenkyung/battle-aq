@@ -37,6 +37,40 @@ static func send_chat(shooter_node: Node, text: String) -> void:
 	shooter_node.rpc_id(1, "_server_chat", text)
 
 
+# ------------------------------------------------------------ match handshake
+
+## Client → server: "which map are you running?" Sent the moment the ENet
+## connection is established. The reply drives which scene the client loads, so
+## a joiner ends up in the same map as everyone else instead of the M0 scaffold.
+static func request_map(node: Node) -> void:
+	node.rpc_id(1, "_server_send_map")
+
+
+## Server → one client: "load this map." Targeted (not broadcast) because it
+## only makes sense for the peer that just connected.
+static func send_map_to(node: Node, peer_id: int, map_id: String) -> void:
+	node.rpc_id(peer_id, "_client_load_map", map_id)
+
+
+## Client → server: "my map scene is loaded, spawn me." The server defers the
+## spawn until this arrives, so every client-side tree already exists when the
+## server starts naming players.
+static func notify_ready(node: Node) -> void:
+	node.rpc_id(1, "_server_client_ready")
+
+
+## Server → one client: "create a local avatar for peer `owner_peer_id` at
+## `pos`." Replaces MultiplayerSpawner, which replicated on peer-connect —
+## before the client had loaded the map — and then poisoned its spawn cache.
+static func spawn_player_on(node: Node, to_peer: int, owner_peer_id: int, pos: Vector3) -> void:
+	node.rpc_id(to_peer, "_client_spawn_player", owner_peer_id, pos)
+
+
+## Server → one client: "peer `owner_peer_id` left; drop their avatar."
+static func despawn_player_on(node: Node, to_peer: int, owner_peer_id: int) -> void:
+	node.rpc_id(to_peer, "_client_despawn_player", owner_peer_id)
+
+
 # ----------------------------------------------------------- hit registration
 
 ## Computes the damage value a hit at `distance` units from the muzzle

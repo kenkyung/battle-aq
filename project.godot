@@ -13,11 +13,16 @@ config_version=5
 config/name="Battle-AQ"
 config/description="Lightweight online multiplayer FPS inspired by Counter-Strike."
 config/version="0.1.0"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://assets/icon.svg"
 
 [autoload]
+
+; Net owns the multiplayer peer and the peer->player map. It MUST be an autoload:
+; change_scene_to_file frees the current scene, so a node-based network manager
+; dies the first time a map loads and the server stops answering its peers.
+Net="*res://scripts/main.gd"
 GameState="*res://scripts/game_state.gd"
 
 [display]

@@ -2,16 +2,18 @@ extends SceneTree
 ## M1 smoke test — `godot --headless --script scripts/smoke_test.gd --path .`
 ##
 ## Checked here (no window, no network):
-##   1. every M1 script parses (main, player, game_state, hud, kill feed bits)
-##   2. `scenes/main.tscn` loads with its GameState child
-##   3. `scenes/player.tscn` loads and `Head/Camera` exists (HUD host)
+##   1. every M1 script parses (main/Net, player, game_state, hud, kill feed bits)
+##   2. project.godot declares the Net + GameState autoloads and boots the menu
+##   3. `scenes/player.tscn` loads, `Head/Camera` exists (HUD host), and the
+##      movement MultiplayerSynchronizer replicates position + look
 ##   4. the HUD contract: the scene loads, is a CanvasLayer wrapping a Control
 ##      with `scripts/hud.gd`, and every `@onready` node path in hud.gd resolves
 ##      against the instanced scene
-##   5. every map scene in main.gd's MAP_CATALOGUE loads, and single-instance
-##      scenes (dust) build their SpawnPoints / MapData children
-##   6. `WeaponsManifest.make_all()` / `build_all()` return 9 weapons and
-##      `validate()` is clean
+##   5. every map scene in main.gd's MAP_CATALOGUE loads, carries NO
+##      MultiplayerSpawner (player spawning is explicit — see
+##      Net._client_spawn_player), and single-instance scenes (dust) build their
+##      SpawnPoints / MapData children
+##   6. `WeaponsManifest.build_all()` returns 9 weapons and `validate()` is clean
 ##   7. the kill queue round-trips (GameState.queue_kill -> kill_feed_queue)
 ##
 ## Exits 0 on success, 1 on the first class of failure — with the failing
@@ -73,7 +75,7 @@ var _failures: Array = []
 func _initialize() -> void:
 	print("=== battle-aq M1 smoke test ===")
 	_check_scripts()
-	_check_main_scene()
+	_check_autoloads()
 	_check_player_scene()
 	_check_hud()
 	_check_maps()
@@ -93,17 +95,36 @@ func _check_scripts() -> void:
 			print("  ok  script %s" % path)
 
 
-# ---------------------------------------------------------------- 2. main.tscn
+# ---------------------------------------------------------------- 2. autoloads
 
-func _check_main_scene() -> void:
-	var packed := _load_scene("res://scenes/main.tscn")
-	if packed == null:
-		return
-	var root := packed.instantiate()
-	if root.get_script() == null:
-		_fail("scenes/main.tscn: root has no script attached")
-	print("  ok  scenes/main.tscn loaded (GameState is an autoload at /root/GameState, not a child)")
-	root.free()
+## Net and GameState MUST be autoloads. `change_scene_to_file` frees the current
+## scene, so a network manager that lives in a scene loses its peer and its
+## peer_connected handlers the first time a map loads. Verified through
+## ProjectSettings (the config file) rather than live nodes, because a
+## `--script` run replaces the main loop and never instantiates autoloads.
+func _check_autoloads() -> void:
+	for name in ["Net", "GameState"]:
+		var value := String(ProjectSettings.get_setting("autoload/" + name, ""))
+		if value.is_empty():
+			_fail("project.godot: autoload '%s' is not declared" % name)
+		elif not value.begins_with("*"):
+			_fail("project.godot: autoload '%s' must be a singleton ('*' prefix), got '%s'"
+				% [name, value])
+		else:
+			print("  ok  autoload %s -> %s" % [name, value])
+	var main_scene := String(ProjectSettings.get_setting("application/run/main_scene", ""))
+	if not main_scene.ends_with("main_menu.tscn"):
+		_fail("project.godot: run/main_scene should boot the menu, got '%s'" % main_scene)
+	else:
+		print("  ok  run/main_scene -> %s" % main_scene)
+	# The CLI surface the deploy runbook and systemd unit depend on.
+	var main_script := load("res://scripts/main.gd")
+	if main_script == null:
+		_fail("scripts/main.gd did not load")
+	elif not main_script.has_method("parse_cli_args"):
+		_fail("scripts/main.gd: parse_cli_args() missing (server CLI is broken)")
+	else:
+		print("  ok  scripts/main.gd exposes parse_cli_args()")
 
 
 # ---------------------------------------------------------------- 3. player
@@ -120,6 +141,25 @@ func _check_player_scene() -> void:
 		_fail("scenes/player.tscn: root is not a CharacterBody3D")
 	if root.get_script() == null:
 		_fail("scenes/player.tscn: root has no script attached")
+	# Movement replication. Without this a client sees every other player frozen
+	# at their spawn point.
+	var sync := root.get_node_or_null("MultiplayerSynchronizer") as MultiplayerSynchronizer
+	if sync == null:
+		_fail("scenes/player.tscn: no MultiplayerSynchronizer (players would not move for others)")
+	else:
+		var cfg := sync.replication_config
+		if cfg == null:
+			_fail("scenes/player.tscn: MultiplayerSynchronizer has no replication_config")
+		else:
+			var props: Array = cfg.get_properties()
+			for wanted in ["position", "look_yaw", "look_pitch"]:
+				var found := false
+				for p in props:
+					if String(p).ends_with(":" + wanted):
+						found = true
+				if not found:
+					_fail("scenes/player.tscn: synchronizer does not replicate '%s'" % wanted)
+			print("  ok  scenes/player.tscn synchronizer replicates position + look")
 	print("  ok  scenes/player.tscn rig (Head/Camera present)")
 	root.free()
 
@@ -176,6 +216,7 @@ func _check_maps() -> void:
 		var root := packed.instantiate()
 		if root.get_script() == null:
 			_fail("%s: root has no script attached" % path)
+		_check_no_spawner(path, root)
 		if path.ends_with("de_aq_dust.tscn"):
 			# Builds its layout in _ready(); single instance is cheap and the
 			# only way to prove the map script runs without errors.
@@ -231,6 +272,23 @@ func _check_kill_queue() -> void:
 
 
 # ---------------------------------------------------------------- helpers
+
+## Maps must NOT carry a MultiplayerSpawner any more: player spawning is
+## explicit in scripts/main.gd (`_client_spawn_player`).
+##
+## Regression guard — this exact bug shipped once. The spawner replicates to a
+## peer the moment it connects, which is BEFORE that client has loaded the map.
+## It fails with "Node not found: <Map>/MultiplayerSpawner", and the failed sync
+## then poisons the peer's spawn cache so every later spawn dies with
+## "ID not found in cache of peer N" — the server sees everyone, clients see
+## nobody, and it looks like a networking bug rather than a spawn-timing one.
+func _check_no_spawner(path: String, root: Node) -> void:
+	if root.get_node_or_null("MultiplayerSpawner") != null:
+		_fail("%s: has a MultiplayerSpawner; spawning must go through Net._client_spawn_player"
+			% path)
+	else:
+		print("  ok  %s has no MultiplayerSpawner (explicit spawning)" % path)
+
 
 func _load_scene(path: String) -> PackedScene:
 	if not ResourceLoader.exists(path):

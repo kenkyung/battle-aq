@@ -141,7 +141,7 @@ static func _std(color: Color, rough: float = 0.9, metal: float = 0.0) -> Standa
 	m.albedo_color = color
 	m.roughness = rough
 	m.metallic = metal
-	m.specular = 0.2
+	m.metallic_specular = 0.2
 	return m
 
 
