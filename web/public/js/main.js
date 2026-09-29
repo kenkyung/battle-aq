@@ -10,10 +10,12 @@ import { HUD } from './hud.js';
 import { Viewmodel } from './viewmodel.js';
 import { Effects } from './fx.js';
 import { BombView } from './bomb3d.js';
+import { Sfx, surfaceOf } from './sfx.js';
 import { preloadModels, setAnisotropy } from './assets.js';
 import { getMap, MAP_LIST } from '../shared/maps.js';
 import { WEAPONS, TEAM, PLAYER, CROSSHAIR } from '../shared/constants.js';
 import { inBuyZone } from '../shared/economy.js';
+import { raycast } from '../shared/physics.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -64,6 +66,14 @@ const input = new Input();
 input.attach(renderer.domElement);
 const net = new Net();
 const hud = new HUD();
+const sfx = new Sfx();
+window.__sfx = sfx;
+sfx.setVolume(parseFloat(store.get('baq_vol', '0.8')));
+sfx.radioOn = store.get('baq_radio', '1') === '1';
+// browsers start audio only after a gesture
+const unlockAudio = () => { sfx.unlock(); if (map && !sfx.ambient) sfx.startAmbience(map.id); };
+window.addEventListener('pointerdown', unlockAudio);
+window.addEventListener('keydown', unlockAudio);
 
 let map = null;
 let world = null;
@@ -114,6 +124,25 @@ function bindSettings(sensId, valId, qualId) {
 }
 bindSettings('sens', 'sensVal', 'quality');
 bindSettings('pSens', 'pSensVal', 'pQuality');
+for (const [vid, lid, rid] of [['vol', 'volVal', 'radioOn'], ['pVol', 'pVolVal', 'pRadioOn']]) {
+  $(vid).value = sfx.volume; $(lid).textContent = Math.round(sfx.volume * 100) + '%';
+  $(rid).checked = sfx.radioOn;
+  $(vid).addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value);
+    sfx.setVolume(v); store.set('baq_vol', String(v));
+    for (const [a, b] of [['vol', 'volVal'], ['pVol', 'pVolVal']]) { $(a).value = v; $(b).textContent = Math.round(v * 100) + '%'; }
+    sfx.play('hitmark', { volume: 0.8 });
+  });
+  $(rid).addEventListener('change', (e) => {
+    sfx.radioOn = e.target.checked; store.set('baq_radio', e.target.checked ? '1' : '0');
+    $('radioOn').checked = $('pRadioOn').checked = e.target.checked;
+  });
+}
+function surfaceAt(pos) {
+  if (!world) return 'sand';
+  const hit = raycast([pos[0], pos[1] + 4, pos[2]], [0, -1, 0], world.colliders, 40);
+  return hit ? surfaceOf(hit.box.mat, map.id) : 'sand';
+}
 
 // practice options
 for (const m of MAP_LIST) $('pMap').insertAdjacentHTML('beforeend', `<option value="${m.id}">${m.id.replace('de_aq_', '')}</option>`);
@@ -155,13 +184,18 @@ async function useMap(id) {
     map = getMap(id);
     world = await loadWorld(scene, map);
     fx = new Effects(scene, map, world.colliders);
+    fx.sfx = sfx;
+    fx.surfaceOf = (mat) => surfaceOf(mat, map.id);
     bombView = new BombView(scene, fx);
+    sfx.colliders = world.colliders;
+    if (sfx.ctx) sfx.startAmbience(map.id);
     hud.setRadarMap(map, world.colliders);
     vm.baseHemi = 2.6 * map.ambient;
     vm.baseSun = 2.4 * map.sun;
     $('mapName').textContent = map.name;
     if (player) { player.colliders = world.colliders; player.fx = fx; }
     if (remotes) { remotes.clear(); remotes.fx = fx; remotes.world = world; }
+    if (player) { player.fx = fx; }
   })();
   await mapLoading;
   mapLoading = null;
@@ -231,8 +265,15 @@ async function onWelcome(welcome) {
   await useMap(welcome.mapId);
   if (remotes) remotes.clear();
   remotes = new Remotes(scene, fx, world);
+  remotes.sfx = sfx;
+  remotes.surfaceAt = surfaceAt;
   player = new LocalPlayer(camera, world.colliders, net, vm, fx);
   player.others = () => remotes.targets();
+  player.surfaceAt = surfaceAt;
+  player.sound = (name, opts = {}) => {
+    if (name === 'step') name = `step_${opts.surface || 'sand'}_${Math.floor(Math.random() * 4)}`;
+    sfx.play(name, opts);
+  };
 
   roster.clear();
   for (const p of welcome.players) {
@@ -301,13 +342,18 @@ net.on('shoot', (msg) => { if (remotes && fx && msg.id !== myId) remotes.onShoot
 
 net.on('hit', (msg) => {
   if (!player) return;
-  if (msg.attacker === myId && msg.victim !== myId) hud.hitMarker(msg.part === 'head');
+  if (msg.attacker === myId && msg.victim !== myId) { hud.hitMarker(msg.part === 'head'); sfx.play('hitmark', { volume: 0.5 }); }
+  if (msg.weapon !== 'c4') {
+    if (msg.part === 'head' && msg.helmet) sfx.playAt('helmet', msg.point, { volume: 0.9, ref: 200, max: 3000 });
+    else if (msg.victim !== myId) sfx.playAt(msg.weapon === 'knife' ? 'knife_hit' : 'hit_flesh', msg.point, { volume: 0.7, ref: 120, max: 1800 });
+  }
   if (msg.victim === myId) {
     player.hp = msg.hp;
     player.armor = msg.armor;
     const dx = msg.from[0] - player.state.pos[0], dz = msg.from[2] - player.state.pos[2];
     const ang = Math.atan2(-dx, -dz) - player.state.yaw;
     hud.damageFrom(-ang);
+    if (!(msg.part === 'head' && msg.helmet)) sfx.play(msg.weapon === 'knife' ? 'knife_hit' : 'hit_flesh', { volume: 0.9 });
     player.flinch(Math.min(4, 0.6 + msg.dmg / 25)); // CS view punch on damage
   }
 });
@@ -347,7 +393,11 @@ net.on('inv', (msg) => {
   const had = player.weapon;
   const hadC4 = player.c4;
   player.applyInv(msg);
-  if (msg.delta) hud.moneyDelta(msg.delta, msg.reason);
+  if (msg.delta) {
+    hud.moneyDelta(msg.delta, msg.reason);
+    if (msg.delta < 0) sfx.play('buy', { volume: 0.6 });
+    else if (msg.reason === 'kill') sfx.play('money', { volume: 0.35 });
+  }
   if (hud.buyOpen()) hud.refreshBuy(buyContext());
   if (msg.weapon !== had) hud.showSlots(player.inv, player.weapon);
   if (msg.c4 && !hadC4) { hud.centerMsg('you have the bomb — press 5, then hold fire in a bombsite'); setTimeout(() => hud.centerMsg(''), 3500); }
@@ -358,14 +408,25 @@ net.on('reload', () => {});
 net.on('buy_fail', (msg) => { hud.buyFail(msg.reason); if (!hud.buyOpen()) { hud.centerMsg(msg.reason); setTimeout(() => hud.centerMsg(''), 1800); } });
 net.on('error', (msg) => { menuStatus.textContent = msg.text; });
 
+let keyTimer = null;
+function keypad(on, time = 3, alt = false) {
+  clearInterval(keyTimer); keyTimer = null;
+  if (!on) return;
+  let i = 0;
+  keyTimer = setInterval(() => {
+    sfx.play(alt ? 'defuse_tick' : (i++ % 2 ? 'key2' : 'key'), { volume: 0.6 });
+  }, alt ? 500 : Math.max(200, (time * 1000) / 7));
+}
 net.on('plant', (msg) => {
   if (msg.state === 'start') hud.progress('PLANTING THE BOMB', msg.time);
   else hud.hideProgress();
+  keypad(msg.state === 'start', msg.time);
   if (msg.state === 'no_site') { hud.centerMsg('the bomb must be planted at a bombsite'); setTimeout(() => hud.centerMsg(''), 1800); }
 });
 net.on('defuse', (msg) => {
   if (msg.state === 'start') hud.progress(msg.time < 10 ? 'DEFUSING (KIT)' : 'DEFUSING', msg.time);
   else hud.hideProgress();
+  keypad(msg.state === 'start', msg.time, true);
 });
 
 net.on('bomb_event', (msg) => {
@@ -374,12 +435,18 @@ net.on('bomb_event', (msg) => {
     hud.hideProgress();
     hud.banner(`BOMB PLANTED AT ${msg.site || 'SITE'}`, TEAM.T, 3000);
     bomb = { state: 'planted', pos: msg.pos, site: msg.site, left: msg.time, localLeft: msg.time };
+    keypad(false);
+    sfx.playAt('armed', msg.pos, { volume: 0.8, ref: 200 });
+    sfx.radio('Bomb has been planted');
   } else if (msg.kind === 'defused') {
     hud.hideProgress();
     hud.banner('BOMB DEFUSED', TEAM.CT, 3500);
     bomb = { state: 'defused' };
+    keypad(false);
+    sfx.radio('Bomb has been defused');
   } else if (msg.kind === 'exploded') {
     if (bombView) bombView.explode(msg.pos);
+    sfx.playAt('explosion', msg.pos, { volume: 1, ref: 1400, max: 20000, occlude: false, jitter: 0 });
     bomb = { state: 'exploded' };
   } else if (msg.kind === 'dropped') hud.addChat('*', TEAM.T, `${who} dropped the bomb`);
   else if (msg.kind === 'picked') hud.addChat('*', TEAM.T, `${who} picked up the bomb`);
@@ -399,6 +466,7 @@ function applyRound(r) {
   if (r.phase === 'warmup') hud.centerMsg('WARMUP — the match starts when both teams have a player');
   else if (r.phase === 'freeze') { hud.centerMsg('buy your gear: press B'); bomb = { state: 'none' }; }
   else if (prev === 'freeze' || prev === 'warmup') hud.centerMsg('');
+  if (prev === 'freeze' && r.phase === 'round') sfx.radio(Math.random() < 0.5 ? 'Go go go' : "Let's move out");
   if (r.phase !== 'matchend') hud.hideMatchEnd();
 }
 
@@ -414,6 +482,8 @@ net.on('halftime', () => hud.banner('HALFTIME — SWITCHING SIDES', null, 4000))
 net.on('round_end', (msg) => {
   hud.setScore(msg.scoreT, msg.scoreCT);
   const how = { bomb: 'THE BOMB EXPLODED', defuse: 'THE BOMB WAS DEFUSED', time: 'TIME RAN OUT', elim: '' }[msg.how] || '';
+  keypad(false);
+  setTimeout(() => sfx.radio(msg.winner === TEAM.T ? 'Terrorists win' : 'Counter-terrorists win'), msg.how === 'bomb' ? 1800 : 300);
   const who = msg.winner === TEAM.T ? 'TERRORISTS WIN' : 'COUNTER-TERRORISTS WIN';
   hud.banner(msg.matchOver ? (msg.winner === TEAM.T ? 'TERRORISTS WIN THE MATCH' : 'COUNTER-TERRORISTS WIN THE MATCH') : who, msg.winner, 4500);
   if (how) { hud.centerMsg(how); setTimeout(() => hud.centerMsg(''), 4000); }
@@ -621,6 +691,8 @@ function frame(now) {
   remotes.update(dt, camera.position);
   if (bomb.state === 'planted' && bomb.localLeft !== undefined) bomb.localLeft -= dt;
   if (bombView) bombView.update(bomb, dt);
+  bombBeep(dt);
+  sfx.setListener(camera);
 
   if (!player.alive) updateSpectate(dt);
   else { hud.setSpectate(''); remotes.hiddenId = null; }
@@ -678,6 +750,16 @@ function frame(now) {
   renderer.clear();
   renderer.render(scene, camera);
   vm.render(renderer);
+}
+
+// the planted C4 beeps faster and faster, in step with its LED
+let beepT = 0;
+function bombBeep(dt) {
+  if (bomb.state !== 'planted' || !bomb.pos) { beepT = 0; return; }
+  const left = Math.max(0, bomb.localLeft ?? 0);
+  const interval = Math.max(0.1, Math.min(1, left / 30));
+  beepT += dt;
+  if (beepT >= interval) { beepT = 0; sfx.playAt('beep', bomb.pos, { volume: 0.9, ref: 220, max: 4000, jitter: 0 }); }
 }
 
 function tickBombHud() {

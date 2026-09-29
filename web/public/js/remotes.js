@@ -41,6 +41,8 @@ export class Remotes {
     this.players = new Map();
     this.myTeam = TEAM.T;
     this.hiddenId = null; // spectated player (first person) is not drawn
+    this.sfx = null;      // set by main.js
+    this.surfaceAt = () => 'sand';
     this._v = new THREE.Vector3();
   }
 
@@ -148,6 +150,8 @@ export class Remotes {
 
   setTarget(p) {
     const r = this.ensure(p);
+    if (p.reloading && !r.reloading && this.sfx) this.sfx.playAt('mag_out', r.cur.pos.map((v, i) => v + (i === 1 ? 48 : 0)), { volume: 0.6, max: 1400 });
+    r.reloading = !!p.reloading;
     if (p.name) r.name = p.name;
     r.tgt.pos = [...p.pos];
     r.tgt.yaw = p.yaw || 0;
@@ -169,6 +173,11 @@ export class Remotes {
       r.muzzle.getWorldPosition(this._v);
       muzzle = [this._v.x, this._v.y, this._v.z];
       if (r.weapon !== 'knife') this.fx.muzzleFlash(muzzle, 12);
+    }
+    if (this.sfx) {
+      const at = muzzle || msg.origin;
+      if (msg.weapon === 'knife') this.sfx.playAt('knife_slash', at, { volume: 0.7, max: 1200 });
+      else this.sfx.playAt(`fire_${msg.weapon}`, at, { volume: 1, ref: 260, max: 7000 });
     }
     if (msg.weapon === 'knife') return;
     this.fx.shot(msg.origin, msg.dir, muzzle, others, msg.id);
@@ -196,6 +205,15 @@ export class Remotes {
         else if (r.speed > 150) clip = 'run';
         else if (r.speed > 20) clip = 'walk';
         this.play(r, clip);
+      }
+      // running feet are audible through the map, as in CS
+      if (this.sfx && r.alive && r.speed > 150 && !r.tgt.crouching && Math.abs(r.cur.pos[1] - prev[1]) < 2) {
+        r.stepDist = (r.stepDist || 0) + r.speed * dt;
+        if (r.stepDist > 88) {
+          r.stepDist = 0;
+          const v = Math.floor(Math.random() * 4);
+          this.sfx.playAt(`step_${this.surfaceAt(r.cur.pos)}_${v}`, [r.cur.pos[0], r.cur.pos[1] + 4, r.cur.pos[2]], { volume: 0.9, ref: 110, max: 2600 });
+        }
       }
       if (r.mixer) {
         const scale = r.clip === 'run' ? Math.max(0.6, r.speed / 250) : r.clip === 'walk' ? Math.max(0.6, r.speed / 110) : 1;

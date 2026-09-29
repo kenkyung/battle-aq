@@ -59,6 +59,9 @@
       <button id="fullscreenBtn" class="btn">FULLSCREEN</button>
       <label>Mouse sensitivity <b id="pSensVal"></b></label>
       <input id="pSens" type="range" min="0.5" max="6" step="0.1" />
+      <label>Volume <b id="pVolVal"></b></label>
+      <input id="pVol" type="range" min="0" max="1" step="0.05" />
+      <label class="check"><input id="pRadioOn" type="checkbox" /> Radio voice</label>
       <label>Graphics (reloads the page)</label>
       <select id="pQuality">
         <option value="low">Low — older laptops</option>
@@ -136,6 +139,9 @@
           <option value="medium">Medium</option>
           <option value="high">High</option>
         </select>
+        <label>Volume <b id="volVal"></b></label>
+        <input id="vol" type="range" min="0" max="1" step="0.05" />
+        <label class="check"><input id="radioOn" type="checkbox" /> Radio voice ("bomb has been planted")</label>
         <label>Server (leave empty for this one)</label>
         <input id="serverAddr" type="text" spellcheck="false" placeholder="host:port" />
       </details>

@@ -706,7 +706,7 @@ export class Game {
 
     this.broadcast({
       t: 'hit', victim: victim.id, attacker: attacker.id,
-      part: phit.part, dmg: hpDmg, hp: Math.max(0, victim.hp), armor: victim.armor,
+      part: phit.part, dmg: hpDmg, hp: Math.max(0, victim.hp), armor: victim.armor, helmet: !!victim.helmet,
       weapon: attacker.weapon, point: phit.point,
       from: [attacker.pos[0], attacker.pos[1], attacker.pos[2]],
     });

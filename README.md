@@ -118,7 +118,8 @@ docs/        design references (CS 1.6 numbers, map notes)
       soldiers, modelled weapons + first-person arms, effects, CS-style HUD
 - [x] M5 — bomb plant/defuse mode, halftime swap, match end + map vote
 - [x] Practice mode vs bots (nav graph + bot AI)
-- [ ] M6 — sounds (models and animations are done)
+- [x] M6 — sounds: synthesized at load (Web Audio, no files), 3D HRTF with wall
+      muffling, per-weapon gunshots, surface footsteps, bomb beeps, radio voice
 
 See `ROADMAP.md` for the ticket-sized backlog.
 

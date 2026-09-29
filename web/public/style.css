@@ -222,3 +222,6 @@ body { font-family: var(--font); color: var(--hud); user-select: none; }
 #crosshair .ch.l, #crosshair .ch.r { width: var(--len, 7px); }
 #crosshair .ch.t { top: calc(-1 * var(--gap) - var(--len, 7px)); }
 #crosshair .ch.l { left: calc(-1 * var(--gap) - var(--len, 7px)); }
+
+label.check { display: flex !important; align-items: center; gap: 8px; text-transform: none !important; letter-spacing: 0 !important; font-size: 12px !important; }
+label.check input { accent-color: var(--t); }

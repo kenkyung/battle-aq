@@ -41,6 +41,12 @@ export class LocalPlayer {
     this.defusing = false; // holding E on the bomb
     this.frozen = false;   // freeze time: look, buy, but no moving
     this.shotCount = 0;    // for the HUD's crosshair kick
+    this.sound = () => {}; // (name, opts) -> set by main.js
+    this.surfaceAt = () => 'sand';
+    this._stepDist = 0;
+    this._wasGround = true;
+    this._fallSpeed = 0;
+    this._reloadTimers = [];
     this.kills = 0; this.deaths = 0;
     this.others = () => [];
 
@@ -112,7 +118,9 @@ export class LocalPlayer {
     resetRecoil(this.recoil, id);
     this.nextFire = performance.now() / 1000 + DRAW_TIME;
     this.setZoom(0);
+    this.cancelReloadSounds();
     this.vm.setWeapon(id);
+    this.sound('deploy', { volume: 0.5 });
     if (tell) this.net.send({ t: 'weapon', id });
   }
 
@@ -145,11 +153,18 @@ export class LocalPlayer {
     this.setZoom(0);
     this.vm.reload(w.reload);
     this.net.send({ t: 'reload' });
+    // magazine out, in, then the bolt / slide
+    this.cancelReloadSounds();
+    const seq = [[0.18, 'mag_out'], [0.62, 'mag_in'], [0.84, 'bolt']];
+    for (const [f, name] of seq) this._reloadTimers.push(setTimeout(() => this.sound(name, { volume: 0.7 }), f * w.reload * 1000));
   }
+
+  cancelReloadSounds() { for (const t of this._reloadTimers) clearTimeout(t); this._reloadTimers = []; }
 
   fire(now) {
     const w = WEAPONS[this.weapon];
     const a = this.ammo[this.weapon];
+    this.sound(w.melee ? 'knife_slash' : `fire_${this.weapon}`, { volume: w.melee ? 0.7 : 0.95, jitter: 0.03 });
     if (!w.melee) {
       if (!a || a.mag <= 0) return;
       a.mag--;
@@ -217,12 +232,26 @@ export class LocalPlayer {
         if (wantFire && !this.reloading(now) && now >= this.nextFire) {
           if (w.melee || this.mag() > 0) this.fire(now);
           else if (this.reserve() > 0) this.startReload();
+          else { this.sound('dryfire', { volume: 0.7 }); this.nextFire = now + 0.25; }
         }
         if (input.consumeReload()) this.startReload();
       }
       if (this.reloadUntil && now >= this.reloadUntil + 0.6) this.reloadUntil = 0; // server never answered
     } else {
       input.consumeLook();
+    }
+
+    // footsteps: audible when running (CS: walking and crouching are silent)
+    if (this.alive) {
+      const sp = this.speed();
+      if (this.state.onGround && sp > 150 && !this.state.crouching) {
+        this._stepDist += sp * dt;
+        if (this._stepDist > 88) { this._stepDist = 0; this.sound('step', { surface: this.surfaceAt(this.state.pos), volume: 0.55 }); }
+      }
+      if (!this.state.onGround) this._fallSpeed = Math.max(this._fallSpeed, -this.state.vel[1]);
+      if (this.state.onGround && !this._wasGround && this._fallSpeed > 320) this.sound('land', { volume: Math.min(1, this._fallSpeed / 600) });
+      if (this.state.onGround) this._fallSpeed = 0;
+      this._wasGround = this.state.onGround;
     }
 
     // punch recovers toward zero (CS 1.6 decay)

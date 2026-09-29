@@ -16,6 +16,8 @@ const WOOD_MATS = new Set(['wood', 'cover']);
 export class Effects {
   constructor(scene, map, colliders) {
     this.scene = scene;
+    this.sfx = null;               // set by main.js
+    this.surfaceOf = () => 'stone';
     this.map = map;
     this.colliders = colliders;
     this.group = new THREE.Group();
@@ -114,6 +116,12 @@ export class Effects {
   }
 
   impact(point, normal, mat) {
+    if (this.sfx) {
+      const s = this.surfaceOf(mat);
+      const name = s === 'metal' ? 'impact_metal' : s === 'wood' ? 'impact_wood' : s === 'sand' ? 'impact_dirt' : 'impact_stone';
+      this.sfx.playAt(name, point, { volume: 0.45, ref: 90, max: 1800, occlude: false });
+      if ((s === 'metal' || s === 'stone') && Math.random() < 0.12) this.sfx.playAt('ricochet', point, { volume: 0.35, ref: 120, max: 2000, occlude: false });
+    }
     // decal, aligned to the surface
     const s = 3.2 + Math.random() * 1.6;
     this._q.setFromUnitVectors(this._z, this._v.set(normal[0], normal[1], normal[2]));

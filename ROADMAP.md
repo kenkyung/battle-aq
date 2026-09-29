@@ -74,5 +74,5 @@ Project, scenes, scripts, license, README, .gitignore.
 - [x] Esc pause menu, fullscreen keyboard lock, CS 1.6 dynamic crosshair.
 
 ## Next
-- [ ] M6 sounds (weapons, footsteps, bomb beeps, radio).
+- [x] M6 sounds (weapons, footsteps, bomb beeps, radio) — public/js/sfx.js.
 - [ ] Grenades (HE / flash / smoke).
