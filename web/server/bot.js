@@ -10,11 +10,12 @@
 // being shot) -> pick a goal from the objective (carry / plant / guard / retake
 // / defuse) -> follow an A* path there -> fight whatever it can see.
 
-import { movePlayer, norm } from '../shared/physics.js';
+import { movePlayer, norm, playerBox, raycast } from '../shared/physics.js';
 import { PLAYER, WEAPONS, TEAM, BOMB } from '../shared/constants.js';
 import { ECONOMY, inBuyZone } from '../shared/economy.js';
 import { navFor } from './nav.js';
 import { kick, decayPunch, aimWithPunch } from '../shared/ballistics.js';
+import { smokeBlocks } from '../shared/grenades.js';
 
 export const DIFFICULTY = {
   easy:   { comp: 0.25, reaction: 0.75, aimErr: 3.8, turn: 4.0, fov: 100, burst: [2, 3], strafe: 0.2, hsBias: 0.1, sight: 2600 },
@@ -61,6 +62,35 @@ export class BotBrain {
     this.nextPathAt = 0;    // A* is rate-limited per bot
     this.holdUntil = 0; this.lookYaw = this.p.yaw;
     this.perceiveT = Math.random() * 0.15;
+    this.nadePlan = null;   // { kind, at, yaw, pitch }
+    this.usedUtility = false;
+  }
+
+  // pick a grenade, aim it, throw it once it has been drawn (0.45 s)
+  planNade(kind, target, now) {
+    if (this.nadePlan || !(this.p.nades[kind] > 0)) return false;
+    const d = [target[0] - this.p.pos[0], target[2] - this.p.pos[2]];
+    const dist = Math.hypot(d[0], d[1]);
+    // pitch that roughly lobs the grenade that far (throw leaves 10° high)
+    const pitch = Math.max(-0.1, Math.min(0.75, (dist - 350) / 2600));
+    this.nadePlan = { kind, at: now + 0.45, yaw: Math.atan2(-d[0], -d[1]), pitch };
+    this.game.handleSwitch(this.p, kind);
+    return true;
+  }
+
+  runNadePlan(dt, now) {
+    const plan = this.nadePlan;
+    if (!plan) return false;
+    this.turnTo(plan.yaw, plan.pitch, dt, 1.2);
+    this.p.yaw = this.state.yaw; this.p.pitch = this.state.pitch;
+    if (now >= plan.at) {
+      this.game.throwNade(this.p, { vel: this.state.vel });
+      this.nadePlan = null;
+      this.usedUtility = true;
+      const best = this.p.inv.primary || this.p.inv.secondary;
+      if (best && this.p.weapon !== best) this.game.handleSwitch(this.p, best);
+    }
+    return true;
   }
 
   get nav() { return navFor(this.game.map, this.game.colliders); }
@@ -73,6 +103,7 @@ export class BotBrain {
 
   perceive(now) {
     const me = this.eye();
+    if (now < this.p.blindUntil) { this.target = null; return; }   // flashed
     let best = null, bestD = Infinity;
     for (const q of this.game.players.values()) {
       if (!q.alive || q.team === this.p.team || q === this.p) continue;
@@ -86,10 +117,12 @@ export class BotBrain {
       const attacker = this.hurtBy === q.id && now - this.hurtAt < 2;
       if (!inFov && !attacker && dist > 180) continue;
       if (!this.nav.visible(me, chest)) continue;
+      if (smokeBlocks(me, chest, this.game.smokes, now)) continue;
       if (dist < bestD) { bestD = dist; best = q; }
     }
     if (best) {
       if (!this.target || this.target.id !== best.id) {
+        if (!this.target && now - (this.calloutAt || 0) > 8 && Math.random() < 0.5) { this.calloutAt = now; this.game.radio(this.p, 'c', 1); } // Enemy spotted
         this.target = best;
         // reaction time before the first shot (faster up close)
         this.seenAt = now + this.skill.reaction * (bestD < 400 ? 0.6 : 1) * rnd(0.8, 1.25);
@@ -101,7 +134,9 @@ export class BotBrain {
     }
   }
 
-  onHurt(attacker, now) { this.hurtBy = attacker.id; this.hurtAt = now; this.lastSeen = attacker.pos.slice(); this.lastSeenAt = now; }
+  onHurt(attacker, now) {
+    if (this.p.hp < 45 && now - (this.calloutAt || 0) > 10 && Math.random() < 0.4) { this.calloutAt = now; this.game.radio(this.p, 'c', 2); } // Need backup
+    this.hurtBy = attacker.id; this.hurtAt = now; this.lastSeen = attacker.pos.slice(); this.lastSeenAt = now; }
   onNoise(pos, now) {
     if (now - this.heardAt < 1.5 && this.heard) return;
     this.heard = pos.slice(); this.heardAt = now;
@@ -127,6 +162,10 @@ export class BotBrain {
     else if (money() >= 650 && p.armor < 100) g.handleBuy(p, 'kevlar');
     if (p.team === TEAM.CT && !p.kit && money() >= 200) g.handleBuy(p, 'kit');
     if (!p.inv.primary && p.inv.secondary !== 'deagle' && money() >= 650 && Math.random() < 0.6) g.handleBuy(p, 'deagle');
+    // utility with what is left
+    if (money() >= 300 && Math.random() < 0.6) g.handleBuy(p, 'hegrenade');
+    if (money() >= 200 && Math.random() < 0.45) g.handleBuy(p, 'flashbang');
+    if (money() >= 300 && Math.random() < 0.3) g.handleBuy(p, 'smokegrenade');
     const best = p.inv.primary || p.inv.secondary;
     if (best) g.handleSwitch(p, best);
   }
@@ -225,7 +264,9 @@ export class BotBrain {
     // weapon housekeeping
     const w = WEAPONS[p.weapon];
     const a = p.ammo[p.weapon];
-    if (p.weapon === 'c4' || p.weapon === 'knife') {
+    if (this.runNadePlan(dt, now)) { this.move(dt, null, now, { face: false }); return; }
+    if (WEAPONS[p.weapon].grenade) g.handleSwitch(p, p.inv.primary || p.inv.secondary || 'knife');
+    else if (p.weapon === 'c4' || p.weapon === 'knife') {
       if (!(p.weapon === 'c4' && g.planting.has(p.id))) g.handleSwitch(p, p.inv.primary || p.inv.secondary || 'knife');
     } else if (a && a.mag === 0 && a.reserve === 0) {
       const alt = [p.inv.primary, p.inv.secondary, 'knife'].find((id) => id && id !== p.weapon && (id === 'knife' || (p.ammo[id] && p.ammo[id].mag + p.ammo[id].reserve > 0)));
@@ -255,6 +296,13 @@ export class BotBrain {
     }
     if (g.defusing.get(p.id) && this.target) g.setDefusing(p, false);
 
+    if (!this.target && !this.usedUtility && g.phase === 'round' && this.site && Math.random() < 0.02) {
+      const sd = Math.hypot(p.pos[0] - this.site[1][0], p.pos[2] - this.site[1][2]);
+      if (sd > 450 && sd < 900 && this.nav.visible(this.eye(), [this.site[1][0], this.site[1][1] + 60, this.site[1][2]])) {
+        const kind = p.team === TEAM.T ? (p.nades.flashbang ? 'flashbang' : 'smokegrenade') : 'smokegrenade';
+        if (this.planNade(kind, this.site[1], now)) return;
+      }
+    }
     if (this.target) this.fight(dt, now);
     else this.move(dt, this.goal, now);
   }
@@ -276,10 +324,10 @@ export class BotBrain {
     return this.path[this.pathIdx];
   }
 
-  move(dt, goal, now, { face = true, strafe = 0, crouch = false } = {}) {
+  move(dt, goal, now, { face = true, strafe = 0, crouch = false, still = false } = {}) {
     const p = this.p;
     let wish = [0, 0, 0];
-    const wp = goal && this.game.phase !== 'freeze' ? this.followPath(now) : null;
+    const wp = goal && !still && this.game.phase !== 'freeze' ? this.followPath(now) : null;
     if (wp) {
       const d = [wp[0] - p.pos[0], 0, wp[2] - p.pos[2]];
       const L = Math.hypot(d[0], d[2]) || 1;
@@ -288,6 +336,8 @@ export class BotBrain {
     } else if (face) {
       this.idleLook(dt, now);
     }
+    // unsticking: sidestep away from whatever is in the way
+    if (this.unstickUntil && now < this.unstickUntil) strafe = this.unstickDir;
     // strafe (perpendicular to the view) while fighting
     if (strafe) {
       const y = this.state.yaw;
@@ -304,35 +354,68 @@ export class BotBrain {
     this.jump = false;
     this.state.pos = p.pos;
     this.state.crouching = crouch;
-    movePlayer(this.state, keys, dt, this.game.colliders);
+    // other players are solid for bots too
+    const bodies = [];
+    for (const q of this.game.players.values()) {
+      // enemies are solid; teammates are not (bots would otherwise queue in
+      // every doorway out of spawn)
+      if (q !== p && q.alive && q.team !== p.team && Math.abs(q.pos[0] - p.pos[0]) < 200 && Math.abs(q.pos[2] - p.pos[2]) < 200) bodies.push(playerBox(q.pos, q.crouching));
+    }
+    movePlayer(this.state, keys, dt, bodies.length ? this.game.colliders.concat(bodies) : this.game.colliders);
     p.pos = this.state.pos;
     p.crouching = this.state.crouching;
     p.moving = Math.hypot(this.state.vel[0], this.state.vel[2]) > 12;
     p.yaw = this.state.yaw;
     p.pitch = this.state.pitch;
 
-    // stuck? hop, then pick a new path
+    // stuck (a corner, a teammate in the doorway)? back off sideways and hop,
+    // then find another way; after a while give up on this spot entirely
     const moving = keys.f || keys.b || keys.l || keys.r;
     if (moving) {
       this.stuckT += dt;
       if (Math.hypot(p.pos[0] - this.lastProgressPos[0], p.pos[2] - this.lastProgressPos[2]) > 24) {
         this.stuckT = 0; this.lastProgressPos = p.pos.slice();
-      } else if (this.stuckT > 0.8 && this.stuckT < 0.85) this.jump = true;
-      else if (this.stuckT > 2 && this.stuckT < 2.05) { this.path = null; this.repathAt = 0; }
-      else if (this.stuckT > 3.5) {
-        // last resort: step onto the nearest node centre (always clear of walls)
-        const n = this.nav.nearest(p.pos);
-        if (n && Math.hypot(n.x - p.pos[0], n.z - p.pos[2]) < 48) { p.pos = [n.x, n.y + 0.5, n.z]; this.state.pos = p.pos; }
-        this.stuckT = 0; this.path = null; this.repathAt = 0; this.lastProgressPos = p.pos.slice();
+      } else if (this.stuckT > 0.7 && !this.unstickUntil) {
+        // sidestep toward whichever side has more room; hop only if that
+        // did not work last time (a low obstacle)
+        this.unstickUntil = now + 0.4;
+        const y = this.state.yaw, o = [p.pos[0], p.pos[1] + 20, p.pos[2]];
+        const right = [Math.cos(y), 0, -Math.sin(y)];
+        const rh = raycast(o, right, this.game.colliders, 120), lh = raycast(o, right.map((v) => -v), this.game.colliders, 120);
+        this.unstickDir = (rh ? rh.t : 120) >= (lh ? lh.t : 120) ? 1 : -1;
+        if ((this.stuckCount || 0) >= 1) this.jump = true;
+      }
+      if (this.stuckT > 1.6) { this.path = null; this.repathAt = 0; this.nextPathAt = 0; this.stuckT = 0.8; this.stuckCount = (this.stuckCount || 0) + 1; }
+      if ((this.stuckCount || 0) >= 3) { this.guardSpots = {}; this.goal = null; this.stuckCount = 0; }
+    }
+    if (this.unstickUntil && now > this.unstickUntil) this.unstickUntil = 0;
+    if (p.pos[1] < -500) this.game.respawnStuck(p);
+  }
+
+  // Which way would enemies come from? A point ~600 u back along the route
+  // from their spawn to here (cached per spot). Holding that angle is what
+  // makes a defender dangerous.
+  threatYaw() {
+    const key = Math.round(this.p.pos[0] / 64) + ',' + Math.round(this.p.pos[2] / 64);
+    if (this._threatKey !== key) {
+      this._threatKey = key;
+      this._threatYaw = null;
+      const enemySpawn = this.game.map.spawns[this.p.team === TEAM.T ? TEAM.CT : TEAM.T][0];
+      const path = this.nav.path(this.p.pos, enemySpawn);
+      if (path && path.length > 1) {
+        let acc = 0, prev = this.p.pos, pt = path[path.length - 1];
+        for (const w of path) { acc += Math.hypot(w[0] - prev[0], w[2] - prev[2]); prev = w; if (acc > 600) { pt = w; break; } }
+        this._threatYaw = Math.atan2(-(pt[0] - this.p.pos[0]), -(pt[2] - this.p.pos[2]));
       }
     }
-    if (p.pos[1] < -500) this.game.respawnStuck(p);
+    return this._threatYaw;
   }
 
   idleLook(dt, now) {
     if (now > this.holdUntil) {
       this.holdUntil = now + rnd(1.2, 3);
-      this.lookYaw = this.state.yaw + rnd(-1.2, 1.2);
+      const threat = this.game.phase === 'warmup' ? null : this.threatYaw();
+      this.lookYaw = threat !== null ? threat + rnd(-0.35, 0.35) : this.state.yaw + rnd(-1.2, 1.2);
       if (this.heard && now - this.heardAt < 3) this.lookYaw = Math.atan2(-(this.heard[0] - this.p.pos[0]), -(this.heard[2] - this.p.pos[2]));
     }
     this.turnTo(this.lookYaw, 0, dt, 0.35);
@@ -377,8 +460,15 @@ export class BotBrain {
     const crouch = !sniper && w.auto && dist > 900 && this.difficulty !== 'easy';
     // close in with a knife / short weapons, otherwise keep position
     const chase = w.melee || dist > this.skill.sight * 0.8 ? { key: 'chase', pos: q.pos } : null;
-    this.move(dt, chase, now, { face: false, strafe: this.burstLeft > 0 ? strafe * 0.4 : strafe, crouch });
+    // CS: moving ruins accuracy, so stop to shoot (counter-strafe) unless it
+    // is a close-range brawl; strafe between bursts
+    const shooting = now >= this.seenAt && (this.burstLeft > 0 || now >= this.burstPauseUntil - 0.05);
+    const standStill = !w.melee && dist > 280 && shooting && this.difficulty !== 'easy';
+    this.move(dt, chase, now, { face: false, strafe: standStill ? 0 : strafe, crouch, still: standStill });
 
+    if (now >= this.seenAt && dist > 450 && dist < 1300 && p.nades.hegrenade && Math.random() < 0.01) {
+      if (this.planNade('hegrenade', q.pos, now)) return;
+    }
     if (now < this.seenAt || p.reloadUntil) return;
     const a = p.ammo[p.weapon];
     if (!w.melee && (!a || a.mag === 0)) { this.game.handleReload(p); return; }

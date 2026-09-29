@@ -46,6 +46,7 @@
     <input id="chatInput" class="hidden" maxlength="140" placeholder="say to all…" autocomplete="off" />
     <div id="hint"></div>
     <div id="spectate" class="hidden"></div>
+    <div id="radioMenu" class="hidden"></div>
     <div id="progress" class="hidden"><div id="progressLabel">PLANTING</div><div class="track"><i id="progressFill"></i></div></div>
     <div id="bombIcon" class="hidden" title="bomb"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="11" rx="2"/><path d="M7 7V5h4v2M14 11h4M14 14h4"/><circle cx="8" cy="12.5" r="2"/></svg><span id="bombText"></span></div>
   </div>
@@ -70,7 +71,7 @@
       </select>
       <button id="leaveBtn" class="btn">LEAVE MATCH</button>
       <a id="arcadeBtn" class="btn" href="../">BACK TO THE ARCADE</a>
-      <p class="keys">Esc pause · B buy · Tab scores · Y chat · G drop bomb · E defuse · F11 or Fullscreen: keeps Ctrl+W from closing the tab</p>
+      <p class="keys">Esc pause · B buy · Tab scores · Y chat · Z/X/C radio · 4 grenades · G drop bomb · E defuse · Fullscreen keeps Ctrl+W from closing the tab</p>
     </div>
   </div>
 
@@ -114,15 +115,16 @@
         <button id="modeOnline" class="mode on">ONLINE</button>
         <button id="modePractice" class="mode">PRACTICE VS BOTS</button>
       </div>
-      <div id="onlineOpts" class="row">
-        <div><label>Map</label><div id="mapName">—</div></div>
-        <div><label>Online</label><div id="online">—</div></div>
+      <div class="row">
+        <div><label>Map</label><select id="pMap"></select></div>
+        <div id="onlineOpts"><label>Online now</label><div id="online">—</div></div>
+      </div>
+      <div id="onlineSize" class="row">
+        <div><label>Fill with bots up to</label><select id="oSize"><option value="5">5 v 5</option><option value="4">4 v 4</option><option value="3">3 v 3</option><option value="0">no bots</option></select></div>
+        <div></div>
+        <div id="sideOpts" class="hidden"><label>Side</label><select id="pTeam"><option value="T">Terrorists</option><option value="CT">Counter-Terrorists</option></select></div>
       </div>
       <div id="practiceOpts" class="hidden">
-        <div class="row">
-          <div><label>Map</label><select id="pMap"></select></div>
-          <div><label>Side</label><select id="pTeam"><option value="T">Terrorists</option><option value="CT">Counter-Terrorists</option></select></div>
-        </div>
         <div class="row">
           <div><label>Bots <b id="pBotsVal">5</b></label><input id="pBots" type="range" min="1" max="9" step="1" value="5" /></div>
           <div><label>Difficulty</label><select id="pDiff"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></div>
@@ -147,7 +149,8 @@
       </details>
       <p class="controls">
         WASD move · Space jump · Ctrl crouch · Shift walk · LMB fire · RMB scope · R reload<br/>
-        1/2/3 weapons · 5 bomb · Q last · B buy · E defuse · G drop · Tab scores · Y chat · Esc pause
+        1/2/3 weapons · 4 grenades · 5 bomb · Q last · B buy · E defuse · G drop · Tab scores · Y chat<br/>
+        Z / X / C radio commands · Esc pause
       </p>
     </div>
   </div>

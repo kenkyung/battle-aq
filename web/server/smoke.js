@@ -23,7 +23,7 @@ function client(name) {
     snapshots: [], hits: [], kills: [], welcomed: false,
     send: (o) => ws.send(JSON.stringify(o)),
   };
-  ws.onopen = () => c.send({ t: 'join', name });
+  ws.onopen = () => c.send({ t: 'join', name, size: 0 });
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     if (m.t === 'welcome') {

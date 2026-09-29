@@ -14,7 +14,7 @@ export const ECONOMY = {
   winBonusElimCT: 3500,   // CT wins by eliminating the terrorists
   lossBonus: [1400, 1900, 2400, 2900, 3400], // by consecutive losses (5+ = last)
   buyZoneRadius: 720,     // u from the centre of your team's spawn
-  buyTimeIntoRound: 20,   // s after the freeze/buy phase ends that buying stays open
+  buyTimeIntoRound: 54,   // buying stays open for the first minute (freeze + 54 s)
   ammoPrice: 100,         // refills every reserve you carry
   plantBonus: 800,        // every T, when the bomb was planted but T lost
   planterReward: 300,
@@ -37,6 +37,7 @@ export const BUY_MENU = [
   { key: 'rifles',  title: 'Rifles',  items: ['ak47', 'm4a1'] },
   { key: 'snipers', title: 'Snipers', items: ['scout', 'awp'] },
   { key: 'heavy',   title: 'Machine gun', items: ['m249'] },
+  { key: 'nades',   title: 'Grenades', items: ['hegrenade', 'flashbang', 'smokegrenade'] },
   { key: 'gear',    title: 'Gear',    items: ['kevlar', 'assault', 'kit', 'ammo'] },
 ];
 

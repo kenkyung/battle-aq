@@ -32,7 +32,7 @@ body { font-family: var(--font); color: var(--hud); user-select: none; }
   border: 1px solid var(--line); border-radius: 4px; font-size: 15px; outline: none; }
 #menuCard input[type=text]:focus { border-color: var(--t); }
 #menuCard .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-#mapName, #online { padding: 11px 12px; background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 4px;
+#online { padding: 11px 12px; background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 4px;
   font-size: 14px; color: var(--t); }
 #playBtn { width: 100%; margin-top: 22px; padding: 14px; background: var(--t); color: #1a1408;
   font: 800 17px/1 var(--font); letter-spacing: 4px; border: none; border-radius: 4px; cursor: pointer;
@@ -225,3 +225,14 @@ body { font-family: var(--font); color: var(--hud); user-select: none; }
 
 label.check { display: flex !important; align-items: center; gap: 8px; text-transform: none !important; letter-spacing: 0 !important; font-size: 12px !important; }
 label.check input { accent-color: var(--t); }
+
+#radioMenu { position: absolute; left: 18px; top: 40%; background: rgba(10,12,14,.78); border-left: 3px solid var(--t);
+  padding: 10px 14px; font-size: 14px; line-height: 1.7; }
+#radioMenu h5 { font-size: 10px; letter-spacing: 2px; color: var(--hud-dim); margin-bottom: 4px; }
+#radioMenu b { color: var(--t); margin-right: 8px; }
+.chat.radio .n { color: #7dff6a !important; }
+
+.bcol h4 b { color: var(--t); margin-right: 4px; }
+.bcol.pick h4 { color: var(--t); }
+.bcol.pick .bitem .k { color: #1a1408; background: var(--t); }
+.bitem .k { font-style: normal; font: 700 10px var(--font); color: var(--hud-dim); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; margin-right: 6px; }

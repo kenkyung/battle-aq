@@ -18,11 +18,13 @@ const HOLD = {
   pistol: { pos: [3.6, -4.6, -14.0], rot: [0.04, 0.08, 0] },
   knife:  { pos: [7.0, -6.2, -11.0], rot: [0.35, 0.35, -0.5] },
   c4:     { pos: [3.5, -7.5, -12.0], rot: [0.5, 0.2, 0] },
+  nade:   { pos: [5.0, -5.8, -11.0], rot: [0.25, 0.2, 0] },
 };
 const holdFor = (id) => {
   const w = WEAPONS[id];
   if (w.melee) return HOLD.knife;
   if (w.bomb) return HOLD.c4;
+  if (w.grenade) return HOLD.nade;
   if (w.zoomFov) return HOLD.sniper;
   if (w.slot === 'secondary') return HOLD.pistol;
   return HOLD.rifle;
@@ -109,14 +111,14 @@ export class Viewmodel {
       socket.add(hand);
     };
     attach('hand_r_' + team, `${id}_grip`);
-    if (!w.melee) attach('hand_l_' + team, `${id}_lhand`);
+    if (!w.melee && !w.grenade) attach('hand_l_' + team, `${id}_lhand`);
     if (animate) this.drawT = 0;
     this.reloadT = 1;
   }
 
   fire() {
     const w = WEAPONS[this.weapon];
-    if (w.melee) { this.swingT = 0; return; }
+    if (w.melee || w.grenade) { this.swingT = 0; return; }
     const heavy = w.zoomFov ? 1.6 : w.slot === 'secondary' ? 1.0 : 0.7;
     this.kick = Math.min(this.kick + 1.4 * heavy, 3.5);
     this.kickRot = Math.min(this.kickRot + 0.05 * heavy, 0.16);

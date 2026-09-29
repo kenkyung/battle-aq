@@ -218,6 +218,25 @@ const RECIPES = {
     h.noise(h.filter('highpass', 1500, 0.7, h.env(bus, { a: 0.001, d: 0.25, peak: 0.8 })), { dur: 0.6 });
     for (let i = 0; i < 20; i++) { const at = 0.3 + h.rand() * 2.2; h.noise(h.filter('bandpass', 800 + h.rand() * 3000, 3, h.env(bus, { at, a: 0.002, d: 0.05, peak: 0.12 })), { at, dur: 0.1 }); }
   }],
+  pin: [0.25, (h) => { click(3400, 6, 0.012, 0.9)(h); h.osc('sine', 5200, 4800, h.env(h.out, { at: 0.03, a: 0.001, d: 0.12, peak: 0.25 }), { at: 0.03, dur: 0.2 }); }],
+  throw: [0.35, (h) => { const f = h.filter('bandpass', 600, 1.2, h.env(h.out, { a: 0.05, d: 0.2, peak: 0.7 })); f.frequency.setValueAtTime(400, 0); f.frequency.exponentialRampToValueAtTime(1600, 0.2); h.noise(f, { dur: 0.3 }); }],
+  bounce: [0.2, (h) => { h.osc('triangle', 1250, 1150, h.env(h.out, { a: 0.0005, d: 0.08, peak: 0.8 }), { dur: 0.15 }); h.noise(h.filter('bandpass', 2600, 3, h.env(h.out, { a: 0.0005, d: 0.02, peak: 0.6 })), { dur: 0.05 }); }],
+  he_explode: [2.4, (h) => {
+    const comp = h.ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 5; comp.connect(h.out);
+    const echo = h.verb(comp, 1.8, 0.45, 0.04);
+    const bus = h.ctx.createGain(); bus.connect(comp); bus.connect(echo);
+    h.osc('sine', 95, 30, h.env(bus, { a: 0.002, d: 0.7, peak: 1 }), { dur: 1.2, glide: 0.6 });
+    h.noise(h.filter('lowpass', 900, 0.7, h.env(bus, { a: 0.003, d: 1.0, peak: 1 })), { dur: 2 });
+    h.noise(h.filter('highpass', 2000, 0.7, h.env(bus, { a: 0.0008, d: 0.12, peak: 0.9 })), { dur: 0.3 });
+  }],
+  flash_pop: [1.2, (h) => {
+    const echo = h.verb(h.out, 1.0, 0.35, 0.02);
+    const bus = h.ctx.createGain(); bus.connect(h.out); bus.connect(echo);
+    h.noise(h.filter('highpass', 1200, 0.6, h.env(bus, { a: 0.0005, d: 0.09, peak: 1 })), { dur: 0.25 });
+    h.osc('sine', 160, 60, h.env(bus, { a: 0.001, d: 0.12, peak: 0.6 }), { dur: 0.25 });
+  }],
+  smoke_hiss: [3.0, (h) => { h.noise(h.filter('highpass', 2500, 0.5, h.env(h.out, { a: 0.1, d: 2.6, peak: 0.8, hold: 0.3 })), { dur: 3 }); }],
+  ring: [5.0, (h) => { h.osc('sine', 3150, 3100, h.env(h.out, { a: 0.02, d: 4.5, peak: 0.6, hold: 0.4 }), { dur: 5 }); }],
   buy: [0.2, (h) => { click(2600, 3, 0.02, 0.6)(h); h.osc('sine', 1320, 1320, h.env(h.out, { at: 0.04, a: 0.002, d: 0.08, peak: 0.3 }), { at: 0.04, dur: 0.12 }); }],
   money: [0.4, (h) => { for (const [at, f] of [[0, 1568], [0.08, 2093]]) h.osc('triangle', f, f, h.env(h.out, { at, a: 0.002, d: 0.15, peak: 0.5 }), { at, dur: 0.25 }); }],
   radio: [0.15, (h) => { h.noise(h.filter('bandpass', 2000, 1, h.env(h.out, { a: 0.002, d: 0.08, peak: 0.6 })), { dur: 0.12 }); }],

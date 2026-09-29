@@ -7,6 +7,7 @@
 //   http://100.104.64.0:8080    -> a friend, over Tailscale
 
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -70,64 +71,94 @@ function send(res, code, body, type = 'text/plain', cache = 'no-cache') {
   res.end(body);
 }
 
-// Baked assets and the vendored three.js change only on deploy; let browsers
-// keep them for a day instead of re-downloading ~6 MB on every visit.
-const LONG_CACHE = /^\/(assets|vendor)\//;
+// Cache busting. Everything the page loads lives under /v/<BUILD>/…, where
+// BUILD is a hash of the files' sizes and times, so a deploy changes every
+// URL at once and those files can be cached for a year (browsers and
+// Cloudflare alike). Only index.html is served uncached.
+function buildId() {
+  const h = crypto.createHash('sha1');
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const f = path.join(dir, e.name);
+      if (e.isDirectory()) walk(f);
+      else { const st = fs.statSync(f); h.update(f + st.size + st.mtimeMs); }
+    }
+  };
+  walk(PUBLIC_DIR); walk(SHARED_DIR);
+  return h.digest('hex').slice(0, 10);
+}
+const BUILD = buildId();
+const IMMUTABLE = 'public, max-age=31536000, immutable';
+const indexHtml = () => fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
+  .replace('href="style.css"', `href="v/${BUILD}/style.css"`)
+  .replace('src="js/main.js"', `src="v/${BUILD}/js/main.js"`)
+  .replace('"./vendor/three.module.js"', `"./v/${BUILD}/vendor/three.module.js"`);
 
 const server = http.createServer((req, res) => {
   let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+  let cache = 'no-cache';
+  const v = urlPath.match(/^\/v\/[0-9a-f]+(\/.*)$/);
+  if (v) { urlPath = v[1]; cache = IMMUTABLE; }
   let baseDir = PUBLIC_DIR;
   if (urlPath.startsWith('/shared/')) {
     baseDir = SHARED_DIR;
     urlPath = urlPath.slice('/shared'.length);
   }
-  if (urlPath === '/info') {
-    return send(res, 200, JSON.stringify({
-      map: publicGame.map.id, players: publicGame.humans.length, phase: publicGame.phase,
-      maps: Object.keys(MAPS), practiceGames: rooms.size - 1,
-    }), 'application/json');
-  }
-  if (urlPath === '/') urlPath = '/index.html';
+  if (urlPath === '/info') return send(res, 200, JSON.stringify(roomsInfo()), 'application/json');
+  if (urlPath === '/' || urlPath === '/index.html') return send(res, 200, indexHtml(), MIME['.html'], 'no-cache');
   // prevent path traversal
   const filePath = path.normalize(path.join(baseDir, urlPath));
   if (!filePath.startsWith(baseDir)) return send(res, 403, 'forbidden');
   fs.readFile(filePath, (err, data) => {
     if (err) return send(res, 404, 'not found: ' + urlPath);
     const ext = path.extname(filePath).toLowerCase();
-    send(res, 200, data, MIME[ext] || 'application/octet-stream',
-      baseDir === PUBLIC_DIR && LONG_CACHE.test(urlPath) ? 'public, max-age=86400' : 'no-cache');
+    send(res, 200, data, MIME[ext] || 'application/octet-stream', cache);
   });
 });
 
 // ------------------------------------------------------------------ rooms
 
-// One public room (everyone who clicks PLAY) plus practice rooms: one human
-// against bots, created on demand and thrown away when the human leaves.
-const publicGame = new Game(args.map, { id: 'public' });
-const rooms = new Map([['public', publicGame]]);
-let practiceSeq = 0;
+// Public rooms (one per map, created when someone picks that map; another
+// opens if one fills up) plus practice rooms: one human against bots,
+// created on demand and thrown away when the human leaves.
+const rooms = new Map();
+let roomSeq = 0;
 const MAX_PRACTICE_ROOMS = 24;
+const PUBLIC_ROOM_SIZE = 20;
+
+// bots top each team up to `size` (3-5; 0 = humans only)
+const DEFAULT_FILL = Math.max(0, Math.min(5, parseInt(process.env.BOT_FILL || '5', 10)));
+function publicRoom(mapId, size = DEFAULT_FILL) {
+  const want = MAPS[mapId] ? mapId : args.map;
+  const fill = [0, 3, 4, 5].includes(size) ? size : DEFAULT_FILL;
+  for (const g of rooms.values()) {
+    if (!g.practice && g.map.id === want && g.fillTo === fill && g.humans.length < PUBLIC_ROOM_SIZE) return g;
+  }
+  const id = 'public-' + (++roomSeq);
+  const g = new Game(want, { id, fillTo: fill });
+  rooms.set(id, g);
+  return g;
+}
+publicRoom(args.map); // the default map is always open
+
+function roomsInfo() {
+  const byMap = {};
+  for (const id of Object.keys(MAPS)) byMap[id] = 0;
+  let practice = 0;
+  for (const g of rooms.values()) {
+    if (g.practice) practice++;
+    else byMap[g.map.id] = (byMap[g.map.id] || 0) + g.humans.length;
+  }
+  const players = Object.values(byMap).reduce((a, b) => a + b, 0);
+  return { map: args.map, players, byMap, maps: Object.keys(MAPS), practiceGames: practice, build: BUILD };
+}
 
 function practiceRoom(msg) {
   const mapId = MAPS[msg.map] ? msg.map : args.map;
-  const id = 'practice-' + (++practiceSeq);
+  const id = 'practice-' + (++roomSeq);
   const game = new Game(mapId, { id, practice: true });
   rooms.set(id, game);
   return game;
-}
-
-function fillBots(game, human, msg) {
-  const total = Math.max(1, Math.min(9, parseInt(msg.bots, 10) || 5));
-  const diff = ['easy', 'normal', 'hard'].includes(msg.difficulty) ? msg.difficulty : 'normal';
-  // split everyone as evenly as possible, the human's side filled first
-  const size = { [TEAM.T]: 0, [TEAM.CT]: 0 };
-  size[human.team] = 1;
-  for (let i = 0; i < total; i++) {
-    const team = size[TEAM.T] <= size[TEAM.CT] ? TEAM.T : TEAM.CT;
-    size[team]++;
-    game.addBot(team, diff);
-  }
-  game.checkMode();
 }
 
 const wss = new WebSocketServer({ server, path: '/ws' });
@@ -151,9 +182,9 @@ wss.on('connection', (ws) => {
         fillBots(game, player, msg);
         log(`practice ${game.id} "${player.name}" map=${game.map.id} bots=${game.players.size - 1}`);
       } else {
-        game = publicGame;
+        game = publicRoom(msg.map, parseInt(msg.size, 10));
         player = game.addPlayer(ws, msg.name, { team });
-        log(`join  #${player.id} "${player.name}" team=${player.team} (${publicGame.players.size} online)`);
+        log(`join  #${player.id} "${player.name}" ${game.id} map=${game.map.id} team=${player.team} (${game.humans.length} here)`);
       }
       return;
     }
@@ -166,7 +197,12 @@ wss.on('connection', (ws) => {
     if (game.practice) {
       if (!game.humans.length) rooms.delete(game.id);
       log(`practice ${game.id} closed`);
-    } else log(`left  #${player.id} "${player.name}" (${publicGame.players.size} online)`);
+    } else {
+      log(`left  #${player.id} "${player.name}" ${game.id} (${game.humans.length} here)`);
+      // empty public rooms go away, except one on the default map
+      const keep = [...rooms.values()].filter((g) => !g.practice && g.map.id === args.map).length <= 1 && game.map.id === args.map;
+      if (!game.humans.length && !keep) rooms.delete(game.id);
+    }
   });
 
   ws.on('error', () => {});

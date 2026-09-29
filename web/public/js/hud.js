@@ -62,12 +62,12 @@ export class HUD {
   setWeapon(id, mag, reserve, reloadFrac) {
     const w = WEAPONS[id];
     this.set('wname', id, () => { this.el.weaponName.textContent = w.name; });
-    const melee = !!w.melee;
+    const melee = !!w.melee || !!w.bomb;
     this.set('mag', melee ? '—' : mag, (v) => {
       this.el.mag.textContent = v;
       this.el.mag.classList.toggle('low', !melee && mag <= Math.ceil(w.mag * 0.2));
     });
-    this.set('res', melee ? '' : reserve, (v) => { this.el.reserve.textContent = v; });
+    this.set('res', melee || w.grenade ? '' : reserve, (v) => { this.el.reserve.textContent = v; });
     this.set('rl', reloadFrac < 0 ? -1 : Math.round(reloadFrac * 50), (v) => {
       this.el.reloadBar.style.visibility = v < 0 ? 'hidden' : 'visible';
       if (v >= 0) this.el.reloadBar.firstElementChild.style.width = (v * 2) + '%';
@@ -272,27 +272,46 @@ export class HUD {
 
   buyOpen() { return !this.el.buymenu.classList.contains('hidden'); }
 
+  // CS-style keys: a number picks a category, then a number buys from it
+  buyKey(n) {
+    const cats = this._buyCats || [];
+    if (this._buyCat === null || this._buyCat === undefined) {
+      if (cats[n - 1]) { this._buyCat = n - 1; this.highlightBuy(); }
+      return;
+    }
+    const items = cats[this._buyCat] || [];
+    if (items[n - 1] && this._onBuy) this._onBuy(items[n - 1]);
+    this._buyCat = null;
+    this.highlightBuy();
+  }
+
+  highlightBuy() {
+    const cols = this.el.buyCols.querySelectorAll('.bcol');
+    cols.forEach((c, i) => c.classList.toggle('pick', i === this._buyCat));
+  }
+
   openBuy(ctx, onBuy) {
+    this._buyCat = null;
     this.el.buymenu.classList.remove('hidden');
     this.el.buyStatus.textContent = '';
     this._onBuy = onBuy;
     this.refreshBuy(ctx);
   }
 
-  closeBuy() { this.el.buymenu.classList.add('hidden'); }
+  closeBuy() { this.el.buymenu.classList.add('hidden'); this._buyCat = null; if (this._input) this._input.buyOpen = false; }
 
   refreshBuy({ money, team, inv, armor, helmet, kit, buyLeft }) {
     this.el.buyMoney.textContent = '$' + money;
     this.el.buyTimer.textContent = buyLeft < 0 ? 'warmup: buy anywhere' : `${Math.ceil(buyLeft)}s left to buy`;
-    this.el.buyCols.innerHTML = BUY_MENU.map((cat) => `<div class="bcol"><h4>${cat.title}</h4>${cat.items.map((id) => {
+    this._buyCats = BUY_MENU.map((cat) => cat.items.filter((id) => { const it = itemInfo(id); return !it.team || it.team === team; }));
+    this.el.buyCols.innerHTML = BUY_MENU.map((cat, ci) => `<div class="bcol"><h4><b>${ci + 1}</b> ${cat.title}</h4>${this._buyCats[ci].map((id, ii) => {
       const it = itemInfo(id);
-      if (it.team && it.team !== team) return '';
       let price = it.price;
       if (id === 'assault' && armor >= 100 && !helmet) price = 350;
       const own = it.weapon ? Object.values(inv).includes(id)
         : (id === 'kevlar' ? armor >= 100 : id === 'assault' ? armor >= 100 && helmet : id === 'kit' ? !!kit : false);
       const cls = ['bitem', money < price ? 'no' : '', own ? 'own' : ''].join(' ');
-      return `<button class="${cls}" data-item="${id}">${esc(it.name)}<span class="p">$${price}</span></button>`;
+      return `<button class="${cls}" data-item="${id}"><i class="k">${ii + 1}</i>${esc(it.name)}<span class="p">$${price}</span></button>`;
     }).join('')}</div>`).join('');
     for (const btn of this.el.buyCols.querySelectorAll('.bitem')) {
       btn.onclick = () => this._onBuy && this._onBuy(btn.dataset.item);

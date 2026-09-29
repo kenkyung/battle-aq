@@ -33,6 +33,8 @@ g.broadcast = (obj, ex) => {
     events.rounds.push(`${obj.winner === TEAM.T ? 'T' : 'CT'}:${obj.how}${note}`);
   }
   if (obj.t === 'halftime') events.halftime++;
+  if (obj.t === 'nade') events.nades = (events.nades || 0) + 1;
+  if (obj.t === 'nade_boom') events.booms = { ...(events.booms || {}), [obj.kind]: ((events.booms || {})[obj.kind] || 0) + 1 };
   if (obj.t === 'match_end') events.matchEnd = `${obj.scoreT}-${obj.scoreCT}`;
   orig(obj, ex);
 };
@@ -56,6 +58,13 @@ for (let i = 0; i < steps; i++) {
       movePlayer(cp, { f: true }, 1 / 30, g.colliders);
       console.log('  copy-move ->', cp.pos.map((v) => +v.toFixed(2)), 'orig', c.bot.state.pos.map((v) => +v.toFixed(3)), 'vel', cp.vel.map(Math.round));
       console.log('  overlaps', g.colliders.filter((k) => aabbOverlap(pb, k)).map((k) => k.mat + JSON.stringify([k.min.map(Math.round), k.max.map(Math.round)])).join(' | '), 'crouch', c.crouching, 'state===p.pos', c.bot.state.pos === c.pos, 'pos===path0', c.bot.path && c.bot.path.some((w) => w === c.pos), 'pos===goal', c.bot.goal && c.bot.goal.pos === c.pos, 'lastSeen', c.bot.lastSeen === c.pos);
+    }
+    if (c && c.bot && process.env.TRACE === '3') {
+      const near = [...g.players.values()].filter((q) => q !== c && q.alive && Math.hypot(q.pos[0] - c.pos[0], q.pos[2] - c.pos[2]) < 120).map((q) => `${q.name}/${q.team === c.team ? 'mate' : 'ENEMY'}@${q.pos.map(Math.round)}`);
+      { const { movePlayer } = await import('../shared/physics.js'); const cp = JSON.parse(JSON.stringify(c.bot.state)); cp.pos = c.pos.slice();
+        const before = cp.pos.slice(); movePlayer(cp, { f: true, maxSpeed: 250 }, 1 / 30, g.colliders);
+        console.log('  state', JSON.stringify({ pos: before.map((v) => +v.toFixed(2)), vel: c.bot.state.vel.map(Math.round), onG: c.bot.state.onGround, crouch: c.bot.state.crouching, jumpHeld: c.bot.state.jumpHeld, fat: +(c.bot.state.fatigue || 0).toFixed(2) }), '-> f-move', cp.pos.map((v) => +v.toFixed(2))); }
+      console.log('  near:', near.join(' '), 'target', c.bot.target && c.bot.target.name, 'unstick', !!c.bot.unstickUntil);
     }
     if (c && c.bot) console.log(Math.round(i / TICK_RATE), 'carrier', c.pos.map(Math.round), 'yaw', c.bot.state.yaw.toFixed(2), 'vel', c.bot.state.vel.map(Math.round), 'goal', c.bot.goal && c.bot.goal.key, 'wp', JSON.stringify(c.bot.path && c.bot.path[c.bot.pathIdx]), 'idx', c.bot.pathIdx, '/', c.bot.path && c.bot.path.length, 'weapon', c.weapon, 'planting', g.planting.has(c.id));
   }

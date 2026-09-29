@@ -20,7 +20,7 @@ function client(name) {
   const c = { ws, name, id: null, team: 0, pos: null, inv: null, ammo: null, msgs: [], last: {} };
   c.send = (o) => ws.send(JSON.stringify(o));
   c.got = (t) => c.msgs.filter((m) => m.t === t);
-  ws.onopen = () => c.send({ t: 'join', name });
+  ws.onopen = () => c.send({ t: 'join', name, size: 0 });
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     c.msgs.push(m); c.last[m.t] = m;

@@ -10,12 +10,14 @@ import { HUD } from './hud.js';
 import { Viewmodel } from './viewmodel.js';
 import { Effects } from './fx.js';
 import { BombView } from './bomb3d.js';
+import { NadeView } from './nades3d.js';
 import { Sfx, surfaceOf } from './sfx.js';
 import { preloadModels, setAnisotropy } from './assets.js';
 import { getMap, MAP_LIST } from '../shared/maps.js';
 import { WEAPONS, TEAM, PLAYER, CROSSHAIR } from '../shared/constants.js';
 import { inBuyZone } from '../shared/economy.js';
 import { raycast } from '../shared/physics.js';
+import { RADIO } from '../shared/radio.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -79,6 +81,7 @@ let map = null;
 let world = null;
 let fx = null;
 let bombView = null;
+let nadeView = null;
 let player = null;
 let remotes = null;
 let myId = null;
@@ -145,11 +148,12 @@ function surfaceAt(pos) {
 }
 
 // practice options
-for (const m of MAP_LIST) $('pMap').insertAdjacentHTML('beforeend', `<option value="${m.id}">${m.id.replace('de_aq_', '')}</option>`);
+for (const m of MAP_LIST) $('pMap').insertAdjacentHTML('beforeend', `<option value="${m.id}">${m.id.replace(/^(de|cs)_aq_/, '')}</option>`);
 $('pMap').value = store.get('baq_pmap', 'de_aq_dust');
 $('pTeam').value = store.get('baq_pteam', 'T');
 $('pDiff').value = store.get('baq_pdiff', 'normal');
 $('pBots').value = store.get('baq_pbots', '5');
+$('oSize').value = store.get('baq_osize', '5');
 $('pBotsVal').textContent = $('pBots').value;
 $('pBots').addEventListener('input', (e) => { $('pBotsVal').textContent = e.target.value; });
 
@@ -159,13 +163,25 @@ function setMode(m) {
   $('modeOnline').classList.toggle('on', m === 'online');
   $('modePractice').classList.toggle('on', m === 'practice');
   $('onlineOpts').classList.toggle('hidden', m !== 'online');
+  $('onlineSize').classList.toggle('hidden', m !== 'online');
+  $('sideOpts').classList.toggle('hidden', m !== 'practice');
   $('practiceOpts').classList.toggle('hidden', m !== 'practice');
   playBtn.textContent = m === 'practice' ? 'START PRACTICE' : 'PLAY ONLINE';
-  if (m === 'practice' && !running) useMap($('pMap').value);
+  if (!running) useMap($('pMap').value);
 }
 $('modeOnline').addEventListener('click', () => setMode('online'));
 $('modePractice').addEventListener('click', () => setMode('practice'));
-$('pMap').addEventListener('change', (e) => { if (mode === 'practice' && !running) useMap(e.target.value); });
+$('pMap').addEventListener('change', (e) => { store.set('baq_pmap', e.target.value); showOnline(); if (!running) useMap(e.target.value); });
+let serverInfo = null;
+function showOnline() {
+  if (!serverInfo) { $('online').textContent = '—'; return; }
+  const here = serverInfo.byMap ? serverInfo.byMap[$('pMap').value] || 0 : serverInfo.players;
+  $('online').textContent = `${here} on this map · ${serverInfo.players} total`;
+  for (const o of $('pMap').options) {
+    const n = serverInfo.byMap ? serverInfo.byMap[o.value] || 0 : 0;
+    o.textContent = o.value.replace(/^(de|cs)_aq_/, '') + (n ? ` (${n} playing)` : '');
+  }
+}
 
 function setLoad(frac, text) {
   $('loadBar').style.width = Math.round(frac * 100) + '%';
@@ -187,12 +203,13 @@ async function useMap(id) {
     fx.sfx = sfx;
     fx.surfaceOf = (mat) => surfaceOf(mat, map.id);
     bombView = new BombView(scene, fx);
+    if (nadeView) nadeView.clear();
+    nadeView = new NadeView(scene, fx, sfx, world.colliders);
     sfx.colliders = world.colliders;
     if (sfx.ctx) sfx.startAmbience(map.id);
     hud.setRadarMap(map, world.colliders);
     vm.baseHemi = 2.6 * map.ambient;
     vm.baseSun = 2.4 * map.sun;
-    $('mapName').textContent = map.name;
     if (player) { player.colliders = world.colliders; player.fx = fx; }
     if (remotes) { remotes.clear(); remotes.fx = fx; remotes.world = world; }
     if (player) { player.fx = fx; }
@@ -216,9 +233,9 @@ async function boot() {
   let info = null;
   try { info = await (await fetch(new URL('info', serverHttpBase()))).json(); } catch { /* offline */ }
   setLoad(0.6, 'building the map…');
-  const startMap = mode === 'practice' ? $('pMap').value : (info && info.map ? info.map : 'de_aq_dust');
-  await useMap(startMap);
-  $('online').textContent = info ? `${info.players} player${info.players === 1 ? '' : 's'}` : '—';
+  serverInfo = info;
+  showOnline();
+  await useMap($('pMap').value);
   setLoad(1, 'ready');
   $('loading').classList.add('hidden');
   menu.classList.remove('hidden');
@@ -231,10 +248,16 @@ playBtn.addEventListener('click', join);
 $('playerName').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
 
 function join() {
+  // grab the mouse now, inside the click: browsers only allow pointer lock
+  // from a user gesture, and it puts the focus straight on the game
+  sfx.unlock();
+  input.lock();
+  renderer.domElement.focus();
   const name = $('playerName').value.trim() || params.get('autojoin') || 'Player';
   store.set('baq_name', name);
   store.set('baq_server', $('serverAddr').value.trim());
-  const msg = { t: 'join', name };
+  store.set('baq_osize', $('oSize').value);
+  const msg = { t: 'join', name, map: $('pMap').value, size: +$('oSize').value };
   if (mode === 'practice') {
     Object.assign(msg, { mode: 'practice', map: $('pMap').value, team: $('pTeam').value, bots: +$('pBots').value, difficulty: $('pDiff').value });
     store.set('baq_pmap', msg.map); store.set('baq_pteam', msg.team); store.set('baq_pdiff', msg.difficulty); store.set('baq_pbots', String(msg.bots));
@@ -257,6 +280,7 @@ async function connect(joinMsg) {
   } catch {
     menuStatus.textContent = 'could not connect to the game server';
     playBtn.disabled = false;
+    if (document.pointerLockElement) document.exitPointerLock();
   }
 }
 
@@ -269,6 +293,7 @@ async function onWelcome(welcome) {
   remotes.surfaceAt = surfaceAt;
   player = new LocalPlayer(camera, world.colliders, net, vm, fx);
   player.others = () => remotes.targets();
+  player.bodies = () => remotes.bodies();
   player.surfaceAt = surfaceAt;
   player.sound = (name, opts = {}) => {
     if (name === 'step') name = `step_${opts.surface || 'sand'}_${Math.floor(Math.random() * 4)}`;
@@ -286,6 +311,7 @@ async function onWelcome(welcome) {
   else { player.state.pos = [...me.pos]; player.alive = false; }
   applyRound(welcome.round);
   bomb = welcome.bomb || { state: 'none' };
+  for (const s of welcome.smokes || []) nadeView.addSmoke(s.pos, s.left);
 
   menu.classList.add('hidden');
   hud.show();
@@ -464,7 +490,7 @@ function applyRound(r) {
   hud.setPhase(r.phase, r.round);
   hud.setScore(r.scoreT, r.scoreCT);
   if (r.phase === 'warmup') hud.centerMsg('WARMUP — the match starts when both teams have a player');
-  else if (r.phase === 'freeze') { hud.centerMsg('buy your gear: press B'); bomb = { state: 'none' }; }
+  else if (r.phase === 'freeze') { hud.centerMsg('buy your gear: press B'); bomb = { state: 'none' }; if (nadeView) nadeView.clear(); }
   else if (prev === 'freeze' || prev === 'warmup') hud.centerMsg('');
   if (prev === 'freeze' && r.phase === 'round') sfx.radio(Math.random() < 0.5 ? 'Go go go' : "Let's move out");
   if (r.phase !== 'matchend') hud.hideMatchEnd();
@@ -505,6 +531,32 @@ net.on('map', async (msg) => {
 });
 
 net.on('chat', (msg) => hud.addChat(msg.name, msg.team, msg.text));
+
+net.on('nade', (msg) => {
+  if (nadeView) nadeView.thrown(msg);
+  const r = roster.get(msg.owner);
+  if (r && r.team === myTeam) sfx.radio('Fire in the hole!');
+});
+net.on('nade_boom', (msg) => { if (nadeView) nadeView.boom(msg, player && player.state.pos); });
+
+// flashbang: white-out that holds, then fades; ears ring
+let flashT = 0, flashHold = 0, flashLen = 0, flashAmt = 0;
+net.on('flashed', (msg) => {
+  flashAmt = Math.max(flashAmt, msg.amount);
+  flashLen = Math.max(flashLen - flashT, msg.seconds); flashT = 0;
+  flashHold = msg.seconds * 0.45;
+  sfx.play('ring', { volume: 0.35 + 0.5 * msg.amount });
+  if (sfx.master) { sfx.master.gain.cancelScheduledValues(0); sfx.master.gain.setValueAtTime(sfx.volume * 0.25, sfx.ctx.currentTime); sfx.master.gain.linearRampToValueAtTime(sfx.volume, sfx.ctx.currentTime + msg.seconds); }
+});
+function updateFlash(dt) {
+  const el = $('flash');
+  if (flashLen <= 0) return;
+  flashT += dt;
+  const a = flashT < flashHold ? flashAmt : flashAmt * Math.max(0, 1 - (flashT - flashHold) / Math.max(0.1, flashLen - flashHold));
+  el.style.transition = 'none';
+  el.style.background = `rgba(255,255,255,${a.toFixed(3)})`;
+  if (flashT >= flashLen) { flashLen = 0; flashAmt = 0; el.style.background = 'rgba(255,255,255,0)'; el.style.transition = ''; }
+}
 
 net.onClose = () => {
   running = false;
@@ -580,10 +632,37 @@ function closeChat() {
   input.typing = false;
 }
 
+// ------------------------------------------------------------------ radio (Z / X / C)
+
+let radioMenu = null;
+function openRadio(menu) {
+  if (radioMenu === menu) { closeRadio(); return; }
+  radioMenu = menu;
+  input.radioOpen = true;
+  const title = { z: 'RADIO COMMANDS', x: 'GROUP RADIO COMMANDS', c: 'RADIO RESPONSES/REPORTS' }[menu];
+  $('radioMenu').innerHTML = `<h5>${title}</h5>` + RADIO[menu].map((t, i) => `<div><b>${i + 1}</b>${t}</div>`).join('') + '<div><b>0</b>Exit</div>';
+  $('radioMenu').classList.remove('hidden');
+}
+function closeRadio() { radioMenu = null; input.radioOpen = false; $('radioMenu').classList.add('hidden'); }
+net.on('radio', (msg) => {
+  hud.addChat('(RADIO) ' + msg.name, msg.team || myTeam, msg.text);
+  const last = document.getElementById('chatlog').lastChild; if (last) last.classList.add('radio');
+  sfx.radio(msg.text.replace(/[!.]/g, ''));
+  if (msg.menu === 'c' && msg.i === 1) radarPings.push({ pos: msg.pos, until: performance.now() / 1000 + 4 });
+});
+const radarPings = [];
+
 input.onKey = (code, e, down) => {
   if (!running) return;
   if (code === 'Tab') { scoresHeld = down; return; }
   if (!down) return;
+  if (radioMenu && code.startsWith('Digit')) {
+    const n = parseInt(code.slice(5), 10);
+    if (n > 0 && RADIO[radioMenu][n - 1]) net.send({ t: 'radio', menu: radioMenu, i: n - 1 });
+    closeRadio();
+    return;
+  }
+  if (code === 'KeyZ' || code === 'KeyX' || code === 'KeyC') { if (!input.typing && player && player.alive) openRadio(code[3].toLowerCase()); return; }
   if (code === 'KeyY' && !hud.buyOpen()) {
     e.preventDefault();
     input.typing = true;
@@ -594,10 +673,14 @@ input.onKey = (code, e, down) => {
     if (hud.buyOpen()) { hud.closeBuy(); input.lock(); }
     else if (canBuy()) {
       hud.openBuy(buyContext(), (item) => net.send({ t: 'buy', item }));
+      hud._input = input; input.buyOpen = true;
       if (document.pointerLockElement) document.exitPointerLock();
     } else { hud.centerMsg(round.phase === 'end' ? 'the round is over' : 'you can only buy in your spawn during buy time'); setTimeout(() => hud.centerMsg(''), 1800); }
   } else if (code === 'Escape') {
-    if (hud.buyOpen()) { hud.closeBuy(); showPause(true); }
+    // Esc just closes the buy menu (no pause screen); a click takes the mouse back
+    if (hud.buyOpen()) { hud.closeBuy(); hud.setHint('click to resume'); }
+  } else if (hud.buyOpen() && /^Digit[1-9]$/.test(code)) {
+    hud.buyKey(parseInt(code.slice(5), 10));
   }
 };
 
@@ -691,12 +774,18 @@ function frame(now) {
   remotes.update(dt, camera.position);
   if (bomb.state === 'planted' && bomb.localLeft !== undefined) bomb.localLeft -= dt;
   if (bombView) bombView.update(bomb, dt);
+  if (nadeView) nadeView.update(dt);
+  updateFlash(dt);
   bombBeep(dt);
   sfx.setListener(camera);
 
   if (!player.alive) updateSpectate(dt);
   else { hud.setSpectate(''); remotes.hiddenId = null; }
   if (debugCam) { camera.position.set(debugCam[0], debugCam[1], debugCam[2]); camera.rotation.set(debugCam[4] || 0, debugCam[3] || 0, 0); }
+  if (nadeView && nadeView.shake > 0) {
+    camera.position.x += (Math.random() - 0.5) * 8 * nadeView.shake;
+    camera.position.y += (Math.random() - 0.5) * 8 * nadeView.shake;
+  }
   // explosion shake
   if (bombView && bombView.shake > 0) {
     bombView.shake = Math.max(0, bombView.shake - dt * 1.2);
@@ -736,6 +825,9 @@ function frame(now) {
     const mates = [...remotes.players.values()].filter((r) => r.alive && r.team === myTeam)
       .map((r) => ({ pos: r.cur.pos, team: r.team, c4: bomb.state === 'carried' && bomb.carrier === r.id }));
     const src = player.alive ? player.state.pos : [camera.position.x, 0, camera.position.z];
+    const tp = performance.now() / 1000;
+    while (radarPings.length && radarPings[0].until < tp) radarPings.shift();
+    for (const p of radarPings) if (Math.floor(tp * 4) % 2) mates.push({ pos: p.pos, team: myTeam === TEAM.T ? TEAM.CT : TEAM.T });
     hud.drawRadar(src, player.alive ? player.state.yaw : camera.rotation.y, mates, bomb);
   }
 

@@ -17,6 +17,9 @@ const MAX_STEP = PLAYER.stepHeight;   // walkable rise between neighbours
 const MAX_DROP = 160;                 // safe fall between neighbours
 
 const cache = new Map();
+// offsets tried inside a cell when its centre does not fit a body
+const SPOTS = [[0, 0], [8, 0], [-8, 0], [0, 8], [0, -8], [8, 8], [-8, 8], [8, -8], [-8, -8],
+  [14, 0], [-14, 0], [0, 14], [0, -14], [14, 14], [-14, 14], [14, -14], [-14, -14]];
 
 export function navFor(map, colliders) {
   if (!cache.has(map.id)) cache.set(map.id, new NavGraph(map, colliders));
@@ -44,8 +47,11 @@ export class NavGraph {
         }
         const ids = [];
         for (const y of [...tops].sort((a, c) => a - c)) {
-          if (!this.standable(x, y, z)) continue;
-          const node = { i: this.nodes.length, x, y, z, cx, cz, links: [] };
+          // the cell centre, or the best-fitting spot nearby (corridors are
+          // rarely aligned to the 32 u grid)
+          const spot = SPOTS.find(([ox, oz]) => this.standable(x + ox, y, z + oz));
+          if (!spot) continue;
+          const node = { i: this.nodes.length, x: x + spot[0], y, z: z + spot[1], cx, cz, links: [] };
           this.nodes.push(node);
           ids.push(node.i);
         }
@@ -91,8 +97,7 @@ export class NavGraph {
   }
 
   standable(x, y, z) {
-    // exactly the body: touching a wall is fine (the physics overlap test is
-    // strict), anything narrower would let bots wedge into corners
+    // exactly the body (the physics treats touching as not overlapping)
     const hw = PLAYER.halfWidth;
     const box = { min: [x - hw, y + 1, z - hw], max: [x + hw, y + PLAYER.standHeight, z + hw] };
     // anything low enough to step onto (the next stair of a ramp) is not in the way
@@ -204,7 +209,7 @@ export class NavGraph {
       const t = k / steps;
       const x = a.x + dx * t, z = a.z + dz * t;
       // the body is 32 u wide: check both shoulders too
-      for (const off of [0, -12, 12]) {
+      for (const off of [0, -17, 17]) {   // full body width, so smoothed paths never clip corners
         const ox = x + (-dz / (L || 1)) * off, oz = z + (dx / (L || 1)) * off;
         const n = this.nodeAt(Math.floor((ox - this.x0) / CELL), Math.floor((oz - this.z0) / CELL), y);
         if (!n || Math.abs(n.y - y) > MAX_STEP) return false;

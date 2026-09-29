@@ -38,6 +38,8 @@ export class LocalPlayer {
     this.recoil = newRecoil(); // CS punch angles (the spray pattern) + accuracy state
     this.zoom = 0;        // 0 none, 1, 2
     this.planting = false; // holding the trigger with the C4 out
+    this.pinPulled = false; // grenade: armed while the trigger is held
+    this.nades = {};
     this.defusing = false; // holding E on the bomb
     this.frozen = false;   // freeze time: look, buy, but no moving
     this.shotCount = 0;    // for the HUD's crosshair kick
@@ -49,6 +51,7 @@ export class LocalPlayer {
     this._reloadTimers = [];
     this.kills = 0; this.deaths = 0;
     this.others = () => [];
+    this.bodies = () => []; // solid boxes of the other live players (main.js)
 
     this.camera.rotation.order = 'YXZ';
     this._sendTimer = 0;
@@ -62,6 +65,7 @@ export class LocalPlayer {
     this.money = m.money;
     this.kit = !!m.kit;
     this.c4 = !!m.c4;
+    this.nades = m.nades || {};
     this.armor = m.armor; this.helmet = m.helmet;
     if (typeof m.hp === 'number' && this.alive) this.hp = m.hp;
     this.inv = m.inv;
@@ -95,7 +99,10 @@ export class LocalPlayer {
   speed() { return Math.hypot(this.state.vel[0], this.state.vel[2]); }
   isMoving() { return this.speed() > 12; }
   reloading(now = performance.now() / 1000) { return this.reloadUntil > now; }
-  mag() { return this.ammo[this.weapon] ? this.ammo[this.weapon].mag : 0; }
+  mag() {
+    if (WEAPONS[this.weapon] && WEAPONS[this.weapon].grenade) return this.nades[this.weapon] || 0;
+    return this.ammo[this.weapon] ? this.ammo[this.weapon].mag : 0;
+  }
   reserve() { return this.ammo[this.weapon] ? this.ammo[this.weapon].reserve : 0; }
 
   // bullets leave along view + punch: the punch is the spray pattern
@@ -127,6 +134,14 @@ export class LocalPlayer {
   selectSlot(n) {
     const slot = SLOTS[n - 1];
     if (!slot) return;
+    if (slot === 'grenade') {
+      // 4 cycles through the grenades you carry
+      const kinds = ['hegrenade', 'flashbang', 'smokegrenade'].filter((k) => this.nades[k] > 0);
+      if (!kinds.length) return;
+      const i = kinds.indexOf(this.weapon);
+      this.equip(kinds[(i + 1) % kinds.length]);
+      return;
+    }
     const id = this.inv[slot];
     if (id && id !== this.weapon) this.equip(id);
   }
@@ -204,7 +219,10 @@ export class LocalPlayer {
       const still = this.frozen || this.planting || this.defusing;
       const keys = input.moveKeys();
       keys.maxSpeed = WEAPONS[this.weapon].speed;
-      movePlayer(this.state, still ? { ...keys, f: 0, b: 0, l: 0, r: 0, jump: 0, crouch: this.defusing || keys.crouch } : keys, dt, this.colliders);
+      // other players block you, as in CS
+      const bodies = this.bodies();
+      const solids = bodies.length ? this.colliders.concat(bodies) : this.colliders;
+      movePlayer(this.state, still ? { ...keys, f: 0, b: 0, l: 0, r: 0, jump: 0, crouch: this.defusing || keys.crouch } : keys, dt, solids);
 
       if (canAct) {
         const slot = input.consumeWeaponSlot();
@@ -214,6 +232,20 @@ export class LocalPlayer {
         if (wheel) this.cycle(wheel > 0 ? 1 : -1);
 
         const w = WEAPONS[this.weapon];
+        // grenade: press pulls the pin, release throws (CS)
+        if (w.grenade) {
+          input.consumeFirePressed();
+          if (input.fireHeld && !this.pinPulled && now >= this.nextFire && this.mag() > 0) {
+            this.pinPulled = true;
+            this.sound('pin', { volume: 0.6 });
+          } else if (!input.fireHeld && this.pinPulled) {
+            this.pinPulled = false;
+            this.nextFire = now + 0.6;
+            this.net.send({ t: 'throw', vel: this.state.vel });
+            this.sound('throw', { volume: 0.6 });
+            this.vm.fire();
+          }
+        } else this.pinPulled = false;
         // C4: hold the trigger to plant (the server checks the bombsite)
         if (w.bomb) {
           const hold = input.fireHeld;
@@ -227,7 +259,7 @@ export class LocalPlayer {
         if (input.consumeZoom() && w.zoomFov && !this.reloading(now)) {
           this.setZoom((this.zoom + 1) % 3);
         }
-        const wantFire = !w.bomb && !this.frozen && (w.auto ? input.fireHeld : input.consumeFirePressed());
+        const wantFire = !w.bomb && !w.grenade && !this.frozen && (w.auto ? input.fireHeld : input.consumeFirePressed());
         if (w.auto) input.consumeFirePressed();
         if (wantFire && !this.reloading(now) && now >= this.nextFire) {
           if (w.melee || this.mag() > 0) this.fire(now);
@@ -246,10 +278,11 @@ export class LocalPlayer {
       const sp = this.speed();
       if (this.state.onGround && sp > 150 && !this.state.crouching) {
         this._stepDist += sp * dt;
-        if (this._stepDist > 88) { this._stepDist = 0; this.sound('step', { surface: this.surfaceAt(this.state.pos), volume: 0.55 }); }
+        if (this._stepDist > 88) { this._stepDist = 0; this.sound('step', { surface: this.surfaceAt(this.state.pos), volume: 0.28 }); }
       }
       if (!this.state.onGround) this._fallSpeed = Math.max(this._fallSpeed, -this.state.vel[1]);
       if (this.state.onGround && !this._wasGround && this._fallSpeed > 320) this.sound('land', { volume: Math.min(1, this._fallSpeed / 600) });
+      if (this.state.landSpeed) { if (this.state.landSpeed > 580) this.net.send({ t: 'fall', speed: this.state.landSpeed }); this.state.landSpeed = 0; }
       if (this.state.onGround) this._fallSpeed = 0;
       this._wasGround = this.state.onGround;
     }

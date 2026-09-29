@@ -14,21 +14,25 @@ export const PLAYER = {
   crouchHitHeight: 52, // crouched HIT box: the model's head is higher than the hull
   standEye: 64,       // eye offset from feet, standing
   crouchEye: 34,      // eye offset from feet, crouched
-  stepHeight: 20,     // auto step-up (CS 1.6 ~18 u)
+  stepHeight: 18,     // auto step-up (CS 1.6 sv_stepsize 18)
   maxHp: 100,
 };
 
+// CS 1.6 player movement (pm_shared.c + cstrike server defaults).
 export const MOVE = {
-  gravity: 800,        // u/s^2 (HL1 sv_gravity)
-  jumpVelocity: 270,   // u/s upward
-  runSpeed: 250,       // u/s max ground speed
-  walkSpeed: 75,       // u/s with +speed (Shift)
-  crouchSpeedMul: 0.4, // fraction of run speed while crouched (~100 u/s)
-  friction: 4,         // ground friction (HL1 sv_friction)
-  stopSpeed: 100,      // below this, friction is stronger
-  accelerate: 10,      // ground acceleration (HL1 sv_accelerate)
-  airAccelerate: 0.7,  // air acceleration (HL1 sv_airaccelerate; low = commit to jumps)
-  airSpeedCap: 30,     // extra speed you can add in the air
+  gravity: 800,           // sv_gravity
+  jumpVelocity: 268.3,    // sqrt(2 * 800 * 45): a 45 u jump
+  runSpeed: 250,          // knife / pistols; heavier guns lower it (WEAPONS.speed)
+  walkSpeed: 130,         // +speed (Shift) = 0.52 x run speed
+  crouchSpeedMul: 0.333,  // ducked
+  friction: 4,            // sv_friction
+  stopSpeed: 75,          // sv_stopspeed
+  accelerate: 5,          // sv_accelerate
+  airAccelerate: 10,      // sv_airaccelerate
+  airSpeedCap: 30,        // wishspeed cap in the air (what makes air-strafing work)
+  jumpFatigue: 1.315,     // s after landing during which a jump is slowed (anti bunny-hop)
+  fallSafe: 580,          // fall speed above which you take damage
+  fallFatal: 1024,        // fall speed that kills
 };
 
 // Weapons: CS 1.6 values (HLSDK / CS 1.6 weapon code, cstrike 1.6).
@@ -92,6 +96,13 @@ export const WEAPONS = {
   awp:    { name: 'AWP', price: 4750, dmg: 115, rangeMod: 0.99, armorRatio: 1.95, rof: 1.45, mag: 10, reserve: 30, reload: 2.9,
             speed: 210, auto: false, slot: 'primary', team: 0, zoomFov: 40, zoomFov2: 10,
             spread: { air: [0.85, 0], move: [140, 0.25, 0], duck: [0, 0], stand: [0.001, 0] }, unscoped: 0.08, punch: 2 },
+  // Grenades (slot 4): press to pull the pin, release to throw.
+  hegrenade:    { name: 'HE Grenade', price: 300, dmg: 0, rangeMod: 1, armorRatio: 1, rof: 1.0, mag: 1, reserve: 0, reload: 0,
+                  speed: 250, auto: false, grenade: true, max: 1, slot: 'grenade', team: 0 },
+  flashbang:    { name: 'Flashbang', price: 200, dmg: 0, rangeMod: 1, armorRatio: 1, rof: 1.0, mag: 1, reserve: 0, reload: 0,
+                  speed: 250, auto: false, grenade: true, max: 2, slot: 'grenade', team: 0 },
+  smokegrenade: { name: 'Smoke Grenade', price: 300, dmg: 0, rangeMod: 1, armorRatio: 1, rof: 1.0, mag: 1, reserve: 0, reload: 0,
+                  speed: 250, auto: false, grenade: true, max: 1, slot: 'grenade', team: 0 },
   // The bomb: selected like a weapon (5), "fired" by holding the trigger in
   // a bombsite, which plants it. Never bought.
   c4:     { name: 'C4 Explosive', price: 0, dmg: 0, rangeMod: 1, armorRatio: 1, rof: 0.2, mag: 1, reserve: 0, reload: 0,
@@ -112,7 +123,7 @@ export const START_WEAPON = 'glock';
 // Loadouts (M2). `team` on a weapon is 0 (both), TEAM.T (1) or TEAM.CT (2).
 // Everyone spawns with a knife and their side's pistol; primaries are bought.
 export const DEFAULT_PISTOL = { 1: 'glock', 2: 'usp' };
-export const SLOTS = ['primary', 'secondary', 'melee', null, 'c4']; // keys 1, 2, 3, (4), 5
+export const SLOTS = ['primary', 'secondary', 'melee', 'grenade', 'c4']; // keys 1-5
 export const DRAW_TIME = 0.35;       // s after switching before the first shot
 export const MELEE_REACH = 72;       // u, knife hit distance
 export const NOSCOPE_CONE = 8.0;     // deg, sniper fired without the scope up
@@ -121,7 +132,7 @@ export const NOSCOPE_CONE = 8.0;     // deg, sniper fired without the scope up
 // shot pushes it out, per weapon. The HUD scales these to the screen.
 export const CROSSHAIR = {
   knife: [7, 3], glock: [8, 3], usp: [8, 3], deagle: [8, 3], mp5: [6, 2],
-  ak47: [4, 4], m4a1: [4, 3], awp: [8, 3], scout: [5, 3], c4: [6, 3], ump45: [6, 3], m249: [6, 3],
+  ak47: [4, 4], m4a1: [4, 3], awp: [8, 3], scout: [5, 3], c4: [6, 3], ump45: [6, 3], m249: [6, 3], hegrenade: [7, 3], flashbang: [7, 3], smokegrenade: [7, 3],
 };
 
 // Cone grows per shot toward maxCone over the first 10 shots; recovery only
@@ -133,8 +144,8 @@ export const RUN_CONE_MUL = 2.0;
 
 // Round structure (CS 1.6 defaults, shortened match: first to 8 of 15).
 export const ROUND = {
-  freezeTime: 5,        // s at round start: buy, but no moving
-  roundTime: 115,       // 1:55
+  freezeTime: 6,        // s at round start: buy, but no moving
+  roundTime: 150,       // 2:30
   roundEndTime: 5,      // s showing the result before the next round
   bombTime: 35,         // s from plant to explosion
   plantTime: 3,

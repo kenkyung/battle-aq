@@ -45,14 +45,22 @@ npm test           # CS 1.6 ballistics, smoke (join/sync/fire/kill), M2 economy,
 
 WASD move · mouse look · Space jump · Ctrl crouch · Shift walk ·
 LMB fire · RMB scope (AWP/Scout) · R reload · 1/2/3 primary/pistol/knife ·
-5 bomb (hold fire in a site to plant) · E defuse · G drop bomb · Q last weapon ·
-wheel cycle · B buy menu · Tab scores · Y chat · **Esc pause menu**
+4 grenades (hold fire, release to throw) · 5 bomb (hold fire in a site to plant) ·
+E defuse · G drop bomb · Q last weapon · wheel cycle · B buy menu (mouse or number
+keys) · Z / X / C radio commands · Tab scores · Y chat · **Esc pause menu**
 
-Crouch is Ctrl (or C); while you play, the game swallows browser shortcuts
+Crouch is Ctrl; while you play, the game swallows browser shortcuts
 like Ctrl+D. Only fullscreen (pause menu → Fullscreen) can also stop Ctrl+W.
 
 ## How a match works
 
+- **Online** rooms are per map and fill up with bots to 5v5 (or 4v4 / 3v3 /
+  none — menu setting); a joining player takes a bot's place.
+- **Movement** is CS 1.6's (pm_shared): accelerate 5, air-accelerate 10 with
+  the 30 u/s air wish cap, 45 u jumps with landing fatigue, fall damage, 18 u
+  steps; players block each other.
+- **Grenades**: HE (100 dmg / 350 u, walls stop it), flashbang (blinds by
+  distance and facing), smoke (18 s, blocks bots' sight). Max 1 / 2 / 1.
 - **Warmup** while one team is empty: respawn on death, $16000, buy anywhere.
 - **Match** as soon as both teams have a player: CS 1.6 rounds — 5 s freeze
   time, 1:55 round, first to 8 of 15, sides swap at halftime. The dead stay

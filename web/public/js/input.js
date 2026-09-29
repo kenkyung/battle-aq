@@ -3,7 +3,7 @@
 // delivered as callbacks so main.js can route them.
 
 const GAME_KEYS = new Set([
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC', 'KeyR', 'KeyQ', 'KeyE', 'KeyB', 'KeyY', 'KeyG',
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC', 'KeyR', 'KeyQ', 'KeyE', 'KeyB', 'KeyY', 'KeyG', 'KeyZ', 'KeyX',
   'Space', 'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'Tab',
   'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F1',
 ]);
@@ -42,7 +42,9 @@ export class Input {
       // keyboard. (Ctrl+W can only be blocked in fullscreen: see lockKeys.)
       if (this.capture && (e.ctrlKey || e.metaKey || e.altKey || GAME_KEYS.has(e.code))) e.preventDefault();
       if (e.code === 'Tab') e.preventDefault();
-      if (['KeyB', 'Tab', 'KeyY', 'Escape', 'Enter'].includes(e.code) && this.onKey) this.onKey(e.code, e, true);
+      if (['KeyB', 'Tab', 'KeyY', 'Escape', 'Enter', 'KeyZ', 'KeyX', 'KeyC'].includes(e.code) && this.onKey) this.onKey(e.code, e, true);
+      // digits pick a radio line while a radio menu is open
+      if ((this.radioOpen || this.buyOpen) && /^Digit[0-9]$/.test(e.code)) { if (this.onKey) this.onKey(e.code, e, true); return; }
       if (e.repeat) return;
       this.keys.add(e.code);
       if (e.code === 'KeyR') this.reloadPressed = true;
@@ -113,7 +115,7 @@ export class Input {
       l: k.has('KeyA') || k.has('ArrowLeft'),
       r: k.has('KeyD') || k.has('ArrowRight'),
       jump: k.has('Space'),
-      crouch: k.has('ControlLeft') || k.has('ControlRight') || k.has('KeyC'),
+      crouch: k.has('ControlLeft') || k.has('ControlRight'),
       walk: k.has('ShiftLeft') || k.has('ShiftRight'),
     };
   }

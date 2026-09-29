@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from '../vendor/addons/utils/SkeletonUtils.js';
 import { TEAM } from '../shared/constants.js';
+import { playerBox } from '../shared/physics.js';
 import { Models, weaponModel } from './assets.js';
 
 // Right-hand grip in model space (three.js coords; Blender (3.8, 13.4, 49.4)).
@@ -186,6 +187,9 @@ export class Remotes {
   update(dt, cameraPos) {
     const t = Math.min(1, dt * 12);
     for (const r of this.players.values()) {
+      // a jump of more than a few metres is a respawn/teleport: snap there
+      // instead of gliding across the map (which looked like walking through walls)
+      if (Math.hypot(r.tgt.pos[0] - r.cur.pos[0], r.tgt.pos[2] - r.cur.pos[2]) > 220) r.cur.pos = r.tgt.pos.slice();
       const prev = r.cur.pos.slice();
       for (let i = 0; i < 3; i++) r.cur.pos[i] += (r.tgt.pos[i] - r.cur.pos[i]) * t;
       let dy = r.tgt.yaw - r.cur.yaw;
@@ -212,7 +216,7 @@ export class Remotes {
         if (r.stepDist > 88) {
           r.stepDist = 0;
           const v = Math.floor(Math.random() * 4);
-          this.sfx.playAt(`step_${this.surfaceAt(r.cur.pos)}_${v}`, [r.cur.pos[0], r.cur.pos[1] + 4, r.cur.pos[2]], { volume: 0.9, ref: 110, max: 2600 });
+          this.sfx.playAt(`step_${this.surfaceAt(r.cur.pos)}_${v}`, [r.cur.pos[0], r.cur.pos[1] + 4, r.cur.pos[2]], { volume: 0.5, ref: 90, max: 2200 });
         }
       }
       if (r.mixer) {
@@ -222,9 +226,11 @@ export class Remotes {
         // aim pitch on top of the clip
         if (r.alive) {
           const p = Math.max(-1.2, Math.min(1.2, r.cur.pitch));
-          if (r.bones.spine) r.bones.spine.rotateX(-p * 0.35);
-          if (r.bones.chest) r.bones.chest.rotateX(-p * 0.55);
-          if (r.bones.head) r.bones.head.rotateX(-p * 0.1);
+          // the rig's bone +X leans BACK (see build_characters.py), so aiming
+          // up = +X; aiming down bends forward, never backwards
+          if (r.bones.spine) r.bones.spine.rotateX(p * 0.3);
+          if (r.bones.chest) r.bones.chest.rotateX(p * 0.45);
+          if (r.bones.head) r.bones.head.rotateX(p * 0.15);
         }
       }
       r.tag.visible = r.alive && r.team === this.myTeam;
@@ -240,6 +246,13 @@ export class Remotes {
         r.group.traverse((o) => { if (o.material && o.material.color && !o.isSprite) o.material.color.setScalar(r.light); });
       }
     }
+  }
+
+  // solid boxes for the local player's movement
+  bodies() {
+    const out = [];
+    for (const r of this.players.values()) if (r.alive && r.id !== this.hiddenId) out.push(playerBox(r.cur.pos, r.tgt.crouching));
+    return out;
   }
 
   // list for effects raycasts

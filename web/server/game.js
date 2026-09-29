@@ -32,6 +32,9 @@ import {
   buildColliders, playerBox, hitBox, raycast, raycastPlayers, norm, len, sub,
 } from '../shared/physics.js';
 import { navFor } from './nav.js';
+import { radioText } from '../shared/radio.js';
+import { MOVE } from '../shared/constants.js';
+import { NADES, throwVelocity, newNade, stepNade, flashAmount } from '../shared/grenades.js';
 import { BotBrain, BOT_NAMES } from './bot.js';
 
 let nextId = 1;
@@ -40,13 +43,18 @@ const now = () => Date.now() / 1000;
 const other = (team) => (team === TEAM.T ? TEAM.CT : TEAM.T);
 
 export class Game {
-  constructor(mapId = 'de_aq_dust', { practice = false, id = 'public' } = {}) {
+  constructor(mapId = 'de_aq_dust', { practice = false, id = 'public', fillTo = 0, botDifficulty = 'normal' } = {}) {
     this.id = id;
     this.practice = practice;
+    this.fillTo = fillTo;               // public rooms: top each team up to this many with bots
+    this.botDifficulty = botDifficulty;
     this.players = new Map(); // id -> player
     this.planting = new Map(); // playerId -> start time
     this.defusing = new Map(); // playerId -> start time
     this.votes = new Map();    // playerId -> mapId
+    this.nades = [];           // grenades in flight
+    this.smokes = [];          // active smoke clouds { pos, from, until, radius }
+    this.nadeSeq = 0;
     this.loadMap(mapId);
     this.phase = 'warmup';
     this.phaseEndsAt = 0;
@@ -125,6 +133,7 @@ export class Game {
     }
     this.roundNumber++;
     this.plantedThisRound = false;
+    this.nades = []; this.smokes = [];
     this.planting.clear(); this.defusing.clear();
     this.buyEndsAt = now() + ROUND.freezeTime + ECONOMY.buyTimeIntoRound;
     this.setPhase('freeze', ROUND.freezeTime);
@@ -163,6 +172,7 @@ export class Game {
     }
     for (const p of this.players.values()) if (p.bot) p.bot.think(dt, t);
     this.updateBomb(t);
+    this.updateNades(dt, t);
     if (this.phase === 'warmup' || t < this.phaseEndsAt) return;
     if (this.phase === 'freeze') this.setPhase('round', ROUND.roundTime);
     else if (this.phase === 'round') this.endRound(TEAM.CT, 'time');
@@ -416,8 +426,10 @@ export class Game {
 
   addPlayer(ws, name, { team: wantTeam = 0 } = {}) {
     const id = nextId++;
-    // auto-balance: join the smaller team (T on a tie), or the one asked for
-    let team = this.teamSize(TEAM.T) <= this.teamSize(TEAM.CT) ? TEAM.T : TEAM.CT;
+    // auto-balance by HUMANS (bots make way), then by total; T on a tie
+    const hT = this.humanCount(TEAM.T), hCT = this.humanCount(TEAM.CT);
+    let team = hT !== hCT ? (hT < hCT ? TEAM.T : TEAM.CT)
+      : (this.teamSize(TEAM.T) <= this.teamSize(TEAM.CT) ? TEAM.T : TEAM.CT);
     if (wantTeam === TEAM.T || wantTeam === TEAM.CT) team = wantTeam;
     const p = this.makePlayer(id, ws, (String(name || '').trim() || `Player ${id}`).slice(0, 24), team);
     this.players.set(id, p);
@@ -435,11 +447,35 @@ export class Game {
       players: [...this.players.values()].map((q) => this.publicPlayer(q)),
       round: this.roundInfo(),
       bomb: this.bombInfo(p),
+      smokes: this.smokes.map((s2) => ({ pos: s2.pos, left: s2.until - now() })),
     });
     this.sendInv(p);
     this.broadcast({ t: 'spawn', player: this.publicPlayer(p) }, id);
+    this.balanceBots();
     this.checkMode();
     return p;
+  }
+
+  humanCount(team) {
+    let n = 0;
+    for (const p of this.players.values()) if (p.team === team && !p.bot) n++;
+    return n;
+  }
+
+  // Public rooms: keep each team at `fillTo` players with bots. A joining
+  // human takes a bot's place; an empty room has no bots.
+  balanceBots() {
+    if (!this.fillTo || this.practice) return;
+    const anyHuman = this.humans.length > 0;
+    for (const team of [TEAM.T, TEAM.CT]) {
+      const bots = [...this.players.values()].filter((p) => p.bot && p.team === team);
+      const want = anyHuman ? Math.max(0, this.fillTo - this.humanCount(team)) : 0;
+      for (let i = bots.length; i < want; i++) this.addBot(team, this.botDifficulty);
+      if (bots.length > want) {
+        bots.sort((a, b) => (a.alive - b.alive) || (b.id - a.id)); // dead ones first
+        for (const b of bots.slice(0, bots.length - want)) this.removePlayer(b.id, true);
+      }
+    }
   }
 
   addBot(team, difficulty = 'normal') {
@@ -461,7 +497,7 @@ export class Game {
       pos: [0, 0, 0], yaw: 0, pitch: 0, crouching: false, moving: false,
       hp: PLAYER.maxHp, armor: 0, helmet: false, kit: false, c4: false, alive: false,
       money: this.competitive ? ECONOMY.startMoney : ECONOMY.warmupMoney,
-      inv: {}, ammo: {}, weapon: 'knife',
+      inv: {}, ammo: {}, weapon: 'knife', nades: {}, blindUntil: 0,
       nextFire: 0, lastFire: 0, burst: 0, reloadUntil: 0, recoil: newRecoil(), speed: 0,
       kills: 0, deaths: 0,
     };
@@ -469,13 +505,14 @@ export class Game {
     return p;
   }
 
-  removePlayer(id) {
+  removePlayer(id, fromBalance = false) {
     const p = this.players.get(id);
     if (!p) return;
     if (p.c4 && p.alive) this.dropBomb(p);
     this.players.delete(id);
     this.planting.delete(id); this.defusing.delete(id); this.votes.delete(id);
     this.broadcast({ t: 'despawn', id });
+    if (!fromBalance) this.balanceBots();
     this.checkMode();
     this.checkWinCondition();
   }
@@ -489,6 +526,7 @@ export class Game {
     };
     p.weapon = pistol;
     p.armor = 0; p.helmet = false; p.kit = false;
+    p.nades = {};
     p.reloadUntil = 0; p.burst = 0;
   }
 
@@ -589,6 +627,23 @@ export class Game {
       case 'defuse':
         this.setDefusing(p, !!msg.on);
         break;
+      case 'fall': {
+        // client-reported landing speed (movement is client-predicted); CS
+        // 1.6: damage above 580 u/s, fatal at 1024
+        const v = Number(msg.speed);
+        if (!p.alive || !Number.isFinite(v) || v <= MOVE.fallSafe) break;
+        const dmg = Math.min(200, Math.round((v - MOVE.fallSafe) * (100 / (MOVE.fallFatal - MOVE.fallSafe))));
+        p.hp -= dmg;
+        this.broadcast({ t: 'hit', victim: p.id, attacker: p.id, part: 'legs', dmg, hp: Math.max(0, p.hp), armor: p.armor, weapon: 'fall', point: p.pos, from: p.pos });
+        if (p.hp <= 0) this.kill(p, null, 'fall', false);
+        break;
+      }
+      case 'radio':
+        this.radio(p, String(msg.menu || ''), Number(msg.i));
+        break;
+      case 'throw':
+        this.throwNade(p, msg);
+        break;
       case 'drop':
         if (p.alive && p.c4 && this.phase !== 'freeze') { p.dropCooldown = now() + 1.5; this.dropBomb(p, true); }
         break;
@@ -609,7 +664,89 @@ export class Game {
   // ------------------------------------------------------------- weapons
 
   owns(p, id) {
+    if (WEAPONS[id] && WEAPONS[id].grenade) return (p.nades[id] || 0) > 0;
     return p.inv.primary === id || p.inv.secondary === id || p.inv.melee === id || (id === 'c4' && p.c4);
+  }
+
+  // ------------------------------------------------------------- grenades
+
+  throwNade(p, msg = {}) {
+    const w = WEAPONS[p.weapon];
+    const t = now();
+    if (!p.alive || !w || !w.grenade || !(p.nades[p.weapon] > 0) || t < p.nextFire - 0.05) return;
+    if (this.phase === 'freeze' || this.phase === 'matchend') return;
+    const kind = p.weapon;
+    const v = Array.isArray(msg.vel) && msg.vel.every(Number.isFinite) ? msg.vel.map((x) => Math.max(-400, Math.min(400, x))) : [0, 0, 0];
+    const { vel, fwd } = throwVelocity(p.yaw, p.pitch, v);
+    const eye = [p.pos[0], p.pos[1] + (p.crouching ? PLAYER.crouchEye : PLAYER.standEye), p.pos[2]];
+    // start 16 u in front of the eye, unless that is inside a wall
+    let origin = [eye[0] + fwd[0] * 16, eye[1] + fwd[1] * 16, eye[2] + fwd[2] * 16];
+    if (raycast(eye, fwd, this.colliders, 18)) origin = eye;
+    const n = { id: ++this.nadeSeq, owner: p.id, team: p.team, ...newNade(kind, origin, vel) };
+    this.nades.push(n);
+    p.nades[kind]--;
+    p.nextFire = t + 0.6;
+    this.broadcast({ t: 'nade', id: n.id, kind, pos: origin, vel, owner: p.id });
+    // CS: after the last one, back to your gun
+    if (!(p.nades[kind] > 0)) {
+      p.weapon = p.inv.primary || p.inv.secondary || 'knife';
+      resetRecoil(p.recoil, p.weapon);
+    }
+    this.sendInv(p);
+  }
+
+  updateNades(dt, t) {
+    for (let i = this.nades.length - 1; i >= 0; i--) {
+      const n = this.nades[i];
+      stepNade(n, dt, this.colliders);
+      const spec = NADES[n.kind];
+      const due = spec.settle ? (n.rest && n.age >= spec.fuse) || n.age > 3.5 : n.age >= spec.fuse;
+      if (!due) continue;
+      this.nades.splice(i, 1);
+      this.detonate(n, t);
+    }
+    this.smokes = this.smokes.filter((s) => t < s.until);
+  }
+
+  detonate(n, t) {
+    const pos = n.pos;
+    const spec = NADES[n.kind];
+    const owner = this.players.get(n.owner);
+    this.broadcast({ t: 'nade_boom', id: n.id, kind: n.kind, pos, duration: spec.duration || 0 });
+    if (n.kind === 'smokegrenade') {
+      this.smokes.push({ pos: [pos[0], pos[1] + 40, pos[2]], from: t, until: t + spec.duration, radius: spec.radius });
+      return;
+    }
+    const blastFrom = [pos[0], pos[1] + 8, pos[2]];
+    const visible = (to) => {
+      const d = [to[0] - blastFrom[0], to[1] - blastFrom[1], to[2] - blastFrom[2]];
+      const L = Math.hypot(...d);
+      return L < 1 || !raycast(blastFrom, d.map((x) => x / L), this.colliders, L - 2);
+    };
+    for (const q of this.players.values()) {
+      if (!q.alive) continue;
+      if (n.kind === 'hegrenade') {
+        const chest = [q.pos[0], q.pos[1] + 36, q.pos[2]];
+        const d = Math.hypot(chest[0] - pos[0], chest[1] - pos[1], chest[2] - pos[2]);
+        if (d >= spec.radius || !visible(chest)) continue;
+        // no friendly fire, but you can hurt yourself
+        if (owner && q !== owner && q.team === n.team && this.competitive) continue;
+        const raw = spec.damage * (1 - d / spec.radius);
+        const { hpDmg, armorDmg } = armorAbsorb(raw, 'chest', q.armor, q.helmet, 1.0);
+        q.armor = Math.max(0, q.armor - armorDmg);
+        q.hp -= hpDmg;
+        if (q.bot && owner) q.bot.onHurt(owner, t);
+        this.broadcast({ t: 'hit', victim: q.id, attacker: n.owner, part: 'chest', dmg: hpDmg, hp: Math.max(0, q.hp), armor: q.armor, helmet: !!q.helmet, weapon: 'hegrenade', point: chest, from: pos });
+        if (q.hp <= 0) this.kill(q, owner && owner !== q ? owner : null, 'hegrenade', false);
+      } else if (n.kind === 'flashbang') {
+        const eye = [q.pos[0], q.pos[1] + (q.crouching ? PLAYER.crouchEye : PLAYER.standEye), q.pos[2]];
+        if (!visible(eye)) continue;
+        const f = flashAmount(eye, q.yaw, q.pitch, pos);
+        if (f.amount <= 0.02) continue;
+        q.blindUntil = t + f.seconds * Math.min(1, f.amount + 0.2);
+        this.send(q, { t: 'flashed', amount: f.amount, seconds: f.seconds, pos });
+      }
+    }
   }
 
   handleSwitch(p, id) {
@@ -626,7 +763,7 @@ export class Game {
   handleFire(p, msg) {
     if (!p.alive || this.phase === 'freeze' || this.phase === 'matchend') return;
     const w = WEAPONS[p.weapon];
-    if (w.bomb) return; // the C4 is "fired" by holding the trigger: see 'plant'
+    if (w.bomb || w.grenade) return; // C4: see 'plant'; grenades: see 'throw'
     const t = now();
     const ammo = p.ammo[p.weapon];
     // Tolerance: packets bunch up in transit, so allow a slightly early shot.
@@ -669,6 +806,19 @@ export class Game {
       this.applyDamage(p, phit, w);
     }
     if (!w.melee && ammo.mag === 0 && ammo.reserve > 0) this.handleReload(p); // auto-reload
+  }
+
+  radio(p, menu, i) {
+    const text = radioText(menu, i);
+    const t = now();
+    if (!text || !p.alive || t < (p.radioAt || 0)) return;
+    p.radioAt = t + 1.2;                       // no spamming
+    this.broadcastTeam(p.team, { t: 'radio', id: p.id, name: p.name, menu, i, text, pos: p.pos });
+    // bots answer a few calls
+    if (menu === 'x' && i === 5) {             // report in
+      let k = 0;
+      for (const q of this.players.values()) if (q.bot && q.alive && q.team === p.team && k++ < 3) setTimeout(() => this.radio(q, 'c', 5), 600 + k * 500);
+    }
   }
 
   // gunfire is heard by bots within ~1800 u
@@ -723,6 +873,7 @@ export class Game {
     if (victim.c4) this.dropBomb(victim);
     if (attacker && attacker !== victim) {
       attacker.kills++;
+      if (attacker.bot && Math.random() < 0.3) setTimeout(() => this.radio(attacker, 'c', 8), 400);   // Enemy down
       const reward = WEAPONS[weapon] && WEAPONS[weapon].melee ? ECONOMY.knifeKillReward : ECONOMY.killReward;
       if (victim.team !== attacker.team) this.addMoney(attacker, reward, 'kill');
     }
@@ -777,7 +928,12 @@ export class Game {
     if (info.team && info.team !== p.team) return fail('not available to your team');
     let price = info.price;
 
-    if (info.weapon) {
+    if (info.weapon && WEAPONS[item].grenade) {
+      const w = WEAPONS[item];
+      if ((p.nades[item] || 0) >= w.max) return fail(`you can't carry any more`);
+      if (p.money < price) return fail('not enough money');
+      p.nades[item] = (p.nades[item] || 0) + 1;
+    } else if (info.weapon) {
       const w = WEAPONS[item];
       if (p.inv[w.slot] === item) return fail('you already have one');
       if (p.money < price) return fail('not enough money');
@@ -829,8 +985,14 @@ export class Game {
     for (const [id, a] of Object.entries(p.ammo)) ammo[id] = [a.mag, a.reserve];
     return {
       money: p.money, armor: p.armor, helmet: p.helmet, kit: p.kit, c4: p.c4, hp: p.hp,
-      inv: { ...p.inv, c4: p.c4 ? 'c4' : null }, weapon: p.weapon, ammo, reloading: !!p.reloadUntil,
+      inv: { ...p.inv, c4: p.c4 ? 'c4' : null, grenade: this.currentNade(p) }, nades: { ...p.nades },
+      weapon: p.weapon, ammo, reloading: !!p.reloadUntil,
     };
+  }
+
+  currentNade(p) {
+    if (WEAPONS[p.weapon] && WEAPONS[p.weapon].grenade && p.nades[p.weapon] > 0) return p.weapon;
+    return ['hegrenade', 'flashbang', 'smokegrenade'].find((k) => p.nades[k] > 0) || null;
   }
 
   sendInv(p, delta = 0, reason = '') {

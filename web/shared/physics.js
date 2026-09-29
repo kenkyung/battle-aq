@@ -164,19 +164,54 @@ export function hitBox(pos, crouching) {
   };
 }
 
+// Overlap test with a 0.05 u tolerance: surfaces that merely touch (or the
+// hundredths of a unit left by collision clamping) do not count. Without it a
+// gap exactly one body wide (32 u) could never be walked through.
+const TOUCH = 0.05;
 export function aabbOverlap(a, b) {
-  return a.min[0] < b.max[0] && a.max[0] > b.min[0]
-      && a.min[1] < b.max[1] && a.max[1] > b.min[1]
-      && a.min[2] < b.max[2] && a.max[2] > b.min[2];
+  return a.min[0] < b.max[0] - TOUCH && a.max[0] > b.min[0] + TOUCH
+      && a.min[1] < b.max[1] - TOUCH && a.max[1] > b.min[1] + TOUCH
+      && a.min[2] < b.max[2] - TOUCH && a.max[2] > b.min[2] + TOUCH;
 }
 
 // ---------------------------------------------------------------- movement
 
 // state: { pos, vel, yaw, pitch, onGround, crouching }
 // input: { f, b, l, r (0/1), jump, crouch, walk (0/1) }
+// Push a body that is (even slightly) inside solid geometry back out along
+// the shortest way. Without this, the "only clamp faces you approached from
+// outside" rule below would let a body that ends up overlapping a box — by
+// standing up under a ledge, a spawn, a teleport — walk straight through it.
+export function depenetrate(p, colliders) {
+  for (let iter = 0; iter < 4; iter++) {
+    const box = playerBox(p.pos, p.crouching);
+    let moved = false;
+    for (const c of colliders) {
+      if (!aabbOverlap(box, c)) continue;
+      const push = [
+        [c.max[0] - box.min[0] + 0.02, 0], [c.min[0] - box.max[0] - 0.02, 0],
+        [c.max[2] - box.min[2] + 0.02, 2], [c.min[2] - box.max[2] - 0.02, 2],
+        [c.max[1] - box.min[1] + 0.02, 1],                 // up onto it (small steps only)
+      ].filter(([d, ax]) => ax !== 1 || d <= PLAYER.stepHeight);
+      push.sort((a, b) => Math.abs(a[0]) - Math.abs(b[0]));
+      const [d, ax] = push[0];
+      p.pos[ax] += d;
+      if (ax === 1 && p.vel) { p.vel[1] = Math.max(0, p.vel[1]); p.onGround = true; }
+      moved = true;
+      break;
+    }
+    if (!moved) return;
+  }
+}
+
 export function movePlayer(state, input, dt, colliders) {
   const p = state;
-  p.crouching = !!input.crouch;
+  // standing up needs headroom (otherwise the head goes into the ceiling)
+  if (!input.crouch && p.crouching) {
+    const stand = playerBox(p.pos, false);
+    p.crouching = colliders.some((c) => aabbOverlap(stand, c));
+  } else p.crouching = !!input.crouch;
+  depenetrate(p, colliders);
 
   // wish direction from yaw (pitch does not move you)
   const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
@@ -210,31 +245,36 @@ export function movePlayer(state, input, dt, colliders) {
     }
   }
 
-  // accelerate (Quake/HL style)
+  // accelerate: PM_Accelerate / PM_AirAccelerate
+  const wishspeed = wl > 0 ? maxspeed : 0;
   const currentSpeed = dot([p.vel[0], 0, p.vel[2]], wishdir);
   if (p.onGround) {
-    const addSpeed = maxspeed - currentSpeed;
+    const addSpeed = wishspeed - currentSpeed;
     if (addSpeed > 0) {
-      const accel = Math.min(MOVE.accelerate * maxspeed * dt, addSpeed);
+      const accel = Math.min(MOVE.accelerate * wishspeed * dt, addSpeed);
       p.vel[0] += wishdir[0] * accel;
       p.vel[2] += wishdir[2] * accel;
     }
-  } else {
-    // air: weak influence, capped wishspeed
-    const airWish = Math.min(maxspeed, MOVE.airSpeedCap);
-    const addSpeed = airWish - currentSpeed;
+  } else if (wishspeed > 0) {
+    // the add is capped at 30 u/s along wishdir, but the acceleration uses the
+    // full wishspeed — turning while strafing in the air gains speed (CS)
+    const addSpeed = Math.min(wishspeed, MOVE.airSpeedCap) - currentSpeed;
     if (addSpeed > 0) {
-      const accel = Math.min(MOVE.airAccelerate * airWish * dt * 10, addSpeed);
+      const accel = Math.min(MOVE.airAccelerate * wishspeed * dt, addSpeed);
       p.vel[0] += wishdir[0] * accel;
       p.vel[2] += wishdir[2] * accel;
     }
   }
 
-  // jump
-  if (input.jump && p.onGround) {
-    p.vel[1] = MOVE.jumpVelocity;
+  // jump; soon after a landing it is weaker (CS fuser2 anti bunny-hop)
+  p.fatigue = Math.max(0, (p.fatigue || 0) - dt);
+  if (input.jump && p.onGround && !p.jumpHeld) {
+    const ratio = p.fatigue > 0 ? (100 - p.fatigue * 1000 * 0.019) * 0.01 : 1;
+    p.vel[0] *= ratio; p.vel[2] *= ratio;
+    p.vel[1] = MOVE.jumpVelocity * ratio;
     p.onGround = false;
   }
+  p.jumpHeld = !!input.jump && !input.autoHop;
 
   // gravity
   if (!p.onGround) p.vel[1] -= MOVE.gravity * dt;
@@ -243,8 +283,12 @@ export function movePlayer(state, input, dt, colliders) {
   moveAxis(p, colliders, 0, p.vel[0] * dt);
   moveAxis(p, colliders, 2, p.vel[2] * dt);
   const wasFalling = p.vel[1] <= 0;
+  const fallSpeed = -p.vel[1];
   const hitY = moveAxis(p, colliders, 1, p.vel[1] * dt);
-  if (hitY < 0 && wasFalling) { p.onGround = true; p.vel[1] = 0; }
+  if (hitY < 0 && wasFalling) {
+    if (!p.onGround) { p.fatigue = MOVE.jumpFatigue; p.landSpeed = fallSpeed; }
+    p.onGround = true; p.vel[1] = 0;
+  }
   else if (hitY > 0) { p.vel[1] = 0; }
   else if (hitY === 0 && p.onGround) {
     // verify we're still grounded (walking off an edge)

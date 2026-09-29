@@ -507,9 +507,41 @@ def c4():
     return (0, 0, 2.7), (-2.4, 0, 0.9), (0, 0, 0)
 
 
+def grenade(gid, kind):
+    if kind == 'he':
+        dome('bodytop', (0, 0, 1.2), 1.25, 'g', M('olive'), scale=(1, 1, 1.25), segs=14)
+        dome('bodybot', (0, 0, 1.2), 1.25, 'g', M('olive'), scale=(1, 1, -1.1), segs=14)
+        for k in range(4):
+            cyl('seg%d' % k, (0, 0, 0.3 + k * 0.55), (0, 0, 0.36 + k * 0.55), 1.27, 'g', M('tape'), verts=14)
+        top = 2.6
+    else:
+        body = M('grey') if kind == 'flash' else M('grey')
+        cyl('body', (0, 0, -0.2), (0, 0, 3.4), 0.95, 'g', body, verts=16)
+        if kind == 'smoke':
+            cyl('band', (0, 0, 2.2), (0, 0, 2.7), 0.97, 'g', M('olive'), verts=16)
+            for k in range(6):
+                a = k * math.pi / 3
+                cyl('hole%d' % k, (0.95 * math.cos(a), 0.95 * math.sin(a), 0.4), (1.0 * math.cos(a), 1.0 * math.sin(a), 0.4), 0.18, 'g', M('rubber'), verts=6)
+        else:
+            for k in range(3):
+                cyl('ring%d' % k, (0, 0, 0.5 + k * 1.1), (0, 0, 0.62 + k * 1.1), 0.98, 'g', M('bright'), verts=16)
+        top = 3.4
+    cyl('fuse', (0, 0, top - 0.1), (0, 0, top + 0.6), 0.45, 'g', M('steel'), verts=10)
+    limb('spoon', (0.35, 0, top + 0.5), (1.15, 0, top - 2.0), 0.55, 0.12, 'g', M('bright'), bevel=0.03)
+    arc_tube('pin', (-0.7, 0, top + 0.35), 0.45, 0.07, 0, 360, 'g', M('bright'), axis='Y', segs=10)
+    GRIP[gid] = ((0, 0, 1.2), (0, 0, 0))
+    return (0, 0, top + 0.6), None, None
+
+
+def hegrenade(): return grenade('hegrenade', 'he')
+def flashbang(): return grenade('flashbang', 'flash')
+def smokegrenade(): return grenade('smokegrenade', 'smoke')
+
+
 GUNS = {
     'ak47': ak47, 'm4a1': m4a1, 'mp5': mp5, 'ump45': ump45, 'm249': m249, 'awp': awp, 'scout': scout,
     'deagle': deagle, 'glock': glock, 'usp': usp, 'knife': knife, 'c4': c4,
+    'hegrenade': hegrenade, 'flashbang': flashbang, 'smokegrenade': smokegrenade,
 }
 
 
@@ -611,7 +643,7 @@ def main():
     roots = []
     for gid, fn in GUNS.items():
         muzzle, lhand, lrot = fn()
-        ob = finish(gid, 512 if gid in ('glock', 'usp', 'knife', 'c4') else 1024)
+        ob = finish(gid, 512 if gid in ('glock', 'usp', 'knife', 'c4', 'hegrenade', 'flashbang', 'smokegrenade') else 1024)
         e = empty(f'{gid}_muzzle', muzzle); e.parent = ob
         if gid in GRIP:
             loc, rot = GRIP[gid]
