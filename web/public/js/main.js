@@ -141,6 +141,12 @@ for (const [vid, lid, rid] of [['vol', 'volVal', 'radioOn'], ['pVol', 'pVolVal',
     $('radioOn').checked = $('pRadioOn').checked = e.target.checked;
   });
 }
+let fsOn = store.get('baq_fs', '1') === '1';
+$('fsOn').checked = fsOn;
+$('fsOn').addEventListener('change', (e) => { fsOn = e.target.checked; store.set('baq_fs', fsOn ? '1' : '0'); });
+// last line of defence when not fullscreen: Ctrl+W asks before closing the match
+window.addEventListener('beforeunload', (e) => { if (running && !leaving) { e.preventDefault(); e.returnValue = ''; } });
+
 function surfaceAt(pos) {
   if (!world) return 'sand';
   const hit = raycast([pos[0], pos[1] + 4, pos[2]], [0, -1, 0], world.colliders, 40);
@@ -251,6 +257,9 @@ function join() {
   // grab the mouse now, inside the click: browsers only allow pointer lock
   // from a user gesture, and it puts the focus straight on the game
   sfx.unlock();
+  // fullscreen + keyboard lock: the only way Ctrl+W/T/N and Esc reach the game
+  // instead of the browser (plain windowed pages can never block them)
+  if (fsOn && !params.get('autojoin')) input.enterFullscreen().then(() => input.lock(), () => {});
   input.lock();
   renderer.domElement.focus();
   const name = $('playerName').value.trim() || params.get('autojoin') || 'Player';
@@ -588,7 +597,10 @@ function showPause(on) {
     }
   }
 }
+input.onCursor = (dx, dy) => hud.moveCursor(dx, dy);
+input.onCursorClick = () => hud.cursorClick();
 input.onLockChange = (locked) => {
+  hud.showCursor(locked && hud.buyOpen());
   if (!running) return;
   if (locked) showPause(false);
   else if (!hud.buyOpen() && !input.typing && !hud.matchEndOpen()) showPause(true);
@@ -639,7 +651,7 @@ function openRadio(menu) {
   if (radioMenu === menu) { closeRadio(); return; }
   radioMenu = menu;
   input.radioOpen = true;
-  const title = { z: 'RADIO COMMANDS', x: 'GROUP RADIO COMMANDS', c: 'RADIO RESPONSES/REPORTS' }[menu];
+  const title = { z: 'RADIO COMMANDS (Z)', x: 'GROUP RADIO COMMANDS (X)', c: 'RADIO RESPONSES/REPORTS (V)' }[menu];
   $('radioMenu').innerHTML = `<h5>${title}</h5>` + RADIO[menu].map((t, i) => `<div><b>${i + 1}</b>${t}</div>`).join('') + '<div><b>0</b>Exit</div>';
   $('radioMenu').classList.remove('hidden');
 }
@@ -662,7 +674,8 @@ input.onKey = (code, e, down) => {
     closeRadio();
     return;
   }
-  if (code === 'KeyZ' || code === 'KeyX' || code === 'KeyC') { if (!input.typing && player && player.alive) openRadio(code[3].toLowerCase()); return; }
+  // radio on Z / X / V (C is crouch): menus keep CS's z / x / c names
+  if (code === 'KeyZ' || code === 'KeyX' || code === 'KeyV') { if (!input.typing && !hud.buyOpen() && player && player.alive) openRadio({ KeyZ: 'z', KeyX: 'x', KeyV: 'c' }[code]); return; }
   if (code === 'KeyY' && !hud.buyOpen()) {
     e.preventDefault();
     input.typing = true;
@@ -674,11 +687,16 @@ input.onKey = (code, e, down) => {
     else if (canBuy()) {
       hud.openBuy(buyContext(), (item) => net.send({ t: 'buy', item }));
       hud._input = input; input.buyOpen = true;
-      if (document.pointerLockElement) document.exitPointerLock();
+      // the mouse stays captured: an in-game cursor points at the items
+      hud.showCursor(input.locked);
     } else { hud.centerMsg(round.phase === 'end' ? 'the round is over' : 'you can only buy in your spawn during buy time'); setTimeout(() => hud.centerMsg(''), 1800); }
   } else if (code === 'Escape') {
     // Esc just closes the buy menu (no pause screen); a click takes the mouse back
-    if (hud.buyOpen()) { hud.closeBuy(); hud.setHint('click to resume'); }
+    // In fullscreen (keyboard lock) the browser hands Esc to us and keeps the
+    // mouse, so Esc behaves like CS: close whatever is open, else pause.
+    if (radioMenu) closeRadio();
+    else if (hud.buyOpen()) { hud.closeBuy(); if (!input.locked) hud.setHint('click to resume'); }
+    else if (input.locked) document.exitPointerLock();
   } else if (hud.buyOpen() && /^Digit[1-9]$/.test(code)) {
     hud.buyKey(parseInt(code.slice(5), 10));
   }

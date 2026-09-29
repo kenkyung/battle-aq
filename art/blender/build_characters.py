@@ -266,7 +266,8 @@ def gait(arm_ob, name, frames, swing, knee, bob, crouch=False):
             base = dict(hips_loc=(0, abs(math.cos(ph)) * bob - bob * 0.5, 0))
             pose(arm_ob, f, thigh_L=(-th, 0, 0), shin_L=(kl, 0, 0), foot_L=(-kl * 0.3, 0, 0),
                  thigh_R=(th, 0, 0), shin_R=(kr, 0, 0), foot_R=(-kr * 0.3, 0, 0),
-                 hips=(0, 0, s * 4), spine=(3, 0, -s * 4), chest=(2, 0, -s * 3), **base)
+                 # counter-swing is a TWIST about the bone's own axis (Y), not a side lean
+                 hips=(0, s * 5, 0), spine=(2, -s * 3, 0), chest=(1, -s * 3, 0), **base)
 
 
 def build_actions(arm_ob):

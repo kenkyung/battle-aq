@@ -161,6 +161,20 @@ function practiceRoom(msg) {
   return game;
 }
 
+function fillBots(game, human, msg) {
+  const total = Math.max(1, Math.min(9, parseInt(msg.bots, 10) || 5));
+  const diff = ['easy', 'normal', 'hard'].includes(msg.difficulty) ? msg.difficulty : 'normal';
+  // split everyone as evenly as possible, the human's side filled first
+  const size = { [TEAM.T]: 0, [TEAM.CT]: 0 };
+  size[human.team] = 1;
+  for (let i = 0; i < total; i++) {
+    const team = size[TEAM.T] <= size[TEAM.CT] ? TEAM.T : TEAM.CT;
+    size[team]++;
+    game.addBot(team, diff);
+  }
+  game.checkMode();
+}
+
 const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws) => {
@@ -170,6 +184,11 @@ wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
+    // one bad message must never take the whole server (every room) down
+    try { handle(msg); } catch (e) { log(`error handling ${msg && msg.t}: ${e && e.stack || e}`); }
+  });
+
+  function handle(msg) {
 
     if (!player) {
       if (msg.t !== 'join') return;
@@ -189,7 +208,7 @@ wss.on('connection', (ws) => {
       return;
     }
     game.onMessage(player, msg);
-  });
+  }
 
   ws.on('close', () => {
     if (!player) return;
@@ -211,11 +230,20 @@ wss.on('connection', (ws) => {
 // ------------------------------------------------------------------ loops
 
 const simInterval = setInterval(() => {
-  for (const g of rooms.values()) g.update();
+  for (const g of rooms.values()) guard(g, () => g.update());
 }, 1000 / TICK_RATE);
 const snapInterval = setInterval(() => {
-  for (const g of rooms.values()) if (g.players.size > 0) g.broadcastSnapshots();
+  for (const g of rooms.values()) if (g.players.size > 0) guard(g, () => g.broadcastSnapshots());
 }, 1000 / SNAPSHOT_RATE);
+
+// a bug in one room is logged (once a minute at most) instead of killing the process
+const lastError = new Map();
+function guard(g, fn) {
+  try { fn(); } catch (e) {
+    const now = Date.now();
+    if (now - (lastError.get(g.id) || 0) > 60000) { lastError.set(g.id, now); log(`error in ${g.id}: ${e && e.stack || e}`); }
+  }
+}
 
 // ------------------------------------------------------------------ boot
 

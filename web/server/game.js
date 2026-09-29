@@ -22,14 +22,14 @@
 
 import { getMap, MAP_LIST } from '../shared/maps.js';
 import {
-  PLAYER, WEAPONS, TEAM, ROUND, BOMB, DEFAULT_PISTOL, DRAW_TIME, MELEE_REACH,
+  PLAYER, WEAPONS, TEAM, ROUND, BOMB, HOSTAGE, DEFAULT_PISTOL, DRAW_TIME, MELEE_REACH,
 } from '../shared/constants.js';
 import {
   ECONOMY, itemInfo, lossBonus, inBuyZone, buyZoneCenter,
 } from '../shared/economy.js';
 import { newRecoil, resetRecoil, shotSpread, spreadDir, baseDamage, armorAbsorb } from '../shared/ballistics.js';
 import {
-  buildColliders, playerBox, hitBox, raycast, raycastPlayers, norm, len, sub,
+  buildColliders, playerBox, hitBox, raycast, raycastPlayers, norm, len, sub, movePlayer,
 } from '../shared/physics.js';
 import { navFor } from './nav.js';
 import { radioText } from '../shared/radio.js';
@@ -55,6 +55,8 @@ export class Game {
     this.nades = [];           // grenades in flight
     this.smokes = [];          // active smoke clouds { pos, from, until, radius }
     this.nadeSeq = 0;
+    this.hostages = [];
+    this.rescuedCount = 0;
     this.loadMap(mapId);
     this.phase = 'warmup';
     this.phaseEndsAt = 0;
@@ -75,9 +77,107 @@ export class Game {
     this.nav = navFor(this.map, this.colliders);
     this._spawnYaw = {};
     this._spawnSpots = {};
+    this.resetHostages();
   }
 
   get competitive() { return this.phase !== 'warmup'; }
+  get hostageMode() { return (this.map.hostages || []).length > 0; }
+
+  // ------------------------------------------------------------- hostages
+
+  resetHostages() {
+    this.hostages = (this.map.hostages || []).map((pos, i) => ({
+      id: 1000 + i, pos: pos.slice(), yaw: Math.random() * Math.PI * 2, hp: HOSTAGE.hp,
+      alive: true, rescued: false, leader: null, used: false, path: null, pathAt: 0,
+      state: { pos: pos.slice(), vel: [0, 0, 0], yaw: 0, pitch: 0, onGround: true, crouching: false },
+    }));
+    this.rescuedCount = 0;
+  }
+
+  rescueZones() {
+    const zones = this.map.rescueZones || [];
+    return zones.length ? zones : [[...this.spawnSpots(TEAM.CT)[0], HOSTAGE.rescueRadius]];
+  }
+
+  inRescueZone(pos) {
+    return this.rescueZones().some((z) => Math.hypot(pos[0] - z[0], pos[2] - z[2]) <= (z[3] || HOSTAGE.rescueRadius));
+  }
+
+  // E on a hostage: a CT takes or releases it
+  useHostage(p) {
+    if (!p.alive || p.team !== TEAM.CT || !this.hostageMode || this.phase !== 'round') return false;
+    let best = null, bd = HOSTAGE.useReach;
+    for (const h of this.hostages) {
+      if (!h.alive || h.rescued) continue;
+      const d = Math.hypot(h.pos[0] - p.pos[0], h.pos[2] - p.pos[2]);
+      if (d < bd && Math.abs(h.pos[1] - p.pos[1]) < 64) { bd = d; best = h; }
+    }
+    if (!best) return false;
+    if (best.leader === p.id) { best.leader = null; this.send(p, { t: 'hostage', kind: 'stay', id: best.id }); return true; }
+    best.leader = p.id;
+    best.path = null;
+    if (!best.used) { best.used = true; this.addMoney(p, ECONOMY.hostageUse, 'hostage'); }
+    this.send(p, { t: 'hostage', kind: 'follow', id: best.id });
+    return true;
+  }
+
+  updateHostages(dt, t) {
+    if (!this.hostageMode || !this.hostages) return;
+    for (const h of this.hostages) {
+      if (!h.alive || h.rescued) continue;
+      const leader = h.leader && this.players.get(h.leader);
+      if (leader && (!leader.alive || leader.team !== TEAM.CT)) h.leader = null;
+      let keys = { f: 0, b: 0, l: 0, r: 0, maxSpeed: HOSTAGE.speed };
+      if (h.leader && leader) {
+        const d = Math.hypot(leader.pos[0] - h.pos[0], leader.pos[2] - h.pos[2]);
+        if (d > HOSTAGE.followGap) {
+          if (!h.path || t > h.pathAt) { h.path = this.nav.path(h.pos, leader.pos); h.pathAt = t + 0.6; h.pathIdx = 0; }
+          let wp = null;
+          if (h.path) {
+            while (h.pathIdx < h.path.length - 1 && Math.hypot(h.path[h.pathIdx][0] - h.pos[0], h.path[h.pathIdx][2] - h.pos[2]) < 28) h.pathIdx++;
+            wp = h.path[Math.min(h.pathIdx, h.path.length - 1)];
+          }
+          const target = wp || leader.pos;
+          h.state.yaw = Math.atan2(-(target[0] - h.pos[0]), -(target[2] - h.pos[2]));
+          keys.f = 1;
+          if (d > 300) keys.maxSpeed = HOSTAGE.speed + 20;   // catch up
+        }
+      }
+      h.state.pos = h.pos;
+      movePlayer(h.state, keys, dt, this.colliders);
+      h.pos = h.state.pos;
+      h.yaw = h.state.yaw;
+      h.moving = keys.f === 1;
+      if (h.leader && this.phase === 'round' && this.inRescueZone(h.pos)) this.rescueHostage(h, this.players.get(h.leader));
+    }
+  }
+
+  rescueHostage(h, by) {
+    h.rescued = true; h.leader = null;
+    this.rescuedCount++;
+    if (by) this.addMoney(by, ECONOMY.hostageRescue, 'hostage rescued');
+    for (const p of this.players.values()) if (p.team === TEAM.CT && p !== by) this.addMoney(p, ECONOMY.hostageRescueTeam, 'hostage rescued');
+    this.broadcast({ t: 'hostage', kind: 'rescued', id: h.id, by: by ? by.id : null, left: this.hostagesLeft() });
+    this.checkHostageWin();
+  }
+
+  hostagesLeft() { return (this.hostages || []).filter((h) => h.alive && !h.rescued).length; }
+
+  checkHostageWin() {
+    if (!this.hostageMode || this.phase !== 'round') return;
+    // CT win once every hostage still alive is out (and at least one was saved)
+    if (this.hostagesLeft() === 0 && this.rescuedCount > 0) this.endRound(TEAM.CT, 'rescue');
+  }
+
+  damageHostage(h, attacker, dmg) {
+    h.hp -= dmg;
+    this.broadcast({ t: 'hostage', kind: 'hurt', id: h.id, hp: Math.max(0, h.hp), by: attacker ? attacker.id : null });
+    if (h.hp > 0) return;
+    h.alive = false; h.leader = null;
+    if (attacker) this.addMoney(attacker, ECONOMY.hostageKill, 'killed a hostage');
+    this.broadcast({ t: 'hostage', kind: 'killed', id: h.id, by: attacker ? attacker.id : null, left: this.hostagesLeft() });
+    this.checkHostageWin();
+  }
   get humans() { return [...this.players.values()].filter((p) => !p.bot); }
 
   // ------------------------------------------------------------- lifecycle
@@ -142,7 +242,8 @@ export class Game {
       if (!p.alive) this.resetLoadout(p);
       this.respawn(p, true);
     }
-    this.giveBomb();
+    this.resetHostages();
+    if (!this.hostageMode) this.giveBomb();
   }
 
   setPhase(phase, seconds) {
@@ -158,7 +259,8 @@ export class Game {
       buyTime: this.phase === 'warmup' ? -1 : Math.max(0, this.buyEndsAt - now()),
       scoreT: this.score[TEAM.T], scoreCT: this.score[TEAM.CT],
       round: this.roundNumber, maxRounds: ROUND.maxRounds, halftime: this.halftimeRound,
-      map: this.map.id, practice: this.practice,
+      map: this.map.id, practice: this.practice, mode: this.hostageMode ? 'hostage' : 'bomb',
+      rescueZones: this.hostageMode ? this.rescueZones() : undefined,
     };
   }
 
@@ -173,9 +275,11 @@ export class Game {
     for (const p of this.players.values()) if (p.bot) p.bot.think(dt, t);
     this.updateBomb(t);
     this.updateNades(dt, t);
+    this.updateHostages(dt, t);
     if (this.phase === 'warmup' || t < this.phaseEndsAt) return;
     if (this.phase === 'freeze') this.setPhase('round', ROUND.roundTime);
-    else if (this.phase === 'round') this.endRound(TEAM.CT, 'time');
+    // time: the bomb was never planted (CT win) / hostages not rescued (T win)
+    else if (this.phase === 'round') this.endRound(this.hostageMode ? TEAM.T : TEAM.CT, 'time');
     else if (this.phase === 'planted') this.explode();
     else if (this.phase === 'end') {
       if (this.matchOver) this.startVote();
@@ -194,6 +298,7 @@ export class Game {
     if (how === 'bomb') winBonus = ECONOMY.winBonusBomb;
     else if (how === 'defuse') winBonus = ECONOMY.winBonusDefuse;
     else if (winner === TEAM.CT && how === 'elim') winBonus = ECONOMY.winBonusElimCT;
+    else if (how === 'rescue') winBonus = ECONOMY.winBonusRescue;
     const lossPay = lossBonus(this.lossStreak[loser]);
     for (const p of this.players.values()) {
       if (p.team === winner) this.addMoney(p, winBonus, 'round win');
@@ -625,6 +730,7 @@ export class Game {
         this.setPlanting(p, !!msg.on);
         break;
       case 'defuse':
+        if (msg.on && this.hostageMode) { this.useHostage(p); break; }
         this.setDefusing(p, !!msg.on);
         break;
       case 'fall': {
@@ -800,10 +906,13 @@ export class Game {
     const others = [...this.players.values()]
       .filter((q) => q.alive && q.id !== p.id)
       .map((q) => ({ id: q.id, box: hitBox(q.pos, q.crouching) }));
+    if (this.hostageMode) for (const h of this.hostages) if (h.alive && !h.rescued) others.push({ id: h.id, box: hitBox(h.pos, false) });
     const phit = raycastPlayers(origin, shotDir, others, maxDist, p.id);
 
     if (phit && (!world || phit.t < world.t)) {
-      this.applyDamage(p, phit, w);
+      const h = phit.id >= 1000 && this.hostages && this.hostages.find((x) => x.id === phit.id);
+      if (h) this.damageHostage(h, p, Math.round(baseDamage(p.weapon, phit.part, phit.t)));
+      else this.applyDamage(p, phit, w);
     }
     if (!w.melee && ammo.mag === 0 && ammo.reserve > 0) this.handleReload(p); // auto-reload
   }
@@ -1026,6 +1135,7 @@ export class Game {
       t: 'state',
       ts: now(),
       bomb: this.bombInfo(viewer),
+      hostages: this.hostageMode ? this.hostages.map((h) => ({ id: h.id, pos: h.pos, yaw: h.yaw, alive: h.alive, rescued: h.rescued, leader: h.leader, moving: !!h.moving })) : undefined,
       players: [...this.players.values()].map((p) => ({
         id: p.id, team: p.team, pos: p.pos, yaw: p.yaw, pitch: p.pitch,
         alive: p.alive, crouching: p.crouching, moving: p.moving,

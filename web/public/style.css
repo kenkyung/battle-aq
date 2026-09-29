@@ -149,7 +149,9 @@ body { font-family: var(--font); color: var(--hud); user-select: none; }
 .bcol h4 { font-size: 10px; letter-spacing: 2px; color: var(--hud-dim); margin-bottom: 6px; text-transform: uppercase; }
 .bitem { display: block; width: 100%; text-align: left; margin-bottom: 6px; padding: 9px 10px; border-radius: 4px; cursor: pointer;
   background: rgba(255,255,255,.05); border: 1px solid transparent; color: var(--hud); font: 600 13px var(--font); }
-.bitem:hover { border-color: var(--t); background: rgba(224,178,92,.12); }
+.bitem:hover, .bitem.hover { border-color: var(--t); background: rgba(224,178,92,.12); }
+#vcursor { position: fixed; left: 0; top: 0; z-index: 60; width: 18px; height: 18px; pointer-events: none; margin: -1px 0 0 -1px;
+  background: no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'%3E%3Cpath d='M1 1v14l4-4 3 6 2-1-3-6h6z' fill='%23fff' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E"); }
 .bitem .p { display: block; font: 700 14px var(--num); color: var(--good); margin-top: 2px; }
 .bitem.no { opacity: .35; cursor: not-allowed; }
 .bitem.no .p { color: var(--bad); }

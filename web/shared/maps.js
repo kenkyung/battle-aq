@@ -17,6 +17,7 @@
 
 import { TEAM } from './constants.js';
 import { PROPS } from './props-data.js';
+import { HOSTAGE_MAPS } from './maps-hostage.js';
 
 const hex = (r, g, b) =>
   (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
@@ -435,10 +436,12 @@ const aztec = {
   bombsites: { A: [1408, 64, -832], B: [-1088, 0, 992] },
 };
 
-for (const m of [dust, inferno, aztec]) m.props = PROPS[m.id] || [];
+// hostage maps join the rotation once their Blender builds ship
+const ALL = [dust, inferno, aztec, ...(globalThis.BAQ_HOSTAGE_MAPS ? HOSTAGE_MAPS : [])];
+for (const m of ALL) m.props = PROPS[m.id] || [];
 
-export const MAPS = { de_aq_dust: dust, de_aq_inferno: inferno, de_aq_aztec: aztec };
-export const MAP_LIST = [dust, inferno, aztec];
+export const MAPS = Object.fromEntries(ALL.map((m) => [m.id, m]));
+export const MAP_LIST = ALL;
 export function getMap(id) {
   const m = MAPS[id];
   if (!m) throw new Error(`unknown map '${id}' (have ${Object.keys(MAPS).join(', ')})`);

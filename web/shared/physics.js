@@ -52,7 +52,7 @@ function box(c, s, mat) {
 // Expand a ramp (low point a, high point b, width) into `steps` stacked AABBs.
 // The movement code's auto step-up then walks up them like stairs; small steps
 // read as a smooth slope.
-function rampSteps(r, steps = 8, mat = r.mat) {
+function rampSteps(r, steps = Math.max(8, Math.ceil(Math.abs(r.b[1] - r.a[1]) / 16)), mat = r.mat) {
   const [ax, ay, az] = r.a;
   const [bx, by, bz] = r.b;
   const out = [];

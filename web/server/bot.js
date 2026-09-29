@@ -187,6 +187,7 @@ export class BotBrain {
       }
       return this.goal;
     }
+    if (g.hostageMode) return this.hostageGoal(now);
     if (!this.site) {
       const s = this.sites();
       this.site = s.length ? s[(p.id + g.roundNumber) % s.length] : null;
@@ -217,9 +218,39 @@ export class BotBrain {
     return this.goal;
   }
 
+  // Hostage maps. CT: fetch a free hostage (split between bots by id), press E,
+  // lead it to the nearest rescue zone. T: hold the hostage room and hunt down
+  // anyone leading one away.
+  hostageGoal(now) {
+    const g = this.game, p = this.p;
+    const live = g.hostages.filter((h) => h.alive && !h.rescued);
+    if (!live.length) return this.goal;
+    if (p.team === TEAM.CT) {
+      const mine = live.filter((h) => h.leader === p.id);
+      if (mine.length) {
+        const zones = g.rescueZones();
+        const z = zones.reduce((a, b) => (Math.hypot(b[0] - p.pos[0], b[2] - p.pos[2]) < Math.hypot(a[0] - p.pos[0], a[2] - p.pos[2]) ? b : a));
+        return { key: 'rescue@' + z.slice(0, 3).map(Math.round).join(','), pos: [z[0], z[1], z[2]] };
+      }
+      const free = live.filter((h) => !h.leader);
+      if (free.length) {
+        const h = free[p.id % free.length];
+        if (Math.hypot(h.pos[0] - p.pos[0], h.pos[2] - p.pos[2]) < 60 && !this.target) g.useHostage(p);
+        return { key: 'hostage' + h.id, pos: h.pos };
+      }
+      const led = live.find((h) => h.leader);
+      if (led) return this.guard(led.pos, 'escort', 250);
+      return this.guard(g.map.spawns[TEAM.T][0], 'push', 400);
+    }
+    const led = live.find((h) => h.leader);
+    if (led) return { key: 'intercept' + led.id, pos: led.pos };
+    const c = live.reduce((a, h) => [a[0] + h.pos[0] / live.length, a[1] + h.pos[1] / live.length, a[2] + h.pos[2] / live.length], [0, 0, 0]);
+    return this.guard(c, 'hostages', 420);
+  }
+
   // a spot near `pos`, stable for a while, so a group spreads out
   guard(pos, key, radius) {
-    const k = key + '@' + pos.map(Math.round).join(',');
+    const k = key + '@' + pos.map((v) => Math.round(v / 192)).join(',');
     if (!this.guardSpots[k]) {
       let n = null;
       for (let i = 0; i < 6 && !(n && n.main); i++) {

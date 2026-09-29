@@ -111,8 +111,13 @@ p2.addPlayer(ws3, 'Solo', { team: TEAM.CT });
 for (let i = 0; i < 5; i++) p2.addBot(i % 2 ? TEAM.CT : TEAM.T, 'hard');
 p2.checkMode();
 ok(p2.phase === 'freeze' && [...p2.players.values()].filter((p) => p.bot).length === 5, 'practice room: human + 5 bots, match started');
-advance(p2, 60);
-const moved = [...p2.players.values()].filter((p) => p.bot && Math.hypot(p.pos[0] - p2.spawnSpots(p.team)[0][0], p.pos[2] - p2.spawnSpots(p.team)[0][2]) > 300).length;
+// farthest each bot got from its spawn (a round can end and respawn them)
+const far = new Map();
+for (let s = 0; s < 60; s++) {
+  advance(p2, 1);
+  for (const p of p2.players.values()) if (p.bot) far.set(p.id, Math.max(far.get(p.id) || 0, Math.hypot(p.pos[0] - p2.spawnSpots(p.team)[0][0], p.pos[2] - p2.spawnSpots(p.team)[0][2])));
+}
+const moved = [...far.values()].filter((d) => d > 300).length;
 ok(moved >= 3, `bots leave spawn (${moved}/5 are over 300 u away after a minute)`);
 ok([...p2.players.values()].some((p) => p.bot && (p.money < 800 || p.armor > 0)), 'bots spend their pistol-round money');
 

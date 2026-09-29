@@ -34,6 +34,8 @@ function makeNameSprite(name, color) {
   return spr;
 }
 
+const AIM_BONES = ['spine', 'chest', 'head'];
+
 export class Remotes {
   constructor(scene, fx, world) {
     this.scene = scene;
@@ -62,7 +64,7 @@ export class Remotes {
           o.material = new THREE.MeshLambertMaterial({ map: o.material.map });
           o.frustumCulled = false;
         }
-        if (o.isBone) bones[o.name] = o;
+        if (o.isBone) { bones[o.name] = o; o.userData.rest = o.quaternion.clone(); }
       });
       group.add(model);
       mixer = new THREE.AnimationMixer(model);
@@ -222,6 +224,10 @@ export class Remotes {
       if (r.mixer) {
         const scale = r.clip === 'run' ? Math.max(0.6, r.speed / 250) : r.clip === 'walk' ? Math.max(0.6, r.speed / 110) : 1;
         r.mixer.timeScale = scale;
+        // the aim tilt below is added on top of the clip every frame; a bone the
+        // clip does not key would keep the previous frame's tilt and slowly
+        // fold the body backwards, so start each frame from the rest pose
+        for (const b of AIM_BONES) { const bone = r.bones[b]; if (bone) bone.quaternion.copy(bone.userData.rest); }
         r.mixer.update(dt);
         // aim pitch on top of the clip
         if (r.alive) {

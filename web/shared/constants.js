@@ -157,6 +157,15 @@ export const ROUND = {
   voteTime: 15,         // map vote at match end
 };
 
+// Hostage rescue (cs_ maps).
+export const HOSTAGE = {
+  useReach: 72,        // u to press E on a hostage
+  followGap: 72,       // how far behind their leader they walk
+  speed: 230,          // u/s
+  hp: 100,
+  rescueRadius: 280,   // default rescue-zone radius
+};
+
 export const BOMB = {
   siteRadius: 240,      // u around a bombsite marker where C4 can be planted
   defuseReach: 72,      // u from the bomb to defuse it

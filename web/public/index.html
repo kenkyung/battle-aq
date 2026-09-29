@@ -71,7 +71,7 @@
       </select>
       <button id="leaveBtn" class="btn">LEAVE MATCH</button>
       <a id="arcadeBtn" class="btn" href="../">BACK TO THE ARCADE</a>
-      <p class="keys">Esc pause · B buy · Tab scores · Y chat · Z/X/C radio · 4 grenades · G drop bomb · E defuse · Fullscreen keeps Ctrl+W from closing the tab</p>
+      <p class="keys">Esc pause (hold Esc to leave fullscreen) · B buy · Tab scores · Y chat · Z/X/V radio · 4 grenades · G drop bomb · E defuse</p>
     </div>
   </div>
 
@@ -144,13 +144,14 @@
         <label>Volume <b id="volVal"></b></label>
         <input id="vol" type="range" min="0" max="1" step="0.05" />
         <label class="check"><input id="radioOn" type="checkbox" /> Radio voice ("bomb has been planted")</label>
+        <label class="check"><input id="fsOn" type="checkbox" /> Fullscreen while playing (Ctrl combos and Esc stay in the game)</label>
         <label>Server (leave empty for this one)</label>
         <input id="serverAddr" type="text" spellcheck="false" placeholder="host:port" />
       </details>
       <p class="controls">
-        WASD move · Space jump · Ctrl crouch · Shift walk · LMB fire · RMB scope · R reload<br/>
+        WASD move · Space jump · C or Ctrl crouch · Shift walk · LMB fire · RMB scope · R reload<br/>
         1/2/3 weapons · 4 grenades · 5 bomb · Q last · B buy · E defuse · G drop · Tab scores · Y chat<br/>
-        Z / X / C radio commands · Esc pause
+        Z / X / V radio commands · Esc pause
       </p>
     </div>
   </div>

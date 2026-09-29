@@ -323,6 +323,117 @@ def terracotta(g, u, v):
     return col, g.add(g.mul(n, 0.3), g.mul(fine, 0.2)), 0.85
 
 
+def snow(g, u, v):
+    n = g.noise(u, v, 4, detail=6, seed=171)
+    fine = g.noise(u, v, 40, detail=4, seed=172)
+    tracks = g.smooth(g.noise(u, v, 3, 12, detail=4, seed=173), 0.62, 0.72)
+    col = g.mix(n, rgb(0.80, 0.83, 0.88), rgb(0.93, 0.95, 0.98))
+    col = g.mix(g.mul(tracks, 0.4), col, rgb(0.68, 0.70, 0.74))
+    col = g.mix(g.mul(fine, 0.2), col, rgb(0.75, 0.78, 0.84))
+    return col, g.add(g.mul(n, 0.5), g.mul(fine, 0.2)), 0.8
+
+
+def carpet(g, u, v):
+    loops = g.noise(u, v, 90, detail=2, seed=181)
+    n = g.noise(u, v, 5, detail=5, seed=182)
+    tile = g.fract(g.mul(u, 2.0)); tv = g.fract(g.mul(v, 2.0))
+    seam = g.sub(1.0, g.smooth(g.mn(g.mn(tile, g.sub(1.0, tile)), g.mn(tv, g.sub(1.0, tv))), 0.004, 0.012))
+    col = g.mix(loops, rgb(0.26, 0.26, 0.30), rgb(0.38, 0.37, 0.42))
+    col = g.mix(g.mul(n, 0.3), col, rgb(0.22, 0.21, 0.24))
+    col = g.mix(g.mul(seam, 0.4), col, rgb(0.18, 0.18, 0.2))
+    return col, g.add(g.mul(loops, 0.4), g.mul(seam, -0.3)), 0.98
+
+
+def drywall(g, u, v):
+    n = g.noise(u, v, 3, detail=5, seed=191)
+    fine = g.noise(u, v, 60, detail=2, seed=192)
+    base = g.smooth(v, 0.0, 0.08)                          # skirting at the bottom of a repeat
+    scuff = g.smooth(g.noise(u, v, 8, 2, detail=4, seed=193), 0.66, 0.75)
+    col = g.mix(n, rgb(0.74, 0.72, 0.66), rgb(0.82, 0.8, 0.74))
+    col = g.mix(g.mul(fine, 0.12), col, rgb(0.6, 0.58, 0.54))
+    col = g.mix(g.mul(scuff, 0.3), col, rgb(0.5, 0.48, 0.44))
+    col = g.mix(g.sub(1.0, base), col, rgb(0.28, 0.24, 0.2))
+    return col, g.add(g.mul(fine, 0.1), g.mul(g.sub(1.0, base), 0.4)), 0.9
+
+
+def ceiling_tile(g, u, v):
+    fu, fv = g.fract(g.mul(u, 2.0)), g.fract(g.mul(v, 2.0))
+    grid = g.sub(1.0, g.smooth(g.mn(g.mn(fu, g.sub(1.0, fu)), g.mn(fv, g.sub(1.0, fv))), 0.01, 0.025))
+    pits = g.smooth(g.voronoi(u, v, 60, seed=201), 0.05, 0.12)
+    stain = g.smooth(g.noise(u, v, 3, detail=5, seed=202), 0.66, 0.78)
+    col = g.mix(pits, rgb(0.6, 0.6, 0.57), rgb(0.86, 0.86, 0.83))
+    col = g.mix(g.mul(stain, 0.35), col, rgb(0.66, 0.6, 0.48))
+    col = g.mix(grid, col, rgb(0.72, 0.72, 0.72))
+    return col, g.add(g.mul(grid, 0.6), g.mul(pits, 0.2)), 0.95
+
+
+def concrete(g, u, v):
+    n = g.noise(u, v, 4, detail=6, seed=211)
+    fine = g.noise(u, v, 50, detail=3, seed=212)
+    pores = g.smooth(g.voronoi(u, v, 45, seed=213), 0.04, 0.09)
+    fu = g.fract(g.mul(u, 2.0))
+    joint = g.sub(1.0, g.smooth(g.mn(fu, g.sub(1.0, fu)), 0.004, 0.01))
+    stain = g.smooth(g.noise(u, v, 2, 5, detail=5, seed=214), 0.6, 0.78)
+    col = g.mix(n, rgb(0.5, 0.5, 0.49), rgb(0.64, 0.64, 0.62))
+    col = g.mix(g.mul(fine, 0.2), col, rgb(0.42, 0.42, 0.41))
+    col = g.mix(g.sub(1.0, pores), col, rgb(0.34, 0.34, 0.33))
+    col = g.mix(g.mul(stain, 0.35), col, rgb(0.36, 0.34, 0.3))
+    col = g.mix(g.mul(joint, 0.6), col, rgb(0.3, 0.3, 0.3))
+    return col, g.add(g.mul(fine, 0.25), g.mul(joint, -0.5)), 0.92
+
+
+def corrugated(g, u, v):
+    rib = g.mul(g.add(g.sin(g.mul(u, 6.2832 * 16)), 1.0), 0.5)
+    n = g.noise(u, v, 5, detail=5, seed=221)
+    rust = g.mul(g.smooth(g.noise(u, v, 4, detail=8, rough=0.65, seed=222), 0.64, 0.78), 0.8)
+    streak = g.smooth(g.noise(u, v, 40, 2, detail=3, seed=223), 0.62, 0.8)
+    col = g.mix(n, rgb(0.5, 0.54, 0.56), rgb(0.62, 0.66, 0.68))
+    col = g.mix(g.mul(g.sub(1.0, rib), 0.35), col, rgb(0.34, 0.37, 0.39))
+    col = g.mix(g.mul(streak, 0.3), col, rgb(0.42, 0.34, 0.26))
+    col = g.mix(rust, col, g.mix(n, rgb(0.34, 0.18, 0.08), rgb(0.5, 0.28, 0.12)))
+    return col, g.add(g.mul(rib, 0.9), g.mul(rust, 0.1)), g.lin(rust, 0, 1, 0.45, 0.85)
+
+
+def asphalt(g, u, v):
+    n = g.noise(u, v, 5, detail=6, seed=231)
+    grit = g.noise(u, v, 120, detail=2, seed=232)
+    crack = g.smooth(g.voronoi(u, v, 5, feature='DISTANCE_TO_EDGE', seed=233), 0.0, 0.015)
+    patch = g.smooth(g.noise(u, v, 2, detail=4, seed=234), 0.62, 0.66)
+    col = g.mix(n, rgb(0.24, 0.24, 0.25), rgb(0.33, 0.33, 0.34))
+    col = g.mix(g.mul(grit, 0.4), col, rgb(0.45, 0.45, 0.44))
+    col = g.mix(g.mul(patch, 0.6), col, rgb(0.19, 0.19, 0.2))
+    col = g.mix(g.mul(g.sub(1.0, crack), 0.7), col, rgb(0.12, 0.12, 0.12))
+    return col, g.add(g.mul(grit, 0.3), g.mul(g.sub(1.0, crack), -0.4)), 0.95
+
+
+def container_paint(g, u, v):
+    rib = g.mul(g.add(g.sin(g.mul(u, 6.2832 * 8)), 1.0), 0.5)
+    n = g.noise(u, v, 6, detail=5, seed=241)
+    rust = g.mul(g.smooth(g.noise(u, v, 4, detail=8, rough=0.65, seed=242), 0.6, 0.74), 0.9)
+    col = g.mix(n, rgb(0.46, 0.14, 0.08), rgb(0.6, 0.2, 0.12))
+    col = g.mix(g.mul(g.sub(1.0, rib), 0.3), col, rgb(0.32, 0.1, 0.06))
+    col = g.mix(rust, col, rgb(0.36, 0.2, 0.1))
+    return col, g.add(g.mul(rib, 0.9), g.mul(rust, 0.15)), 0.6
+
+
+def roof_tiles(g, u, v):
+    rows = 8
+    rv = g.mul(v, rows)
+    row = g.floor(rv)
+    off = g.mul(g.mod(row, 2.0), 0.5)
+    cu = g.add(g.mul(u, 6.0), off)
+    lu = g.fract(cu); lv = g.fract(rv)
+    arch = g.pw(g.sin(g.mul(lu, 3.1416)), 0.6)            # rounded tile profile
+    shadow = g.smooth(lv, 0.0, 0.25)
+    rnd = g.white(g.mod(g.floor(cu), 6.0), g.mod(row, rows), 251.0)
+    col = g.mix(rnd, rgb(0.55, 0.26, 0.15), rgb(0.7, 0.36, 0.22))
+    col = g.mix(g.mul(g.sub(1.0, shadow), 0.7), col, rgb(0.22, 0.1, 0.06))
+    col = g.mix(g.mul(g.sub(1.0, arch), 0.4), col, rgb(0.35, 0.16, 0.1))
+    moss = g.smooth(g.noise(u, v, 3, detail=6, seed=252), 0.66, 0.78)
+    col = g.mix(g.mul(moss, 0.4), col, rgb(0.34, 0.36, 0.22))
+    return col, g.add(g.mul(arch, 0.6), g.mul(shadow, 0.4)), 0.8
+
+
 RECIPES = {
     'dust_sandstone': sandstone,
     'dust_bigblock': big_blocks,
@@ -344,6 +455,15 @@ RECIPES = {
     'burlap': burlap,
     'barrel_paint': barrel_paint,
     'terracotta': terracotta,
+    'snow': snow,
+    'carpet': carpet,
+    'drywall': drywall,
+    'ceiling_tile': ceiling_tile,
+    'concrete': concrete,
+    'corrugated': corrugated,
+    'asphalt': asphalt,
+    'container_paint': container_paint,
+    'roof_tiles': roof_tiles,
 }
 
 

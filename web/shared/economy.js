@@ -21,6 +21,11 @@ export const ECONOMY = {
   defuserReward: 300,
   winBonusBomb: 3500,     // T win by detonation
   winBonusDefuse: 3500,   // CT win by defusing
+  hostageUse: 150,        // first time a CT gets a hostage to follow
+  hostageRescue: 1000,    // to the CT who brings one home
+  hostageRescueTeam: 850, // to every CT, per hostage rescued
+  hostageKill: -1500,     // whoever kills a hostage
+  winBonusRescue: 3500,   // CT win by rescuing them all
 };
 
 export const EQUIPMENT = {

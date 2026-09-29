@@ -298,7 +298,41 @@ export class HUD {
     this.refreshBuy(ctx);
   }
 
-  closeBuy() { this.el.buymenu.classList.add('hidden'); this._buyCat = null; if (this._input) this._input.buyOpen = false; }
+  closeBuy() { this.el.buymenu.classList.add('hidden'); this._buyCat = null; if (this._input) this._input.buyOpen = false; this.showCursor(false); }
+
+  // In-game cursor for the buy menu while the mouse stays pointer-locked (so
+  // closing the menu never drops you out of the game).
+  showCursor(on) {
+    if (!this._cursor) {
+      this._cursor = document.createElement('div');
+      this._cursor.id = 'vcursor';
+      this._cursor.className = 'hidden';
+      document.body.appendChild(this._cursor);
+    }
+    if (on && this._cursor.classList.contains('hidden')) { this._cx = innerWidth / 2; this._cy = innerHeight * 0.55; }
+    this._cursor.classList.toggle('hidden', !on);
+    if (on) this.moveCursor(0, 0);
+    else if (this._hover) { this._hover.classList.remove('hover'); this._hover = null; }
+  }
+
+  moveCursor(dx, dy) {
+    this._cx = Math.max(0, Math.min(innerWidth - 2, this._cx + dx));
+    this._cy = Math.max(0, Math.min(innerHeight - 2, this._cy + dy));
+    this._cursor.style.transform = `translate(${this._cx}px, ${this._cy}px)`;
+    const btn = this._under();
+    if (btn !== this._hover) {
+      if (this._hover) this._hover.classList.remove('hover');
+      this._hover = btn;
+      if (btn) btn.classList.add('hover');
+    }
+  }
+
+  _under() {
+    const el = document.elementFromPoint(this._cx, this._cy);
+    return el && el.closest ? el.closest('#buymenu button') : null;
+  }
+
+  cursorClick() { const b = this._under(); if (b) b.click(); }
 
   refreshBuy({ money, team, inv, armor, helmet, kit, buyLeft }) {
     this.el.buyMoney.textContent = '$' + money;

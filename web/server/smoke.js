@@ -94,6 +94,18 @@ async function main() {
     clearInterval(a.stateTimer); clearInterval(b.stateTimer);
     a.ws.close(); b.ws.close();
     await sleep(300);
+
+    // practice vs bots: its own room, filled with the requested bots
+    const pr = client('Solo');
+    pr.ws.onopen = () => pr.send({ t: 'join', name: 'Solo', mode: 'practice', bots: 3, difficulty: 'easy' });
+    for (let i = 0; i < 50 && !pr.snapshots.length; i++) await sleep(100);
+    assert(pr.welcomed, 'practice join is welcomed');
+    const others = pr.snapshots.at(-1)?.players?.length || 0;
+    assert(others >= 4, `practice room has the player + 3 bots (${others})`);
+    const info = await fetch(`http://127.0.0.1:${PORT}/info`).then((r) => r.json()).catch(() => null);
+    assert(info && info.practiceGames === 1, 'server still up after practice join');
+    clearInterval(pr.stateTimer); pr.ws.close();
+    await sleep(200);
   } finally {
     srv.kill();
   }
