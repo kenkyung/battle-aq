@@ -11,7 +11,14 @@ Project, scenes, scripts, license, README, .gitignore.
 - [x] CS 1.6 physics tuning: gravity 32, crouch speed multiplier 0.4,
       head-bob disabled (CS16_REFERENCE.md §1).
 - [x] Server-authoritative hit scan via `network_codec.gd`.
-- [ ] HUD: crosshair, HP bar, ammo counter, kill feed.
+- [x] HUD: crosshair, HP bar, ammo counter, kill feed, round timer, score
+      strip, phase label (see `scripts/hud.gd` + `scenes/hud.tscn`).
+- [x] Smoke test (`scripts/smoke_test.gd`) — every script parses, every
+      scene loads, weapons validate, map `_ready()` builds the contract
+      SpawnPoints + MapData, kill queue round-trips.
+- [x] Project loadability — fixed malformed `project.godot` (the GL Compat
+      renderer key was rejected by Godot 4; moved into a proper
+      `[rendering]` section with the quoted form of the value).
 - [ ] MultiplayerSynchronizer config so position/rotation/HP replicate.
 - [ ] Manual smoke test: host + 1 client, walk + shoot each other.
 
