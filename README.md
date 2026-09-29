@@ -1,76 +1,76 @@
 # Battle-AQ
 
-A lightweight online multiplayer first-person shooter inspired by Counter-Strike.
+A lightweight online multiplayer first-person shooter inspired by Counter-Strike 1.6.
 
-Built on **Godot 4.x** with the **GL Compatibility** renderer so it runs on modest
-hardware — integrated GPUs, Steam Deck, low-end laptops, and mobile. Networking
-is built-in **ENetMultiplayerPeer** (peer-to-peer with optional dedicated host),
-state replication uses `MultiplayerSpawner` / `MultiplayerSynchronizer`.
+**The game runs in the browser.** The server is a single Node process (HTTP +
+WebSocket on one port); players join by opening a URL — nothing to install.
+The original Godot 4 build is kept under [`godot/`](godot/) for reference.
 
-## Goals
+## Run it
 
-- Round-based FPS in the CS lineage: buy menu, weapon archetypes, plant/defuse or
-  team deathmatch, buy-time + round-time, economy.
-- Server-authoritative hits: clients send `fire` intent, server raycasts and
-  broadcasts damage events. Prevents wallhacks + speedhacks by construction.
-- Cross-platform from day one (Linux, Windows, macOS, Android, HTML5 export).
-- Tiny binary, instant startup, no engine forks.
+```bash
+cd web
+npm install        # once
+npm start          # serves on 0.0.0.0:8080, de_aq_dust
+```
+
+The server prints the addresses to share:
+
+```
+remote players (Tailscale):  http://100.x.x.x:8080
+LAN players:                 http://192.168.x.x:8080
+```
+
+Everyone (you included) opens one of those URLs, enters a name, hits PLAY.
+Options: `node server/index.js --port 9000 --map de_aq_aztec --host 0.0.0.0`
+(maps: `de_aq_dust`, `de_aq_inferno`, `de_aq_aztec`).
+
+## Test
+
+```bash
+cd web
+npm run smoke      # boots the server, connects 2 bots, asserts join/sync/fire/kill
+```
+
+## Controls
+
+WASD move · mouse look · Space jump · Ctrl crouch · Shift walk ·
+LMB fire · R reload · 1-9 weapons · Y chat · click to lock the mouse
 
 ## Layout
 
 ```
-scenes/         .tscn files (Main, Player, Weapon, Map, HUD)
-scripts/        .gd gameplay code
-assets/         materials, sounds, maps, icons
+web/
+  server/    Node: static HTTP + WebSocket, authoritative game (game.js)
+  shared/    modules imported by BOTH server and browser — constants
+             (CS 1.6 movement/weapon values), map specs, AABB physics
+  public/    browser client (three.js): index.html, js/, vendored three
+godot/       archived Godot 4 build (specs the web version was ported from)
+docs/        design references (CS 1.6 numbers, map notes)
 ```
-
-## Running locally
-
-1. Install Godot 4.3+ (standard, not Mono).
-2. Start a server on this machine:
-
-   ```bash
-   tools/run_server.sh                    # dedicated + headless, de_aq_dust
-   tools/run_server.sh --listen           # you also play here
-   tools/run_server.sh --map de_aq_aztec  # pick a map
-   ```
-
-3. Join from another machine — it prints the addresses to use:
-
-   ```bash
-   godot --path . -- --connect <server-address> --port 24816
-   ```
-
-   Or launch the client with no arguments and use the in-game **Host** /
-   **Join** menu.
-
-**Full walkthrough, including playing from a MacBook and letting a remote
-friend in over Tailscale: [`README-DEPLOY.md`](README-DEPLOY.md).**
 
 ## Network model
 
-- Peer-to-peer with one peer acting as authoritative server (default port
-  `24816`). Host runs physics + scoring.
-- State replication: `MultiplayerSynchronizer` on Player (position, rotation,
-  health, ammo, current weapon) and on Projectile (linear motion).
-- RPC channels: `fire_weapon`, `apply_damage`, `chat_message`,
-  `round_start`, `round_end`, `buy_item`.
+- One Node process, one port. Static files over HTTP, game over WebSocket
+  (`/ws`, JSON messages).
+- **Movement is client-predicted** using the shared physics module; the server
+  relays positions in 20 Hz snapshots.
+- **Damage is server-authoritative**: clients send `fire` intent (origin +
+  direction), the server raycasts against the map and players, then broadcasts
+  `hit`/`kill` events. The client never decides a hit.
+- Three.js is vendored (`public/vendor/three.module.js`) — no CDN, so it works
+  over Tailscale/LAN with no internet.
 
 ## Roadmap
 
-- [ ] M1 — movement, shooting, raycast hits, HP, respawn
-- [ ] M2 — buy menu, weapon archetypes, ammo + reload, economy
-- [ ] M3 — round system, scoreboard, two-team spawns
-- [ ] M4 — first proper map (`de_dust`‑style arena blockout)
-- [ ] M5 — dedicated server build + matchmaking stub
-- [ ] M6 — Linux / Windows / Android exports
+- [x] M1 — movement, shooting, raycast hits, HP, respawn (web build)
+- [x] M3 — round system basics, score, two-team spawns
+- [x] M4 — three maps ported to the web (dust / inferno / aztec blockouts)
+- [ ] M2 — buy menu, ammo economy, proper reload state
+- [ ] M5 — bomb plant/defuse mode
+- [ ] M6 — player models + animations, sounds
 
 See `ROADMAP.md` for the ticket-sized backlog.
-
-## Contributing
-
-Open an issue with a label (`bug`, `feature`, `map`, `art`, `net`). PRs:
-one ticket per PR, run `godot --headless --check-only` before pushing.
 
 ## License
 

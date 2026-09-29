@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Battle-AQ</title>
+<link rel="stylesheet" href="/style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vendor/three.module.js",
+    "/shared/": "/shared/"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="game"></div>
+
+  <!-- crosshair -->
+  <div id="crosshair" class="hidden">
+    <span class="ch t"></span><span class="ch b"></span>
+    <span class="ch l"></span><span class="ch r"></span>
+    <span class="ch dot"></span>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="topbar">
+      <div id="score"><span class="t-side">T <b id="scoreT">0</b></span><span id="roundPhase">WAITING</span><span class="ct-side"><b id="scoreCT">0</b> CT</span></div>
+      <div id="timer">0:00</div>
+    </div>
+    <div id="killfeed"></div>
+    <div id="hpbar"><div id="hplabel">100</div><div id="hptrack"><div id="hpfill"></div></div></div>
+    <div id="ammo"><span id="weaponName">AK-47</span><span id="ammoCount">30 / 30</span></div>
+    <div id="chatlog"></div>
+    <div id="hint"></div>
+  </div>
+
+  <!-- death / respawn overlay -->
+  <div id="death" class="hidden">
+    <div id="deathText">You were killed</div>
+    <div id="deathSub">respawning…</div>
+  </div>
+
+  <!-- main menu -->
+  <div id="menu">
+    <div id="menuCard">
+      <h1>BATTLE-AQ</h1>
+      <p class="tag">lightweight multiplayer FPS — three.js + WebSocket</p>
+      <label>Server</label>
+      <input id="serverAddr" type="text" spellcheck="false" />
+      <label>Name</label>
+      <input id="playerName" type="text" maxlength="24" spellcheck="false" placeholder="Player" />
+      <label>Map</label>
+      <div id="mapName">—</div>
+      <button id="playBtn">PLAY</button>
+      <div id="menuStatus"></div>
+      <p class="controls">
+        WASD move · mouse look · Space jump · Ctrl crouch · Shift walk<br/>
+        LMB fire · R reload · 1-9 weapons · Y chat · click to lock mouse
+      </p>
+    </div>
+  </div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

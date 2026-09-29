@@ -22,3 +22,7 @@ build/
 # IDE
 .vscode/
 .idea/
+
+# Web build
+node_modules/
+web/node_modules/

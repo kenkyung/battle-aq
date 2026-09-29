@@ -1,0 +1,20 @@
+{
+  "name": "battle-aq-web",
+  "version": "0.1.0",
+  "description": "Battle-AQ: lightweight online multiplayer FPS (three.js + WebSocket). CS 1.6 lineage.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "server": "node server/index.js",
+    "smoke": "node server/smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "three": "^0.160.0",
+    "ws": "^8.18.0"
+  }
+}

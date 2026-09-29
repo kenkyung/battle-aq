@@ -1,0 +1,71 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0d0e; }
+body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e8e6e0; }
+#game, #game canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hidden { display: none !important; }
+
+/* ---------- menu ---------- */
+#menu { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 35%, #1d2124 0%, #0b0d0e 75%); z-index: 40; }
+#menuCard { width: 340px; padding: 28px 30px; background: #15181b; border: 1px solid #2a2f33;
+  border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+#menuCard h1 { font-size: 34px; letter-spacing: 4px; color: #d8b56a; text-align: center; }
+#menuCard .tag { text-align: center; color: #7d838a; font-size: 12px; margin: 6px 0 20px; }
+#menuCard label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+  color: #8a9096; margin: 14px 0 4px; }
+#menuCard input { width: 100%; padding: 9px 11px; background: #0d0f11; color: #e8e6e0;
+  border: 1px solid #2a2f33; border-radius: 6px; font-size: 14px; outline: none; }
+#menuCard input:focus { border-color: #d8b56a; }
+#mapName { padding: 9px 11px; background: #0d0f11; border: 1px solid #22262a; border-radius: 6px;
+  font-size: 14px; color: #d8b56a; }
+#playBtn { width: 100%; margin-top: 20px; padding: 12px; background: #d8b56a; color: #14161a;
+  font-size: 16px; font-weight: 700; letter-spacing: 2px; border: none; border-radius: 6px; cursor: pointer; }
+#playBtn:hover { background: #e8c87e; }
+#playBtn:disabled { background: #5a5142; cursor: default; }
+#menuStatus { min-height: 18px; margin-top: 12px; font-size: 12px; color: #c96a5a; text-align: center; }
+.controls { margin-top: 18px; font-size: 11px; line-height: 1.7; color: #6d7379; text-align: center; }
+
+/* ---------- crosshair ---------- */
+#crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; z-index: 20; pointer-events: none; }
+.ch { position: absolute; background: rgba(235,235,235,.92); box-shadow: 0 0 2px rgba(0,0,0,.8); }
+.ch.t  { left: -1px; top: -13px; width: 2px; height: 8px; }
+.ch.b  { left: -1px; top: 5px;   width: 2px; height: 8px; }
+.ch.l  { left: -13px; top: -1px; width: 8px; height: 2px; }
+.ch.r  { left: 5px;   top: -1px; width: 8px; height: 2px; }
+.ch.dot{ left: -1px; top: -1px;  width: 2px; height: 2px; }
+
+/* ---------- HUD ---------- */
+#hud { position: absolute; inset: 0; pointer-events: none; z-index: 15; }
+#topbar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; }
+#score { display: flex; gap: 16px; align-items: center; justify-content: center; font-size: 15px; }
+#score .t-side { color: #d8b56a; } #score .ct-side { color: #6fa3d8; }
+#roundPhase { color: #9aa0a6; font-size: 12px; letter-spacing: 2px; }
+#timer { font-size: 24px; font-weight: 600; margin-top: 2px; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+
+#killfeed { position: absolute; top: 16px; right: 18px; display: flex; flex-direction: column;
+  gap: 4px; align-items: flex-end; font-size: 13px; }
+.kf { background: rgba(10,12,14,.55); padding: 3px 9px; border-radius: 4px; transition: opacity .4s; }
+.kf .k { color: #e8c87e; } .kf .w { color: #8a9096; font-size: 11px; } .kf .v { color: #d88a8a; }
+
+#hpbar { position: absolute; left: 22px; bottom: 22px; display: flex; align-items: center; gap: 10px; }
+#hplabel { font-size: 30px; font-weight: 700; min-width: 58px; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
+#hptrack { width: 210px; height: 16px; background: rgba(8,10,12,.7); border: 1px solid #3a3f44; border-radius: 3px; overflow: hidden; }
+#hpfill { height: 100%; width: 100%; background: #37c95c; transition: width .15s, background .3s; }
+
+#ammo { position: absolute; right: 22px; bottom: 22px; text-align: right; }
+#weaponName { display: block; font-size: 13px; color: #b9bec4; letter-spacing: 1px; }
+#ammoCount { display: block; font-size: 30px; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
+
+#chatlog { position: absolute; left: 22px; bottom: 90px; max-width: 380px; font-size: 13px;
+  display: flex; flex-direction: column; gap: 3px; }
+.chat { background: rgba(10,12,14,.5); padding: 3px 8px; border-radius: 4px; }
+.chat .n { color: #d8b56a; }
+
+#hint { position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); font-size: 13px;
+  color: #cfd3d8; text-shadow: 0 1px 3px rgba(0,0,0,.9); text-align: center; }
+
+/* ---------- death overlay ---------- */
+#death { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; background: rgba(20,4,4,.45); z-index: 25; }
+#deathText { font-size: 30px; font-weight: 700; color: #e06a5a; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+#deathSub { margin-top: 8px; color: #cfd3d8; }
