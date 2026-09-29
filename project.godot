@@ -93,9 +93,16 @@ network/max_clients=16
 
 [rendering]
 
-rendering/renderer/rendering_method="gl_compatibility"
-rendering/textures/default_filters/anisotropic_filtering_level=0
-rendering/anti_aliasing/quality/msaa_3d=0
-rendering/anti_aliasing/quality/screen_space_aa=0
-rendering/scaling_3d/mode=0
-rendering/scaling_3d/scale=1.0
+; In project.godot the SECTION is the first path segment: `[rendering]` +
+; `renderer/rendering_method` is the setting `rendering/renderer/rendering_method`.
+; Writing the full path as the key here yields
+; `rendering/rendering/renderer/...`, which is not a real setting and is
+; silently ignored — Godot then keeps its `forward_plus` default. That mistake
+; shipped once: `tools/diagnose.gd` reported "renderer (configured) :
+; forward_plus" while this file appeared to ask for gl_compatibility.
+renderer/rendering_method="gl_compatibility"
+textures/default_filters/anisotropic_filtering_level=0
+anti_aliasing/quality/msaa_3d=0
+anti_aliasing/quality/screen_space_aa=0
+scaling_3d/mode=0
+scaling_3d/scale=1.0

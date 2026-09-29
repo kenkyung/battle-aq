@@ -304,4 +304,13 @@ godot --headless --editor --quit-after 60 --path .
 
 # verify the project still holds together after any change
 godot --headless --script scripts/smoke_test.gd --path .
+
+# what renderer / GPU / settings Godot actually resolved
+godot --path . --script tools/diagnose.gd
 ```
+
+That last one is worth remembering: `project.godot` can *look* correct while
+Godot quietly uses something else. It is how the GL Compatibility bug was found
+- the file asked for `gl_compatibility` but the probe reported `forward_plus`,
+because the setting was written with its full path as the key instead of the
+section-relative one.
