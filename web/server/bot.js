@@ -10,7 +10,7 @@
 // being shot) -> pick a goal from the objective (carry / plant / guard / retake
 // / defuse) -> follow an A* path there -> fight whatever it can see.
 
-import { movePlayer, norm, playerBox, raycast } from '../shared/physics.js';
+import { movePlayer, norm, playerBox, bodyBox, raycast } from '../shared/physics.js';
 import { PLAYER, WEAPONS, TEAM, BOMB } from '../shared/constants.js';
 import { ECONOMY, inBuyZone } from '../shared/economy.js';
 import { navFor } from './nav.js';
@@ -385,12 +385,11 @@ export class BotBrain {
     this.jump = false;
     this.state.pos = p.pos;
     this.state.crouching = crouch;
-    // other players are solid for bots too
+    // every other player is solid for bots, teammates included (bodies never
+    // shove: an overlapping pair can always step apart, see physics moveAxis)
     const bodies = [];
     for (const q of this.game.players.values()) {
-      // enemies are solid; teammates are not (bots would otherwise queue in
-      // every doorway out of spawn)
-      if (q !== p && q.alive && q.team !== p.team && Math.abs(q.pos[0] - p.pos[0]) < 200 && Math.abs(q.pos[2] - p.pos[2]) < 200) bodies.push(playerBox(q.pos, q.crouching));
+      if (q !== p && q.alive && Math.abs(q.pos[0] - p.pos[0]) < 200 && Math.abs(q.pos[2] - p.pos[2]) < 200) bodies.push(bodyBox(q.pos, q.crouching));
     }
     movePlayer(this.state, keys, dt, bodies.length ? this.game.colliders.concat(bodies) : this.game.colliders);
     p.pos = this.state.pos;

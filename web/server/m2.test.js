@@ -29,13 +29,14 @@ function client(name) {
     if (m.t === 'inv') c.inv = m;
     if (m.t === 'ammo') c.ammo = m;
   };
-  c.state = () => c.send({ t: 'state', pos: c.pos, yaw: 0, pitch: 0, crouching: false, moving: false });
+  // positions jump around the map here: the test-only teleport (BAQ_DEV) sets them
+  c.state = () => { c.send({ t: 'dev_tp', pos: c.pos }); c.send({ t: 'state', pos: c.pos, yaw: 0, pitch: 0, crouching: false, moving: false }); };
   c.timer = setInterval(() => { if (c.pos) c.state(); }, 50);
   return c;
 }
 
 async function main() {
-  const srv = spawn(process.execPath, [path.join(__dirname, 'index.js'), '--port', String(PORT), '--host', '127.0.0.1'], { stdio: 'pipe' });
+  const srv = spawn(process.execPath, [path.join(__dirname, 'index.js'), '--port', String(PORT), '--host', '127.0.0.1'], { stdio: 'pipe', env: { ...process.env, BAQ_DEV: '1' } });
   let booted = false;
   srv.stdout.on('data', (d) => { if (String(d).includes('battle-aq web server')) booted = true; });
   srv.stderr.on('data', (d) => process.stderr.write(d));

@@ -34,6 +34,7 @@ function client(name) {
     else if (m.t === 'state') c.snapshots.push(m);
     else if (m.t === 'hit') c.hits.push(m);
     else if (m.t === 'kill') c.kills.push(m);
+    else if (m.t === 'correct') { c.corrected = true; c.pos = m.pos; }
     else if (m.t === 'round' && m.phase === 'round') c.roundLive = true;
   };
   return c;
@@ -43,7 +44,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
   console.log('smoke: booting server on :' + PORT);
-  const srv = spawn(process.execPath, [path.join(__dirname, 'index.js'), '--port', String(PORT), '--host', '127.0.0.1'], { stdio: 'pipe' });
+  const srv = spawn(process.execPath, [path.join(__dirname, 'index.js'), '--port', String(PORT), '--host', '127.0.0.1'], { stdio: 'pipe', env: { ...process.env, BAQ_DEV: '1' } });
   let booted = false;
   srv.stdout.on('data', (d) => { if (String(d).includes('battle-aq web server')) booted = true; });
   srv.stderr.on('data', (d) => process.stderr.write(d));
@@ -73,7 +74,15 @@ async function main() {
     // puts the clients ~3000u apart with walls between, so this matters.
     const aPos = b.snapshots.at(-1)?.players.find((p) => p.id === a.id)?.pos;
     assert(!!aPos, 'beta can read alpha position from snapshot');
+    // a client may not simply report a far-away position: the server refuses
+    // the step and snaps the client back
+    const home = b.pos.slice();
     b.pos = [aPos[0] + 120, aPos[1], aPos[2]];
+    await sleep(300);
+    assert(b.corrected && Math.hypot(b.pos[0] - home[0], b.pos[2] - home[2]) < 1, 'teleport through the map is refused and corrected');
+    // (test-only teleport, enabled by BAQ_DEV)
+    b.pos = [aPos[0] + 120, aPos[1], aPos[2]];
+    b.send({ t: 'dev_tp', pos: b.pos });
     await sleep(300);
 
     const eye = () => [b.pos[0], b.pos[1] + 64, b.pos[2]];

@@ -375,6 +375,13 @@ net.on('despawn', (msg) => { roster.delete(msg.id); if (remotes) remotes.remove(
 
 net.on('shoot', (msg) => { if (remotes && fx && msg.id !== myId) remotes.onShoot(msg, [{ id: myId, pos: player.state.pos, crouching: player.state.crouching }, ...remotes.targets()]); });
 
+// the server refused a step (through a wall / into a player): back to where it has us
+net.on('correct', (msg) => {
+  if (!player || !player.alive || !Array.isArray(msg.pos)) return;
+  player.state.pos = msg.pos.slice();
+  player.state.vel = [0, Math.min(0, player.state.vel[1]), 0];
+});
+
 net.on('hit', (msg) => {
   if (!player) return;
   if (msg.attacker === myId && msg.victim !== myId) { hud.hitMarker(msg.part === 'head'); sfx.play('hitmark', { volume: 0.5 }); }

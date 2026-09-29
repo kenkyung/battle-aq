@@ -153,6 +153,17 @@ export function playerBox(pos, crouching) {
   };
 }
 
+// Another player's hull as a movement obstacle. Bodies block like walls, but
+// they move on their own, so when one ends up overlapping you (it walked into
+// you, or lag put it there) you are never shoved by it — you just cannot move
+// any closer to it (see moveAxis), and stepping apart is always allowed.
+export function bodyBox(pos, crouching) {
+  const b = playerBox(pos, crouching);
+  b.body = true;
+  b.cx = pos[0]; b.cz = pos[2];
+  return b;
+}
+
 // Box that bullets test against. Standing it equals the hull; crouched it is
 // taller than the 36 u movement hull because the crouched model's head is.
 export function hitBox(pos, crouching) {
@@ -182,19 +193,27 @@ export function aabbOverlap(a, b) {
 // the shortest way. Without this, the "only clamp faces you approached from
 // outside" rule below would let a body that ends up overlapping a box — by
 // standing up under a ledge, a spawn, a teleport — walk straight through it.
+// Only pushes that land somewhere free are taken (else a push out of one box
+// could shove the body into, and then through, the wall next to it); other
+// players' bodies are never pushed out of (moveAxis handles them).
 export function depenetrate(p, colliders) {
   for (let iter = 0; iter < 4; iter++) {
     const box = playerBox(p.pos, p.crouching);
     let moved = false;
     for (const c of colliders) {
-      if (!aabbOverlap(box, c)) continue;
+      if (c.body || !aabbOverlap(box, c)) continue;
       const push = [
         [c.max[0] - box.min[0] + 0.02, 0], [c.min[0] - box.max[0] - 0.02, 0],
         [c.max[2] - box.min[2] + 0.02, 2], [c.min[2] - box.max[2] - 0.02, 2],
         [c.max[1] - box.min[1] + 0.02, 1],                 // up onto it (small steps only)
       ].filter(([d, ax]) => ax !== 1 || d <= PLAYER.stepHeight);
       push.sort((a, b) => Math.abs(a[0]) - Math.abs(b[0]));
-      const [d, ax] = push[0];
+      const free = push.find(([d, ax]) => {
+        const q = p.pos.slice(); q[ax] += d;
+        const qb = playerBox(q, p.crouching);
+        return !colliders.some((o) => o !== c && !o.body && aabbOverlap(qb, o));
+      });
+      const [d, ax] = free || push[0];
       p.pos[ax] += d;
       if (ax === 1 && p.vel) { p.vel[1] = Math.max(0, p.vel[1]); p.onGround = true; }
       moved = true;
@@ -334,6 +353,21 @@ function moveAxis(p, colliders, axis, delta) {
       continue;
     }
 
+    if (c.body) {
+      // another player: blocked like a wall when walking into them; if
+      // already overlapping, any move that does not bring you closer is fine
+      const wasIn = Math.abs(prev - (axis === 0 ? c.cx : c.cz)) < PLAYER.halfWidth * 2 - 0.05
+        && Math.abs(p.pos[2 - axis] - (axis === 0 ? c.cz : c.cx)) < PLAYER.halfWidth * 2 - 0.05;
+      const centre = axis === 0 ? c.cx : c.cz;
+      if (!wasIn) {
+        p.pos[axis] = delta > 0 ? c.min[axis] - PLAYER.halfWidth - 0.01 : c.max[axis] + PLAYER.halfWidth + 0.01;
+        blocked = delta > 0 ? 1 : -1;
+      } else if (Math.abs(p.pos[axis] - centre) < Math.abs(prev - centre)) {
+        p.pos[axis] = prev;
+        blocked = delta > 0 ? 1 : -1;
+      }
+      continue;
+    }
     // horizontal: try auto step-up onto a low obstacle first
     const rel = c.max[1] - p.pos[1];
     if (rel > 0 && rel <= PLAYER.stepHeight) {

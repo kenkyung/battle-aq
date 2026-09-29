@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from '../vendor/addons/utils/SkeletonUtils.js';
 import { TEAM } from '../shared/constants.js';
-import { playerBox } from '../shared/physics.js';
+import { bodyBox } from '../shared/physics.js';
 import { Models, weaponModel } from './assets.js';
 
 // Right-hand grip in model space (three.js coords; Blender (3.8, 13.4, 49.4)).
@@ -257,7 +257,7 @@ export class Remotes {
   // solid boxes for the local player's movement
   bodies() {
     const out = [];
-    for (const r of this.players.values()) if (r.alive && r.id !== this.hiddenId) out.push(playerBox(r.cur.pos, r.tgt.crouching));
+    for (const r of this.players.values()) if (r.alive && r.id !== this.hiddenId) out.push(bodyBox(r.cur.pos, r.tgt.crouching));
     return out;
   }
 

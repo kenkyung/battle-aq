@@ -29,7 +29,7 @@ import {
 } from '../shared/economy.js';
 import { newRecoil, resetRecoil, shotSpread, spreadDir, baseDamage, armorAbsorb } from '../shared/ballistics.js';
 import {
-  buildColliders, playerBox, hitBox, raycast, raycastPlayers, norm, len, sub, movePlayer,
+  buildColliders, playerBox, aabbOverlap, hitBox, raycast, raycastPlayers, norm, len, sub, movePlayer,
 } from '../shared/physics.js';
 import { navFor } from './nav.js';
 import { radioText } from '../shared/radio.js';
@@ -700,6 +700,58 @@ export class Game {
     return (this._spawnYaw[team] = best);
   }
 
+  // ------------------------------------------------------------- movement check
+
+  // Movement is client-predicted, so the server checks each reported step:
+  // it may not pass through world geometry, cover more ground than running
+  // could, or push into another player. A rejected step leaves the player
+  // where they were and snaps their client back.
+  acceptMove(p, pos, crouching) {
+    const t = now();
+    const elapsed = Math.min(1, Math.max(0.05, t - (p.moveT || t)));
+    p.moveT = t;
+    const from = p.pos;
+    const d = Math.hypot(pos[0] - from[0], pos[2] - from[2]);
+    let bad = d > 320 * elapsed + 48 || pos[1] > from[1] + 80 + 300 * elapsed;
+    if (!bad) {
+      // sweep a slightly slimmer, step-height-raised hull along the path
+      const steps = Math.max(1, Math.ceil(Math.hypot(d, pos[1] - from[1]) / 8));
+      const h = crouching ? PLAYER.crouchHeight : PLAYER.standHeight;
+      const hw = PLAYER.halfWidth - 1;
+      const hull = (x, y, z) => {
+        const box = { min: [x - hw, y + PLAYER.stepHeight + 1, z - hw], max: [x + hw, y + h - 2, z + hw] };
+        if (box.max[1] <= box.min[1]) box.max[1] = box.min[1] + 1;
+        return box;
+      };
+      // solids the step starts in are ignored, so stepping out is always allowed
+      const start = hull(from[0], from[1], from[2]);
+      const solids = this.colliders.filter((c) => !aabbOverlap(start, c));
+      for (let i = 1; i <= steps && !bad; i++) {
+        const f = i / steps;
+        const x = from[0] + (pos[0] - from[0]) * f, y = from[1] + (pos[1] - from[1]) * f, z = from[2] + (pos[2] - from[2]) * f;
+        const box = hull(x, y, z);
+        for (const c of solids) if (aabbOverlap(box, c)) { bad = true; break; }
+      }
+    }
+    if (!bad) {
+      // walking into another player (overlaps deeper than lag can explain)
+      for (const q of this.players.values()) {
+        if (q === p || !q.alive) continue;
+        const dx = Math.abs(pos[0] - q.pos[0]), dz = Math.abs(pos[2] - q.pos[2]);
+        const reach = PLAYER.halfWidth * 2 - 8;
+        if (dx < reach && dz < reach && Math.abs(pos[1] - q.pos[1]) < PLAYER.standHeight - 8
+          && Math.hypot(pos[0] - q.pos[0], pos[2] - q.pos[2]) < Math.hypot(from[0] - q.pos[0], from[2] - q.pos[2]) - 0.5) { bad = true; break; }
+      }
+    }
+    if (!bad) { p.pos = pos; return true; }
+    if (!p.ws) return false;
+    if (t - (p.correctT || 0) > 0.2) {
+      p.correctT = t;
+      this.send(p, { t: 'correct', pos: p.pos });
+    }
+    return false;
+  }
+
   // ------------------------------------------------------------- messages
 
   onMessage(p, msg) {
@@ -707,12 +759,15 @@ export class Game {
       case 'state':
         if (!p.alive) break;
         // frozen at round start: look around, but stay on the spawn
-        if (this.phase !== 'freeze' && Array.isArray(msg.pos) && msg.pos.length === 3 && msg.pos.every(Number.isFinite)) p.pos = msg.pos;
+        if (this.phase !== 'freeze' && Array.isArray(msg.pos) && msg.pos.length === 3 && msg.pos.every(Number.isFinite)) this.acceptMove(p, msg.pos, !!msg.crouching);
         if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
         if (Number.isFinite(msg.pitch)) p.pitch = msg.pitch;
         p.crouching = !!msg.crouching;
         p.moving = !!msg.moving;
         p.speed = Number.isFinite(msg.speed) ? Math.min(400, msg.speed) : (p.moving ? 200 : 0);
+        break;
+      case 'dev_tp':
+        if (process.env.BAQ_DEV === '1' && p.alive && this.phase !== 'freeze' && Array.isArray(msg.pos)) { p.pos = msg.pos.map(Number); p.moveT = now(); }
         break;
       case 'fire':
         this.handleFire(p, msg);
