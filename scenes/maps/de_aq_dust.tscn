@@ -1,0 +1,338 @@
+[gd_scene load_steps=7 format=3 uid="uid://ba0010"]
+
+[ext_resource type="Script" path="res://scripts/world.gd" id="1_world"]
+[ext_resource type="Script" path="res://scripts/map_data.gd" id="2_mapdata"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dust_floor"]
+resource_name = "dust.floor.sand"
+albedo_color = Color(0.82, 0.72, 0.5, 1)
+roughness = 0.95
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dust_wall"]
+resource_name = "dust.wall.adobe"
+albedo_color = Color(0.74, 0.62, 0.45, 1)
+roughness = 0.9
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dust_crate"]
+resource_name = "dust.crate.wood"
+albedo_color = Color(0.55, 0.38, 0.22, 1)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dust_grate"]
+resource_name = "dust.grate.metal"
+albedo_color = Color(0.45, 0.46, 0.44, 1)
+metallic = 0.6
+roughness = 0.4
+
+[node name="de_aq_dust" type="Node3D"]
+script = ExtResource("1_world")
+
+[node name="MapData" type="Node" parent="."]
+script = ExtResource("2_mapdata")
+map_id = "de_aq_dust"
+display_name = "Dust"
+fog_color = Color(0.78, 0.72, 0.55, 1)
+ambient_light = 0.75
+sky_top_color = Color(0.55, 0.65, 0.75, 1)
+sky_bottom_color = Color(0.85, 0.78, 0.65, 1)
+fog_density = 0.001
+
+[node name="SpawnPoints" type="Node3D" parent="."]
+
+[node name="T1" type="Marker3D" parent="SpawnPoints"]
+position = Vector3(-2200, 0, -1500)
+
+[node name="T2" type="Marker3D" parent="SpawnPoints"]
+position = Vector3(-2112, 0, -1500)
+
+[node name="T3" type="Marker3D" parent="SpawnPoints"]
+position = Vector3(-2200, 0, -1408)
+
+[node name="T4" type="Marker3D" parent="SpawnPoints"]
+position = Vector3(-2112, 0, -1408)
+
+[node name="CT1" type="Marker3D" parent="SpawnPoints"]
+position = Vector3(2200, 0, 1500)
+
+[node name="CT2" type="Marker3D" parent="SpawnPoints"]
+position = Vector3(2112, 0, 1500)
+
+[node name="CT3" type="Marker3D" parent="SpawnPoints"]
+position = Vector3(2200, 0, 1408)
+
+[node name="CT4" type="Marker3D" parent="SpawnPoints"]
+position = Vector3(2112, 0, 1408)
+
+[node name="BombSites" type="Node3D" parent="."]
+
+[node name="A" type="Marker3D" parent="BombSites"]
+position = Vector3(1900, 64, -1100)
+
+[node name="B" type="Marker3D" parent="BombSites"]
+position = Vector3(-1100, 0, 1100)
+
+[node name="NavigationRegion3D" type="NavigationRegion3D" parent="."]
+
+; --- floors -----------------------------------------------------------------
+[node name="Floor_Sand" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+use_collision = true
+size = Vector3(4864, 64, 3712)
+material = SubResource("StandardMaterial3D_dust_floor")
+
+[node name="Floor_ASitePlatform" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1920, 0, -1088)
+use_collision = true
+size = Vector3(1024, 64, 768)
+material = SubResource("StandardMaterial3D_dust_floor")
+
+; --- perimeter walls --------------------------------------------------------
+[node name="Wall_North" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 128, -1792)
+use_collision = true
+size = Vector3(4864, 320, 64)
+material = SubResource("StandardMaterial3D_dust_wall")
+
+[node name="Wall_South" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 128, 1792)
+use_collision = true
+size = Vector3(4864, 320, 64)
+material = SubResource("StandardMaterial3D_dust_wall")
+
+[node name="Wall_West" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2432, 128, 0)
+use_collision = true
+size = Vector3(64, 320, 3712)
+material = SubResource("StandardMaterial3D_dust_wall")
+
+[node name="Wall_East" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2432, 128, 0)
+use_collision = true
+size = Vector3(64, 320, 3712)
+material = SubResource("StandardMaterial3D_dust_wall")
+
+; --- mid door: 128u chokepoint at the origin --------------------------------
+[node name="MidDoor_WallWest" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1024, 128, 0)
+use_collision = true
+size = Vector3(2048, 320, 64)
+material = SubResource("StandardMaterial3D_dust_wall")
+
+[node name="MidDoor_WallEast" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1024, 128, 0)
+use_collision = true
+size = Vector3(2048, 320, 64)
+material = SubResource("StandardMaterial3D_dust_wall")
+
+; --- Long A: T Ramp (-2200,0,800) north to A Site ------------------------
+[node name="LongA_WallWest" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2240, 128, -640)
+use_collision = true
+size = Vector3(64, 320, 2880)
+material = SubResource("StandardMaterial3D_dust_wall")
+
+[node name="LongA_WallEast" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1600, 128, -256)
+use_collision = true
+size = Vector3(64, 320, 2112)
+material = SubResource("StandardMaterial3D_dust_wall")
+
+; --- Short A / catwalk: T Spawn to A ---------------------------------------
+[node name="Catwalk_Floor" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1088, 0, -832)
+use_collision = true
+size = Vector3(2176, 64, 256)
+material = SubResource("StandardMaterial3D_dust_grate")
+
+[node name="Catwalk_RailSouth" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1088, 128, -960)
+use_collision = true
+size = Vector3(2176, 128, 64)
+material = SubResource("StandardMaterial3D_dust_wall")
+
+[node name="Catwalk_Ramp" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2176, 0, -896)
+use_collision = true
+size = Vector3(256, 64, 256)
+material = SubResource("StandardMaterial3D_dust_grate")
+
+; --- cover: 30 crates, 64u grid, between spawns and bombsites ---------------
+[node name="Crate_01" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1600, 0, -1088)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_02" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1536, 0, -1088)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_03" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1280, 0, -512)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_04" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -832, 0, -1088)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_05" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -576, 0, -448)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_06" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -384, 0, -768)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_07" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -192, 0, -1152)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_08" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -320, 0, -256)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_09" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -128, 0, -512)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_10" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 192, 0, -192)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_11" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 128, 0, -640)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_12" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 384, 0, -1088)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_13" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 640, 0, -448)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_14" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 896, 0, -832)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_15" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1152, 0, -320)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_16" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1664, 128, -1088)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_17" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1728, 128, -1088)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_18" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2048, 128, -960)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_19" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2240, 128, -1344)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_20" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1664, 0, -1664)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_21" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1344, 0, -704)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_22" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 320, 0, 640)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_23" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 640, 0, 896)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_24" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -896, 0, 512)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_25" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1152, 0, 768)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_26" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -896, 0, 1280)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_27" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1408, 0, 448)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_28" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1152, 0, 1472)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_29" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 896, 0, 1280)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
+
+[node name="Crate_30" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 320, 0, 1152)
+use_collision = true
+size = Vector3(64, 64, 64)
+material = SubResource("StandardMaterial3D_dust_crate")
