@@ -194,3 +194,48 @@ def face(skin, balaclava=None):
     return f
 
 
+
+
+def capsule(name, a, b, r, bone, mat, segs=10, r2=None):
+    """Rounded limb from a to b (sphere-capped cylinder), optional taper to r2."""
+    a, b = Vector(a), Vector(b)
+    L = (b - a).length
+    r2 = r if r2 is None else r2
+    me = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=segs, v_segments=8, radius=1.0)
+    for v in bm.verts:
+        top = v.co.z > 0
+        rad = r2 if top else r
+        v.co.x *= rad; v.co.y *= rad; v.co.z *= rad
+        if top:
+            v.co.z += L
+    q = (b - a).normalized().to_track_quat('Z', 'Y')
+    m = Matrix.Translation(a) @ q.to_matrix().to_4x4()
+    for v in bm.verts:
+        v.co = m @ v.co
+    bm.to_mesh(me); bm.free()
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(ob)
+    for f in ob.data.polygons:
+        f.use_smooth = True
+    return _finish(ob, bone, mat, 0)
+
+
+def arc_tube(name, center, radius, thick, a0, a1, bone, mat, axis='X', segs=10):
+    """Part of a torus (e.g. a trigger guard): angles in degrees, in the plane
+    perpendicular to `axis`."""
+    pts = []
+    for i in range(segs + 1):
+        t = math.radians(a0 + (a1 - a0) * i / segs)
+        u, v = math.cos(t) * radius, math.sin(t) * radius
+        if axis == 'X':
+            pts.append(Vector((center[0], center[1] + u, center[2] + v)))
+        elif axis == 'Z':
+            pts.append(Vector((center[0] + u, center[1] + v, center[2])))
+        else:
+            pts.append(Vector((center[0] + u, center[1], center[2] + v)))
+    obs = []
+    for i in range(segs):
+        obs.append(cyl(f'{name}{i}', pts[i], pts[i + 1], thick, bone, mat, verts=6))
+    return obs

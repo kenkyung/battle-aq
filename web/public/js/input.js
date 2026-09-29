@@ -2,6 +2,12 @@
 // frame; nothing here touches the network. UI keys (buy, scores, chat) are
 // delivered as callbacks so main.js can route them.
 
+const GAME_KEYS = new Set([
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC', 'KeyR', 'KeyQ', 'KeyE', 'KeyB', 'KeyY', 'KeyG',
+  'Space', 'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'Tab',
+  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F1',
+]);
+
 export class Input {
   constructor() {
     this.keys = new Set();
@@ -18,6 +24,7 @@ export class Input {
     this.wheel = 0;
     this.locked = false;
     this.typing = false;       // chat box open: game keys are ignored
+    this.capture = false;      // in a match: swallow browser shortcuts (Ctrl+D, Ctrl+S, …)
     this.onLockChange = null;
     this.onKey = null;         // (code, event) for UI keys: KeyB, Tab, KeyY, Escape
     this.sensitivity = 0.0022;
@@ -30,15 +37,20 @@ export class Input {
 
     window.addEventListener('keydown', (e) => {
       if (this.typing) return;
+      // Crouch is Ctrl, so Ctrl+D (strafe right) would open Chrome's bookmark
+      // dialog, Ctrl+S "save page", etc. While playing, the game owns the
+      // keyboard. (Ctrl+W can only be blocked in fullscreen: see lockKeys.)
+      if (this.capture && (e.ctrlKey || e.metaKey || e.altKey || GAME_KEYS.has(e.code))) e.preventDefault();
       if (e.code === 'Tab') e.preventDefault();
       if (['KeyB', 'Tab', 'KeyY', 'Escape', 'Enter'].includes(e.code) && this.onKey) this.onKey(e.code, e, true);
       if (e.repeat) return;
       this.keys.add(e.code);
       if (e.code === 'KeyR') this.reloadPressed = true;
+      if (e.code === 'KeyG') this.dropPressed = true;
       if (e.code === 'KeyQ') this.lastWeapon = true;
       if (e.code.startsWith('Digit')) {
         const n = parseInt(e.code.slice(5), 10);
-        if (n >= 1 && n <= 3) this.weaponSlot = n;
+        if (n >= 1 && n <= 5) this.weaponSlot = n;
       }
       if (e.code === 'ControlLeft' || e.code === 'Space') e.preventDefault();
     });
@@ -49,7 +61,7 @@ export class Input {
     window.addEventListener('blur', () => { this.keys.clear(); this.fireHeld = false; });
 
     el.addEventListener('mousedown', (e) => {
-      if (!this.locked) { el.requestPointerLock(); return; }
+      if (!this.locked) { this.lock(); return; }
       if (e.button === 0) { this.fireHeld = true; this.firePressed = true; }
       if (e.button === 2) this.zoomPressed = true;
     });
@@ -70,7 +82,26 @@ export class Input {
     });
   }
 
-  lock() { if (this._el && !this.locked) this._el.requestPointerLock(); }
+  lock() {
+    if (!this._el || this.locked) return;
+    // raw (unaccelerated) mouse where supported; plain lock otherwise. Without
+    // a user gesture this fails quietly and the "click to play" hint remains.
+    const plain = () => { try { const r = this._el.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch { /* not now */ } };
+    try {
+      const r = this._el.requestPointerLock({ unadjustedMovement: true });
+      if (r && r.catch) r.catch((e) => { if (e && e.name === 'NotSupportedError') plain(); });
+    } catch { plain(); }
+  }
+
+  // Fullscreen + Keyboard Lock: the only way a page may receive Ctrl+W, Ctrl+T
+  // and friends (Chromium). Esc must then be HELD to leave fullscreen.
+  async toggleFullscreen() {
+    if (document.fullscreenElement) { await document.exitFullscreen(); return; }
+    await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    if (navigator.keyboard && navigator.keyboard.lock) {
+      try { await navigator.keyboard.lock(); } catch { /* not supported here */ }
+    }
+  }
 
   // Movement key snapshot for the player controller.
   moveKeys() {
@@ -103,4 +134,6 @@ export class Input {
   consumeWeaponSlot() { const v = this.weaponSlot; this.weaponSlot = 0; return v; }
   consumeLastWeapon() { const v = this.lastWeapon; this.lastWeapon = false; return v; }
   consumeWheel() { const v = this.wheel; this.wheel = 0; return v; }
+  consumeDrop() { const v = this.dropPressed; this.dropPressed = false; return v; }
+  useHeld() { return !this.typing && this.keys.has('KeyE'); }
 }

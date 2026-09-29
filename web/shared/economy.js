@@ -16,26 +16,33 @@ export const ECONOMY = {
   buyZoneRadius: 720,     // u from the centre of your team's spawn
   buyTimeIntoRound: 20,   // s after the freeze/buy phase ends that buying stays open
   ammoPrice: 100,         // refills every reserve you carry
+  plantBonus: 800,        // every T, when the bomb was planted but T lost
+  planterReward: 300,
+  defuserReward: 300,
+  winBonusBomb: 3500,     // T win by detonation
+  winBonusDefuse: 3500,   // CT win by defusing
 };
 
 export const EQUIPMENT = {
   kevlar:  { name: 'Kevlar Vest',     price: 650 },
   assault: { name: 'Kevlar + Helmet', price: 1000 },
   ammo:    { name: 'Ammo refill',     price: ECONOMY.ammoPrice },
+  kit:     { name: 'Defuse kit',      price: 200, team: 2 },
 };
 
 // Buy menu layout: categories in display order. Weapon ids refer to WEAPONS.
 export const BUY_MENU = [
   { key: 'pistols', title: 'Pistols', items: ['glock', 'usp', 'deagle'] },
-  { key: 'smgs',    title: 'SMGs',    items: ['mp5'] },
+  { key: 'smgs',    title: 'SMGs',    items: ['mp5', 'ump45'] },
   { key: 'rifles',  title: 'Rifles',  items: ['ak47', 'm4a1'] },
   { key: 'snipers', title: 'Snipers', items: ['scout', 'awp'] },
-  { key: 'gear',    title: 'Gear',    items: ['kevlar', 'assault', 'ammo'] },
+  { key: 'heavy',   title: 'Machine gun', items: ['m249'] },
+  { key: 'gear',    title: 'Gear',    items: ['kevlar', 'assault', 'kit', 'ammo'] },
 ];
 
 export function itemInfo(id) {
   if (WEAPONS[id]) return { id, name: WEAPONS[id].name, price: WEAPONS[id].price, weapon: true, team: WEAPONS[id].team || 0 };
-  if (EQUIPMENT[id]) return { id, name: EQUIPMENT[id].name, price: EQUIPMENT[id].price, weapon: false, team: 0 };
+  if (EQUIPMENT[id]) return { id, name: EQUIPMENT[id].name, price: EQUIPMENT[id].price, weapon: false, team: EQUIPMENT[id].team || 0 };
   return null;
 }
 
@@ -57,17 +64,4 @@ export function inBuyZone(map, team, pos) {
   return Math.hypot(pos[0] - cx, pos[2] - cz) <= ECONOMY.buyZoneRadius;
 }
 
-// CS-style armour. Kevlar halves the damage to body/arms (and the head too with
-// a helmet); the armour itself soaks half of what it stopped. When the vest
-// runs out, whatever it could not absorb goes through to health.
-export function applyArmor(dmg, part, armor, helmet) {
-  const covered = armor > 0 && (part === 'body' || part === 'arms' || (part === 'head' && helmet));
-  if (!covered) return { hpDmg: dmg, armorDmg: 0 };
-  let hpDmg = dmg * 0.5;
-  let armorDmg = (dmg - hpDmg) * 0.5;
-  if (armorDmg > armor) {
-    armorDmg = armor;
-    hpDmg = dmg - armor * 2;
-  }
-  return { hpDmg: Math.max(1, Math.round(hpDmg)), armorDmg: Math.round(armorDmg) };
-}
+// (Armour absorption lives in ballistics.js: armorAbsorb, with CS weapon armour ratios.)

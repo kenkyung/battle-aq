@@ -14,7 +14,7 @@ import os from 'node:os';
 import { WebSocketServer } from 'ws';
 import { Game } from './game.js';
 import { MAPS } from '../shared/maps.js';
-import { TICK_RATE, SNAPSHOT_RATE } from '../shared/constants.js';
+import { TICK_RATE, SNAPSHOT_RATE, TEAM } from '../shared/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -83,7 +83,8 @@ const server = http.createServer((req, res) => {
   }
   if (urlPath === '/info') {
     return send(res, 200, JSON.stringify({
-      map: game.map.id, players: game.players.size, phase: game.phase,
+      map: publicGame.map.id, players: publicGame.humans.length, phase: publicGame.phase,
+      maps: Object.keys(MAPS), practiceGames: rooms.size - 1,
     }), 'application/json');
   }
   if (urlPath === '/') urlPath = '/index.html';
@@ -98,23 +99,61 @@ const server = http.createServer((req, res) => {
   });
 });
 
-// ------------------------------------------------------------------ game
+// ------------------------------------------------------------------ rooms
 
-const game = new Game(args.map);
+// One public room (everyone who clicks PLAY) plus practice rooms: one human
+// against bots, created on demand and thrown away when the human leaves.
+const publicGame = new Game(args.map, { id: 'public' });
+const rooms = new Map([['public', publicGame]]);
+let practiceSeq = 0;
+const MAX_PRACTICE_ROOMS = 24;
+
+function practiceRoom(msg) {
+  const mapId = MAPS[msg.map] ? msg.map : args.map;
+  const id = 'practice-' + (++practiceSeq);
+  const game = new Game(mapId, { id, practice: true });
+  rooms.set(id, game);
+  return game;
+}
+
+function fillBots(game, human, msg) {
+  const total = Math.max(1, Math.min(9, parseInt(msg.bots, 10) || 5));
+  const diff = ['easy', 'normal', 'hard'].includes(msg.difficulty) ? msg.difficulty : 'normal';
+  // split everyone as evenly as possible, the human's side filled first
+  const size = { [TEAM.T]: 0, [TEAM.CT]: 0 };
+  size[human.team] = 1;
+  for (let i = 0; i < total; i++) {
+    const team = size[TEAM.T] <= size[TEAM.CT] ? TEAM.T : TEAM.CT;
+    size[team]++;
+    game.addBot(team, diff);
+  }
+  game.checkMode();
+}
 
 const wss = new WebSocketServer({ server, path: '/ws' });
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', (ws) => {
   let player = null;
+  let game = null;
 
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
     if (!player) {
-      if (msg.t === 'join') {
-        player = game.addPlayer(ws, msg.name);
-        log(`join  #${player.id} "${player.name}" team=${player.team} (${wss.clients.size} online)`);
+      if (msg.t !== 'join') return;
+      const team = msg.team === 'CT' ? TEAM.CT : msg.team === 'T' ? TEAM.T : 0;
+      if (msg.mode === 'practice') {
+        const practices = [...rooms.values()].filter((g) => g.practice).length;
+        if (practices >= MAX_PRACTICE_ROOMS) { ws.send(JSON.stringify({ t: 'error', text: 'server is full of practice games, try again soon' })); ws.close(); return; }
+        game = practiceRoom(msg);
+        player = game.addPlayer(ws, msg.name, { team: team || TEAM.T });
+        fillBots(game, player, msg);
+        log(`practice ${game.id} "${player.name}" map=${game.map.id} bots=${game.players.size - 1}`);
+      } else {
+        game = publicGame;
+        player = game.addPlayer(ws, msg.name, { team });
+        log(`join  #${player.id} "${player.name}" team=${player.team} (${publicGame.players.size} online)`);
       }
       return;
     }
@@ -122,10 +161,12 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    if (player) {
-      game.removePlayer(player.id);
-      log(`left  #${player.id} "${player.name}" (${game.players.size} online)`);
-    }
+    if (!player) return;
+    game.removePlayer(player.id);
+    if (game.practice) {
+      if (!game.humans.length) rooms.delete(game.id);
+      log(`practice ${game.id} closed`);
+    } else log(`left  #${player.id} "${player.name}" (${publicGame.players.size} online)`);
   });
 
   ws.on('error', () => {});
@@ -133,9 +174,11 @@ wss.on('connection', (ws, req) => {
 
 // ------------------------------------------------------------------ loops
 
-const simInterval = setInterval(() => game.update(), 1000 / TICK_RATE);
+const simInterval = setInterval(() => {
+  for (const g of rooms.values()) g.update();
+}, 1000 / TICK_RATE);
 const snapInterval = setInterval(() => {
-  if (game.players.size > 0) game.broadcast(game.snapshot());
+  for (const g of rooms.values()) if (g.players.size > 0) g.broadcastSnapshots();
 }, 1000 / SNAPSHOT_RATE);
 
 // ------------------------------------------------------------------ boot

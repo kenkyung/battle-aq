@@ -31,55 +31,98 @@ export const MOVE = {
   airSpeedCap: 30,     // extra speed you can add in the air
 };
 
-// Weapons: straight from CS16_REFERENCE.md §2/§3.
-// damageHead already includes the ~3x headshot multiplier. Damage falls off
-// linearly between rangeMod and maxRange, then is flat (0 for the knife).
+// Weapons: CS 1.6 values (HLSDK / CS 1.6 weapon code, cstrike 1.6).
+//   dmg        base damage per bullet (x hit-group multiplier, see HITGROUP)
+//   rangeMod   damage *= rangeMod ^ (distance / 500)
+//   armorRatio armour penetration: with kevlar, HP damage = dmg * 0.5 * armorRatio
+//   speed      max run speed while holding it (u/s)
+//   acc        accuracy model: auto rifles grow inaccuracy with shots fired,
+//              pistols recover it with time between shots
+//   spread     { air, move:[threshold, a, b], duck, stand } -> a + b * accuracy
+//   kick       KickBack(up_base, lat_base, up_mod, lat_mod, up_max, lat_max, dir_change)
+//              per stance; pistols/snipers use a single upward punch instead
 export const WEAPONS = {
-  knife:  { name: 'Knife',        price: 0,    dmgBody: 20,  dmgHead: 60,  dmgLegs: 14, dmgArms: 14,
-            rangeMod: 128,  maxRange: 256,  rof: 0.40, mag: 1,  reload: 0.0,
-            cone: 0.0, maxCone: 0.0, auto: false, zoomFov: 0, zoomTime: 0, melee: true,
-            slot: 'melee', team: 0, reserve: 0 },
-  glock:  { name: 'Glock-18',     price: 400,  dmgBody: 20,  dmgHead: 50,  dmgLegs: 11, dmgArms: 14,
-            rangeMod: 1500, maxRange: 2000, rof: 0.16, mag: 20, reload: 2.5,
-            cone: 1.50, maxCone: 6.50, auto: false, zoomFov: 0, zoomTime: 0,
-            slot: 'secondary', team: 0, reserve: 120 },
-  usp:    { name: 'USP .45',      price: 500,  dmgBody: 23,  dmgHead: 56,  dmgLegs: 13, dmgArms: 16,
-            rangeMod: 1500, maxRange: 2000, rof: 0.18, mag: 12, reload: 2.3,
-            cone: 1.40, maxCone: 5.75, auto: false, zoomFov: 0, zoomTime: 0,
-            slot: 'secondary', team: 0, reserve: 100 },
-  deagle: { name: 'Desert Eagle', price: 650,  dmgBody: 47,  dmgHead: 233, dmgLegs: 30, dmgArms: 33,
-            rangeMod: 1870, maxRange: 2200, rof: 0.21, mag: 7,  reload: 2.2,
-            cone: 0.50, maxCone: 4.00, auto: false, zoomFov: 0, zoomTime: 0,
-            slot: 'secondary', team: 0, reserve: 35 },
-  mp5:    { name: 'MP5-Navy',     price: 1500, dmgBody: 23,  dmgHead: 56,  dmgLegs: 13, dmgArms: 16,
-            rangeMod: 1440, maxRange: 1800, rof: 0.09, mag: 30, reload: 2.5,
-            cone: 1.85, maxCone: 5.50, auto: true,  zoomFov: 0, zoomTime: 0,
-            slot: 'primary', team: 0, reserve: 120 },
-  ak47:   { name: 'AK-47',        price: 2500, dmgBody: 31,  dmgHead: 96,  dmgLegs: 18, dmgArms: 22,
-            rangeMod: 1716, maxRange: 2200, rof: 0.10, mag: 30, reload: 2.5,
-            cone: 0.75, maxCone: 6.30, auto: true,  zoomFov: 0, zoomTime: 0,
-            slot: 'primary', team: 1, reserve: 90 },
-  m4a1:   { name: 'M4A1',         price: 3100, dmgBody: 28,  dmgHead: 84,  dmgLegs: 16, dmgArms: 20,
-            rangeMod: 1716, maxRange: 2200, rof: 0.09, mag: 30, reload: 3.0,
-            cone: 0.55, maxCone: 5.10, auto: true,  zoomFov: 0, zoomTime: 0,
-            slot: 'primary', team: 2, reserve: 90 },
-  awp:    { name: 'AWP',          price: 4750, dmgBody: 115, dmgHead: 437, dmgLegs: 55, dmgArms: 81,
-            rangeMod: 4500, maxRange: 4500, rof: 1.50, mag: 10, reload: 3.0,
-            cone: 0.20, maxCone: 0.20, auto: false, zoomFov: 40, zoomFov2: 10, zoomTime: 1.5,
-            slot: 'primary', team: 0, reserve: 30 },
-  scout:  { name: 'Scout',        price: 1700, dmgBody: 75,  dmgHead: 188, dmgLegs: 28, dmgArms: 53,
-            rangeMod: 2850, maxRange: 3000, rof: 1.35, mag: 10, reload: 3.0,
-            cone: 0.30, maxCone: 0.30, auto: false, zoomFov: 40, zoomFov2: 15, zoomTime: 1.0,
-            slot: 'primary', team: 0, reserve: 90 },
+  knife:  { name: 'Knife', price: 0, dmg: 15, rangeMod: 1, armorRatio: 1.0, rof: 0.4, mag: 1, reserve: 0, reload: 0,
+            speed: 250, auto: false, melee: true, slot: 'melee', team: 0 },
+  glock:  { name: 'Glock-18', price: 400, dmg: 25, rangeMod: 0.75, armorRatio: 1.05, rof: 0.2, mag: 20, reserve: 120, reload: 2.2,
+            speed: 250, auto: false, slot: 'secondary', team: 0,
+            acc: { type: 'pistol', start: 0.9, min: 0.6, k: 0.275, t: 0.325 },
+            spread: { air: [0, 1.0], move: [0, 0, 0.165], duck: [0, 0.075], stand: [0, 0.1] }, punch: 2 },
+  usp:    { name: 'USP .45', price: 500, dmg: 34, rangeMod: 0.79, armorRatio: 1.0, rof: 0.15, mag: 12, reserve: 100, reload: 2.7,
+            speed: 250, auto: false, slot: 'secondary', team: 0,
+            acc: { type: 'pistol', start: 0.92, min: 0.6, k: 0.275, t: 0.3 },
+            spread: { air: [0, 1.2], move: [0, 0, 0.225], duck: [0, 0.08], stand: [0, 0.1] }, punch: 2 },
+  deagle: { name: 'Desert Eagle', price: 650, dmg: 54, rangeMod: 0.81, armorRatio: 1.5, rof: 0.225, mag: 7, reserve: 35, reload: 2.2,
+            speed: 250, auto: false, slot: 'secondary', team: 0,
+            acc: { type: 'pistol', start: 0.9, min: 0.55, k: 0.35, t: 0.4 },
+            spread: { air: [0, 1.5], move: [0, 0, 0.25], duck: [0, 0.115], stand: [0, 0.13] }, punch: 2 },
+  mp5:    { name: 'MP5-Navy', price: 1500, dmg: 26, rangeMod: 0.84, armorRatio: 1.2, rof: 0.075, mag: 30, reserve: 120, reload: 2.63,
+            speed: 250, auto: true, slot: 'primary', team: 0,
+            acc: { type: 'auto', div: 220.1, exp: 2, base: 0.45, max: 0.75 },
+            spread: { air: [0, 0.2], move: [140, 0, 0.04], duck: [0, 0.04], stand: [0, 0.04] },
+            kick: { move: [0.5, 0.275, 0.2, 0.03, 3, 2, 10], air: [0.9, 0.475, 0.35, 0.0425, 5, 3, 6],
+                    duck: [0.225, 0.15, 0.1, 0.015, 2, 1, 10], stand: [0.25, 0.175, 0.125, 0.02, 2.25, 1.25, 10] } },
+  ump45:  { name: 'UMP45', price: 1700, dmg: 30, rangeMod: 0.82, armorRatio: 1.0, rof: 0.1, mag: 25, reserve: 100, reload: 3.5,
+            speed: 250, auto: true, slot: 'primary', team: 0,
+            acc: { type: 'auto', div: 210, exp: 2, base: 0.5, max: 1.0 },
+            spread: { air: [0, 0.24], move: [140, 0, 0.04], duck: [0, 0.04], stand: [0, 0.04] },
+            kick: { move: [0.55, 0.3, 0.225, 0.03, 3.5, 2.5, 10], air: [0.125, 0.65, 0.55, 0.0475, 5.5, 4, 10],
+                    duck: [0.25, 0.175, 0.125, 0.02, 2.25, 1.25, 10], stand: [0.275, 0.2, 0.15, 0.0225, 2.5, 1.5, 10] } },
+  ak47:   { name: 'AK-47', price: 2500, dmg: 36, rangeMod: 0.98, armorRatio: 1.55, rof: 0.0955, mag: 30, reserve: 90, reload: 2.45,
+            speed: 221, auto: true, slot: 'primary', team: 1,
+            acc: { type: 'auto', div: 200, exp: 3, base: 0.35, max: 1.25 },
+            spread: { air: [0.04, 0.4], move: [140, 0.04, 0.07], duck: [0, 0.0275], stand: [0, 0.0275] },
+            kick: { move: [1.5, 0.45, 0.225, 0.05, 6.5, 2.5, 7], air: [2.0, 1.0, 0.5, 0.35, 9, 6, 5],
+                    duck: [0.9, 0.35, 0.15, 0.025, 5.5, 1.5, 9], stand: [1.0, 0.375, 0.175, 0.0375, 5.75, 1.75, 8] } },
+  m4a1:   { name: 'M4A1', price: 3100, dmg: 32, rangeMod: 0.97, armorRatio: 1.4, rof: 0.0875, mag: 30, reserve: 90, reload: 3.05,
+            speed: 230, auto: true, slot: 'primary', team: 2,
+            acc: { type: 'auto', div: 220, exp: 3, base: 0.3, max: 1.0 },
+            spread: { air: [0.035, 0.4], move: [140, 0.035, 0.07], duck: [0, 0.025], stand: [0, 0.025] },
+            kick: { move: [1.0, 0.45, 0.28, 0.045, 3.75, 3, 7], air: [1.2, 0.5, 0.23, 0.15, 5.5, 3.5, 6],
+                    duck: [0.6, 0.3, 0.2, 0.0125, 3.25, 2, 7], stand: [0.65, 0.35, 0.25, 0.015, 3.5, 2.25, 7] } },
+  m249:   { name: 'M249 Para', price: 5750, dmg: 32, rangeMod: 0.97, armorRatio: 1.6, rof: 0.1, mag: 100, reserve: 200, reload: 4.7,
+            speed: 220, auto: true, slot: 'primary', team: 0,
+            acc: { type: 'auto', div: 175, exp: 3, base: 0.4, max: 0.9 },
+            spread: { air: [0.045, 0.5], move: [140, 0.045, 0.095], duck: [0, 0.03], stand: [0, 0.03] },
+            kick: { move: [1.1, 0.5, 0.3, 0.06, 4, 3, 8], air: [1.8, 0.65, 0.45, 0.125, 5, 3.5, 8],
+                    duck: [0.75, 0.325, 0.25, 0.025, 3.5, 2.5, 9], stand: [0.8, 0.35, 0.3, 0.03, 3.75, 3, 9] } },
+  scout:  { name: 'Scout', price: 2750, dmg: 75, rangeMod: 0.98, armorRatio: 1.7, rof: 1.25, mag: 10, reserve: 90, reload: 2.0,
+            speed: 260, auto: false, slot: 'primary', team: 0, zoomFov: 40, zoomFov2: 15,
+            spread: { air: [0.2, 0], move: [170, 0.075, 0], duck: [0, 0], stand: [0.007, 0] }, unscoped: 0.025, punch: 2 },
+  awp:    { name: 'AWP', price: 4750, dmg: 115, rangeMod: 0.99, armorRatio: 1.95, rof: 1.45, mag: 10, reserve: 30, reload: 2.9,
+            speed: 210, auto: false, slot: 'primary', team: 0, zoomFov: 40, zoomFov2: 10,
+            spread: { air: [0.85, 0], move: [140, 0.25, 0], duck: [0, 0], stand: [0.001, 0] }, unscoped: 0.08, punch: 2 },
+  // The bomb: selected like a weapon (5), "fired" by holding the trigger in
+  // a bombsite, which plants it. Never bought.
+  c4:     { name: 'C4 Explosive', price: 0, dmg: 0, rangeMod: 1, armorRatio: 1, rof: 0.2, mag: 1, reserve: 0, reload: 0,
+            speed: 250, auto: true, bomb: true, slot: 'c4', team: 1 },
 };
+
+// CS 1.6 hit groups: damage multiplier and whether kevlar covers it.
+// Arms count as chest. The helmet covers the head.
+export const HITGROUP = {
+  head:    { mul: 4.0,  armor: 'helmet' },
+  chest:   { mul: 1.0,  armor: true },
+  stomach: { mul: 1.25, armor: true },
+  legs:    { mul: 0.75, armor: false },
+};
+
+export const START_WEAPON = 'glock';
 
 // Loadouts (M2). `team` on a weapon is 0 (both), TEAM.T (1) or TEAM.CT (2).
 // Everyone spawns with a knife and their side's pistol; primaries are bought.
 export const DEFAULT_PISTOL = { 1: 'glock', 2: 'usp' };
-export const SLOTS = ['primary', 'secondary', 'melee']; // keys 1, 2, 3
+export const SLOTS = ['primary', 'secondary', 'melee', null, 'c4']; // keys 1, 2, 3, (4), 5
 export const DRAW_TIME = 0.35;       // s after switching before the first shot
 export const MELEE_REACH = 72;       // u, knife hit distance
 export const NOSCOPE_CONE = 8.0;     // deg, sniper fired without the scope up
+
+// CS 1.6 dynamic crosshair (cl_dll ammo.cpp): base gap and how much each
+// shot pushes it out, per weapon. The HUD scales these to the screen.
+export const CROSSHAIR = {
+  knife: [7, 3], glock: [8, 3], usp: [8, 3], deagle: [8, 3], mp5: [6, 2],
+  ak47: [4, 4], m4a1: [4, 3], awp: [8, 3], scout: [5, 3], c4: [6, 3], ump45: [6, 3], m249: [6, 3],
+};
 
 // Cone grows per shot toward maxCone over the first 10 shots; recovery only
 // once fire stops (CS 1.6 discrete recoil model).
@@ -88,13 +131,27 @@ export const CONE_RECOVERY_PER_SEC = 2.5;
 export const AIR_CONE_MUL = 3.0;
 export const RUN_CONE_MUL = 2.0;
 
-// Round structure (CS 1.6 defaults).
+// Round structure (CS 1.6 defaults, shortened match: first to 8 of 15).
 export const ROUND = {
-  buyTime: 15,
-  roundTime: 115,
-  roundEndTime: 5,
+  freezeTime: 5,        // s at round start: buy, but no moving
+  roundTime: 115,       // 1:55
+  roundEndTime: 5,      // s showing the result before the next round
+  bombTime: 35,         // s from plant to explosion
+  plantTime: 3,
+  defuseTime: 10,
+  defuseKitTime: 5,
   roundsToWin: 8,
-  maxRounds: 30,
+  maxRounds: 15,
+  halftimeAfter: 7,     // teams swap sides after this round
+  voteTime: 15,         // map vote at match end
+};
+
+export const BOMB = {
+  siteRadius: 240,      // u around a bombsite marker where C4 can be planted
+  defuseReach: 72,      // u from the bomb to defuse it
+  pickupReach: 48,      // u to pick up a dropped C4
+  blastRadius: 900,     // u, damage falls off to 0 here
+  blastDamage: 450,     // at ground zero (armour does not help against the blast)
 };
 
 // Bullet penetration multiplier by material class.

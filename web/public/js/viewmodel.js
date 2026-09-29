@@ -13,14 +13,16 @@ import { flashTexture } from './textures.js';
 
 // Where the gun sits in front of the eye (inches, camera space).
 const HOLD = {
-  rifle:  { pos: [5.0, -6.4, -15.5], rot: [0.02, 0.05, 0] },
-  sniper: { pos: [4.8, -6.6, -15.0], rot: [0.02, 0.04, 0] },
+  rifle:  { pos: [5.4, -6.9, -18.5], rot: [0.02, 0.06, 0] },
+  sniper: { pos: [5.2, -7.0, -18.0], rot: [0.02, 0.05, 0] },
   pistol: { pos: [3.6, -4.6, -14.0], rot: [0.04, 0.08, 0] },
   knife:  { pos: [7.0, -6.2, -11.0], rot: [0.35, 0.35, -0.5] },
+  c4:     { pos: [3.5, -7.5, -12.0], rot: [0.5, 0.2, 0] },
 };
 const holdFor = (id) => {
   const w = WEAPONS[id];
   if (w.melee) return HOLD.knife;
+  if (w.bomb) return HOLD.c4;
   if (w.zoomFov) return HOLD.sniper;
   if (w.slot === 'secondary') return HOLD.pistol;
   return HOLD.rifle;
@@ -65,6 +67,8 @@ export class Viewmodel {
     this.flashT = 0;
     this.tint = 1;
     this.visible = true;
+    this.env = null;
+    this._mats = new Set();
   }
 
   setAspect(a) { this.camera.aspect = a; this.camera.updateProjectionMatrix(); }
@@ -83,12 +87,7 @@ export class Viewmodel {
     const gun = weaponModel(id);
     if (!gun) { this.gun = null; return; }
     this.gun = gun;
-    gun.traverse((o) => {
-      if (o.isMesh) {
-        o.material = toPhong(o.material, id === 'deagle' || id === 'knife');
-        o.frustumCulled = false;
-      }
-    });
+    gun.traverse((o) => { if (o.isMesh) { o.material = this.pbr(o.material, id === 'deagle' || id === 'knife'); o.frustumCulled = false; } });
     this.holder.add(gun);
     const hold = holdFor(id);
     this.holder.position.set(...hold.pos);
@@ -98,35 +97,19 @@ export class Viewmodel {
     this.muzzle.add(this.flash);
     this.flash.position.set(0, 0, -1.5);
 
-    // arms: right hand on the grip, left on the handguard (or cupping the
-    // right hand for pistols); forearms run back past the camera
-    const armId = this.team === TEAM.CT ? 'arm_ct' : 'arm_t';
-    const right = weaponModel(armId);
-    const left = weaponModel(armId);
-    for (const a of [right, left]) {
-      if (!a) continue;
-      a.traverse((o) => { if (o.isMesh) { o.material = toPhong(o.material, false); o.frustumCulled = false; } });
-    }
+    // gloved hands, modelled closed around this gun's grip and handguard
+    // (weapons.glb has <id>_grip / <id>_lhand empties for them)
+    const team = this.team === TEAM.CT ? 'ct' : 't';
     const w = WEAPONS[id];
-    if (right) {
-      // forearm (+Z in the arm model) must run down and back out of frame
-      right.position.set(0.2, -0.4, 0.4);
-      right.rotation.set(0.95, 0.5, 0.1, 'YXZ');
-      if (w.melee) right.rotation.set(0.8, 0.35, 0.0, 'YXZ');
-      gun.add(right);
-    }
-    if (left && !w.melee) {
-      const lh = gun.getObjectByName(`${id}_lhand`);
-      left.scale.x = -1;
-      if (lh) {
-        left.position.copy(lh.position).add(new THREE.Vector3(-0.4, -0.6, 0));
-        left.rotation.set(0.75, -0.75, 0.25, 'YXZ');
-      } else {
-        left.position.set(-1.4, -1.8, 1.4);
-        left.rotation.set(1.0, -0.6, 0.1, 'YXZ');
-      }
-      gun.add(left);
-    }
+    const attach = (handId, emptyName) => {
+      const socket = gun.getObjectByName(emptyName);
+      const hand = weaponModel(handId);
+      if (!socket || !hand) return;
+      hand.traverse((o) => { if (o.isMesh) { o.material = this.pbr(o.material, false); o.frustumCulled = false; } });
+      socket.add(hand);
+    };
+    attach('hand_r_' + team, `${id}_grip`);
+    if (!w.melee) attach('hand_l_' + team, `${id}_lhand`);
     if (animate) this.drawT = 0;
     this.reloadT = 1;
   }
@@ -209,20 +192,47 @@ export class Viewmodel {
     this.sun.intensity = this.baseSun * this.tint;
   }
 
+  // glTF PBR material (albedo + normal + roughness maps from the Blender
+  // bake), reflecting a small sky environment so metal reads as metal
+  pbr(m, shiny) {
+    const mat = m.isMeshStandardMaterial ? m : new THREE.MeshStandardMaterial({ map: m.map || null });
+    mat.envMap = this.env || null;
+    mat.envMapIntensity = shiny ? 1.0 : 0.55;
+    if (!shiny) mat.metalness = Math.min(mat.metalness, 0.2);
+    if (mat.normalMap) mat.normalScale.set(1, 1);
+    this._mats.add(mat);
+    return mat;
+  }
+
+  buildEnv(renderer) {
+    const pm = new THREE.PMREMGenerator(renderer);
+    const sc = new THREE.Scene();
+    const geo = new THREE.SphereGeometry(10, 32, 16);
+    const col = new THREE.Color();
+    const pos = geo.attributes.position;
+    const colors = [];
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i) / 10;
+      col.setRGB(0.55, 0.5, 0.42).lerp(new THREE.Color(0.75, 0.8, 0.88), Math.max(0, y) ** 0.6);
+      if (y < 0) col.setRGB(0.36, 0.3, 0.24).lerp(new THREE.Color(0.55, 0.5, 0.42), 1 + y);
+      colors.push(col.r, col.g, col.b);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    sc.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+    const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(1.2, 12, 8), new THREE.MeshBasicMaterial({ color: 0xfff2d0 }));
+    sunDisc.position.set(4, 7, 3);
+    sc.add(sunDisc);
+    this.env = pm.fromScene(sc, 0.03).texture;
+    pm.dispose();
+    for (const m of this._mats) { m.envMap = this.env; m.needsUpdate = true; }
+  }
+
   render(renderer) {
+    if (!this.env) this.buildEnv(renderer);
     if (!this.visible || !this.gun) return;
     renderer.clearDepth();
     renderer.render(this.scene, this.camera);
   }
-}
-
-function toPhong(m, shiny) {
-  return new THREE.MeshPhongMaterial({
-    map: m.map || null,
-    color: m.map ? 0xffffff : (m.color || 0x888888),
-    shininess: shiny ? 70 : 28,
-    specular: shiny ? 0x666666 : 0x2a2a2a,
-  });
 }
 
 const easeOut = (t) => 1 - (1 - t) * (1 - t);

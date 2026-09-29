@@ -75,16 +75,42 @@ export class HUD {
   }
 
   showSlots(inv, current) {
-    this.el.slots.innerHTML = SLOTS.map((s, i) => inv[s]
+    this.el.slots.innerHTML = SLOTS.map((s, i) => s && inv[s]
       ? `<div class="${inv[s] === current ? 'on' : ''}"><b>${i + 1}</b>${esc(WEAPONS[inv[s]].name)}</div>` : '').join('');
     this.el.slots.classList.add('show');
     clearTimeout(this._slotT);
     this._slotT = setTimeout(() => this.el.slots.classList.remove('show'), 1400);
   }
 
-  setCrosshair(gapPx, visible) {
+  setCrosshair(gapPx, lenPx, visible) {
     this.set('chgap', Math.round(gapPx), (v) => this.crosshair.style.setProperty('--gap', v + 'px'));
+    this.set('chlen', Math.round(lenPx), (v) => this.crosshair.style.setProperty('--len', v + 'px'));
     this.set('chvis', visible, (v) => this.crosshair.style.visibility = v ? 'visible' : 'hidden');
+  }
+
+  progress(label, seconds) {
+    const el = document.getElementById('progress');
+    document.getElementById('progressLabel').textContent = label;
+    const fill = document.getElementById('progressFill');
+    fill.style.transition = 'none';
+    fill.style.width = '0%';
+    el.classList.remove('hidden');
+    void fill.offsetWidth;
+    fill.style.transition = `width ${seconds}s linear`;
+    fill.style.width = '100%';
+  }
+
+  hideProgress() { document.getElementById('progress').classList.add('hidden'); }
+
+  // C4 status: 'carry' (you have it), 'planted' (with blink), or null
+  setBomb(state, text = '', blink = false) {
+    const el = document.getElementById('bombIcon');
+    this.set('bomb', state + '|' + text + '|' + blink, () => {
+      el.classList.toggle('hidden', !state);
+      el.classList.toggle('planted', state === 'planted');
+      el.classList.toggle('blink', !!blink);
+      document.getElementById('bombText').textContent = text;
+    });
   }
 
   setScope(on) { this.set('scope', on, (v) => this.el.scope.classList.toggle('hidden', !v)); }
@@ -115,11 +141,14 @@ export class HUD {
     const s = Math.max(0, Math.ceil(seconds));
     const txt = warm ? '—:—' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
     this.set('timer', txt, (v) => { this.el.timer.textContent = v; });
-    this.set('timerlow', !warm && phase === 'round' && s <= 10, (v) => this.el.timer.classList.toggle('low', v));
+    this.set('timerlow', !warm && (phase === 'round' && s <= 10 || phase === 'planted'), (v) => this.el.timer.classList.toggle('low', v));
   }
 
   setPhase(phase, round) {
-    const label = { warmup: 'WARMUP', buy: 'BUY TIME', round: 'ROUND ' + round, end: 'ROUND OVER' }[phase] || phase;
+    const label = {
+      warmup: 'WARMUP', freeze: 'ROUND ' + round + ' · BUY', round: 'ROUND ' + round, planted: 'BOMB PLANTED',
+      end: 'ROUND OVER', matchend: 'MATCH OVER',
+    }[phase] || phase;
     this.set('phase', label, (v) => { this.el.roundPhase.textContent = v; });
   }
 
@@ -208,7 +237,7 @@ export class HUD {
     this.radarBg = { canvas: c, b, s };
   }
 
-  drawRadar(me, yaw, mates) {
+  drawRadar(me, yaw, mates, bomb) {
     if (!this.radarBg) return;
     const ctx = this.radarCtx;
     const W = this.el.radar.width;
@@ -225,6 +254,13 @@ export class HUD {
     for (const m of mates) {
       ctx.fillStyle = m.team === TEAM.CT ? '#7fb2e8' : '#e0b25c';
       ctx.beginPath(); ctx.arc((m.pos[0] - b.x0) * s, (m.pos[2] - b.z0) * s, 5, 0, Math.PI * 2); ctx.fill();
+      if (m.c4) { ctx.strokeStyle = '#ff5a45'; ctx.lineWidth = 3; ctx.stroke(); }
+    }
+    if (bomb && bomb.pos) {
+      const x = (bomb.pos[0] - b.x0) * s, y = (bomb.pos[2] - b.z0) * s;
+      ctx.fillStyle = bomb.state === 'planted' ? '#ff4030' : '#ffb020';
+      ctx.fillRect(x - 7, y - 5, 14, 10);
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 7, y - 5, 14, 10);
     }
     ctx.restore();
     // me: arrow at centre, pointing up
@@ -245,7 +281,7 @@ export class HUD {
 
   closeBuy() { this.el.buymenu.classList.add('hidden'); }
 
-  refreshBuy({ money, team, inv, armor, helmet, buyLeft }) {
+  refreshBuy({ money, team, inv, armor, helmet, kit, buyLeft }) {
     this.el.buyMoney.textContent = '$' + money;
     this.el.buyTimer.textContent = buyLeft < 0 ? 'warmup: buy anywhere' : `${Math.ceil(buyLeft)}s left to buy`;
     this.el.buyCols.innerHTML = BUY_MENU.map((cat) => `<div class="bcol"><h4>${cat.title}</h4>${cat.items.map((id) => {
@@ -253,7 +289,8 @@ export class HUD {
       if (it.team && it.team !== team) return '';
       let price = it.price;
       if (id === 'assault' && armor >= 100 && !helmet) price = 350;
-      const own = it.weapon ? Object.values(inv).includes(id) : (id === 'kevlar' ? armor >= 100 : id === 'assault' ? armor >= 100 && helmet : false);
+      const own = it.weapon ? Object.values(inv).includes(id)
+        : (id === 'kevlar' ? armor >= 100 : id === 'assault' ? armor >= 100 && helmet : id === 'kit' ? !!kit : false);
       const cls = ['bitem', money < price ? 'no' : '', own ? 'own' : ''].join(' ');
       return `<button class="${cls}" data-item="${id}">${esc(it.name)}<span class="p">$${price}</span></button>`;
     }).join('')}</div>`).join('');
@@ -277,4 +314,41 @@ export class HUD {
     this.el.sbTbody.innerHTML = render(TEAM.T);
     this.el.sbCTbody.innerHTML = render(TEAM.CT);
   }
+
+  // ------------------------------------------------------------ match end + vote
+
+  showMatchEnd(msg, myId, onVote) {
+    const el = document.getElementById('matchend');
+    el.classList.remove('hidden');
+    const title = document.getElementById('endTitle');
+    title.textContent = msg.winner === TEAM.T ? 'TERRORISTS WIN' : msg.winner === TEAM.CT ? 'COUNTER-TERRORISTS WIN' : 'DRAW';
+    title.className = 'endtitle ' + (msg.winner ? teamCls(msg.winner) : '');
+    document.getElementById('endScore').innerHTML = `<span style="color:var(--t)">${msg.scoreT}</span> : <span style="color:var(--ct)">${msg.scoreCT}</span>`;
+    const rows = [...msg.players].sort((a, b) => b.k - a.k || a.d - b.d);
+    document.getElementById('endPlayers').innerHTML = rows.map((r) =>
+      `<div class="${teamCls(r.team)}"><span>${r.id === myId ? '<b>' : ''}${esc(r.name)}${r.id === myId ? '</b>' : ''}</span><span>${r.k} / ${r.d}</span></div>`).join('');
+    this._voteEnds = performance.now() / 1000 + msg.voteTime;
+    this._voteMine = null;
+    this._voteMaps = msg.maps;
+    this._onVote = onVote;
+    this.renderVotes({}, msg.current);
+  }
+
+  renderVotes(tally, current) {
+    if (current) this._voteCurrent = current;
+    const box = document.getElementById('voteMaps');
+    box.innerHTML = this._voteMaps.map((id) => `<button data-map="${id}" class="${this._voteMine === id ? 'mine' : ''}">${esc(id.replace('de_aq_', ''))}<b>${tally[id] || 0}</b><small>${id === this._voteCurrent ? 'played last' : ''}</small></button>`).join('');
+    for (const b of box.querySelectorAll('button')) {
+      b.onclick = () => { this._voteMine = b.dataset.map; this._onVote(b.dataset.map); this.renderVotes(this._lastTally || {}); };
+    }
+    this._lastTally = tally;
+  }
+
+  tickVote() {
+    const t = document.getElementById('voteTimer');
+    if (t && this._voteEnds) t.textContent = `· ${Math.max(0, Math.ceil(this._voteEnds - performance.now() / 1000))}s`;
+  }
+
+  hideMatchEnd() { document.getElementById('matchend').classList.add('hidden'); this._voteEnds = 0; }
+  matchEndOpen() { return !document.getElementById('matchend').classList.contains('hidden'); }
 }

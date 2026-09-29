@@ -65,7 +65,7 @@ async function main() {
     await until(() => a.inv.money === ECONOMY.startMoney);
     ok(a.inv.money === ECONOMY.startMoney && b.inv.money === ECONOMY.startMoney, 'money reset to $800');
     ok(a.inv.inv.primary === null, 'warmup purchases are cleared at match start');
-    ok(a.last.round.phase === 'buy', 'round 1 opens with buy time');
+    ok(a.last.round.phase === 'freeze', 'round 1 opens with freeze time');
 
     console.log('buy zone + armour');
     // b stays at its spawn (pos from respawn)
@@ -76,7 +76,14 @@ async function main() {
     b.send({ t: 'buy', item: 'deagle' });
     await until(() => b.last.buy_fail && b.last.buy_fail.item === 'deagle');
     ok(/money/.test(b.last.buy_fail.reason), 'cannot afford a Deagle with $150');
+    // freeze time holds everyone on the spawn; buying stays open 20 s into the round
     const aSpawn = a.pos;
+    a.pos = [0, 0, 0]; await sleep(200);
+    a.send({ t: 'buy', item: 'kevlar' });
+    await sleep(200);
+    ok(a.inv.armor === 100, 'during freeze time the server keeps you on the spawn (buy still works)');
+    await until(() => a.got('round').some((m) => m.phase === 'round'), 7000);
+    ok(a.got('round').some((m) => m.phase === 'round'), 'freeze time ends and the round goes live');
     a.pos = [0, 0, 0]; await sleep(200);
     a.send({ t: 'buy', item: 'deagle' });
     await until(() => a.last.buy_fail && a.last.buy_fail.item === 'deagle');
@@ -118,7 +125,7 @@ async function main() {
     }
     const hits = a.msgs.slice(t0).filter((m) => m.t === 'hit');
     if (process.env.DEBUG) console.log('DEBUG', { bp, apos: a.pos, hits: hits.length, ammo: a.ammo, shoots: a.msgs.slice(t0).map((m) => m.t).join(',').slice(0, 300) });
-    ok(hits.some((h) => h.part === 'body' && h.armor < 100), 'kevlar absorbs body damage');
+    ok(hits.some((h) => (h.part === 'chest' || h.part === 'stomach') && h.armor < 100), 'kevlar absorbs chest/stomach damage');
     ok(a.got('kill').length === 1, 'CT killed by T');
     await until(() => a.got('round_end').length);
     const re = a.last.round_end;
@@ -140,6 +147,7 @@ async function main() {
     ok(b.got('respawn').length > bRespawnsBefore, 'dead player respawns for round 2');
     await until(() => b.inv && b.inv.armor === 0, 1000);
     ok(b.inv.armor === 0 && b.inv.inv.secondary === 'usp', 'the dead lose their gear');
+    ok(a.inv.c4 || b.inv.c4 || a.got('inv').some((m) => m.c4), 'a terrorist carries the C4');
     ok(a.inv.inv.secondary === 'glock', 'survivors keep their loadout');
   } finally {
     for (const c of clients) { clearInterval(c.timer); c.ws.close(); }

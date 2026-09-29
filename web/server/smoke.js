@@ -34,6 +34,7 @@ function client(name) {
     else if (m.t === 'state') c.snapshots.push(m);
     else if (m.t === 'hit') c.hits.push(m);
     else if (m.t === 'kill') c.kills.push(m);
+    else if (m.t === 'round' && m.phase === 'round') c.roundLive = true;
   };
   return c;
 }
@@ -56,7 +57,10 @@ async function main() {
     assert(a.welcomed && b.welcomed, 'both clients receive welcome');
     assert(a.id !== b.id, 'distinct player ids');
 
-    await sleep(600); // ~12 snapshots
+    // both teams present -> round 1 starts with 5 s of freeze time (no shooting)
+    for (let i = 0; i < 80 && !a.roundLive; i++) await sleep(100);
+    assert(a.roundLive, 'freeze time ends, round goes live');
+    await sleep(300);
     const aSnap = a.snapshots.at(-1);
     const bSnap = b.snapshots.at(-1);
     assert(a.snapshots.length > 3, 'alpha receives state snapshots');

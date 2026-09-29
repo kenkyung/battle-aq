@@ -14,8 +14,9 @@ art/build.sh maps           # or one stage: textures | maps | characters | weapo
 |---|---|---|
 | `build_textures.py` | `assets/tex/<id>.jpg`, `<id>_n.jpg` | 17 tileable 512 px surfaces (sandstone, plaster, cobbles, planks, crates, painted metal, mossy stone, hedge, water, shutters, doors…) from procedural Cycles node graphs. Torus-mapped 4D noise makes them tile seamlessly. Albedo + normal map. |
 | `build_maps.py` | `assets/maps/<id>.glb`, `<id>_lm.jpg` | Builds each map from the **same collider list the server uses** (`web/tools/export-maps.mjs`), trims faces hidden inside other boxes, adds flush decals (windows, doors), coping caps and an unreachable skyline, then bakes sun + sky + bounce light with Cycles into a 2048 px lightmap (second UV set, denoised with OIDN). |
+| (props) | in `<id>.glb` | Oil drums, sandbag walls, pallet stacks, planters and stone arches, modelled over the collision footprints in `web/shared/props-data.js` (generated and route-checked by `web/tools/place-props.mjs`). |
 | `build_characters.py` | `assets/models/soldier_t.glb`, `soldier_ct.glb` | ~1.6k-triangle soldiers rigidly skinned to an 11-bone rig; cloth / camo / webbing / face materials baked into one 1024 px atlas. Clips: idle, walk, run, crouch_idle, crouch_walk, jump, death. |
-| `build_weapons.py` | `assets/models/weapons.glb` | The nine weapons (AK-47, M4A1, MP5, AWP, Scout, Desert Eagle, Glock, USP, knife) plus first-person arms for each team. Each gun has `<id>_muzzle` and `<id>_lhand` empties. |
+| `build_weapons.py` | `assets/models/weapons.glb` | Ten guns, the knife and the C4, plus articulated gloved hands per team (separate phalanges curled round the grip, index on the trigger). Each gun has `<id>_muzzle`, `<id>_grip` and `<id>_lhand` empties the hands attach to. Albedo + normal (Cycles Bevel) + roughness bakes; edge wear from Pointiness. |
 
 Review helpers (not part of the build): `preview.py` renders GLBs,
 `contact_sheet.py` tiles textures 2×2 to show seams.

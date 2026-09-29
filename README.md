@@ -28,35 +28,48 @@ Options: `node server/index.js --port 9000 --map de_aq_aztec --host 0.0.0.0`
 The client uses only relative URLs, so it also runs behind a reverse-proxy
 path (the arcade serves it at `/battle/`).
 
-Alone? `node tools/bots.mjs --url ws://127.0.0.1:8080/ws --count 3` adds
-wandering bots, which also starts a real match.
+Alone? Pick **Practice vs bots** in the menu: your own private match on any
+map against 1–9 server-side bots (easy / normal / hard) that navigate the map,
+buy, carry and plant the bomb, retake, defuse and control their spray.
+`npm run sim -- de_aq_dust 10 hard` plays a whole bot-vs-bot match headless.
 
 ## Test
 
 ```bash
 cd web
-npm test           # smoke (join/sync/fire/kill) + M2 economy (money, buy zone,
-                   # armour, ammo/reload, round bonuses) against a real server
+npm test           # CS 1.6 ballistics, smoke (join/sync/fire/kill), M2 economy,
+                   # bomb + round flow (plant/defuse/blast, halftime, map vote)
 ```
 
 ## Controls
 
 WASD move · mouse look · Space jump · Ctrl crouch · Shift walk ·
 LMB fire · RMB scope (AWP/Scout) · R reload · 1/2/3 primary/pistol/knife ·
-Q last weapon · wheel cycle · B buy menu · Tab scores · Y chat
+5 bomb (hold fire in a site to plant) · E defuse · G drop bomb · Q last weapon ·
+wheel cycle · B buy menu · Tab scores · Y chat · **Esc pause menu**
+
+Crouch is Ctrl (or C); while you play, the game swallows browser shortcuts
+like Ctrl+D. Only fullscreen (pause menu → Fullscreen) can also stop Ctrl+W.
 
 ## How a match works
 
 - **Warmup** while one team is empty: respawn on death, $16000, buy anywhere.
-- **Match** as soon as both teams have a player: CS 1.6 rounds (15 s buy
-  time, 1:55 round, first to 8). The dead stay dead until the next round and
-  spectate a teammate. Survivors keep their weapons.
+- **Match** as soon as both teams have a player: CS 1.6 rounds — 5 s freeze
+  time, 1:55 round, first to 8 of 15, sides swap at halftime. The dead stay
+  dead until the next round and spectate a teammate. Survivors keep their
+  weapons. At the end everyone votes for the next map.
+- **Bomb**: one terrorist carries the C4; plant it (3 s) at bombsite A or B,
+  then CT have 35 s to defuse (10 s, 5 s with a $200 kit). T win by
+  elimination or detonation, CT by elimination, defuse or the clock.
 - **Economy**: $800 start, $300 per kill ($1500 knife), $3250 round win
   ($3500 CT elimination), loss bonus $1400 → $3400 on a losing streak,
   $16000 cap. Buy in your spawn during buy time + 20 s.
-- **Weapons** carry a magazine and a reserve; reloads take the real reload
-  time and can be cancelled by switching. Kevlar halves body damage (helmet
-  covers the head).
+- **Weapons** are CS 1.6's (`shared/ballistics.js`): the same KickBack view
+  punch per stance (the spray pattern), accuracy that decays with shots fired
+  (automatics) or recovers between shots (pistols), FireBullets3 spread, hit
+  groups (head x4, stomach x1.25, legs x0.75, narrow head box), range falloff,
+  per-weapon armour penetration and run speed, knife backstabs. Glock, USP,
+  Desert Eagle, MP5, UMP45, AK-47, M4A1, Scout, AWP, M249 Para.
 
 ## Graphics
 
@@ -103,7 +116,8 @@ docs/        design references (CS 1.6 numbers, map notes)
 - [x] M4 — three maps ported to the web (dust / inferno / aztec)
 - [x] Graphics — Blender-built maps with baked lightmaps, rigged + animated
       soldiers, modelled weapons + first-person arms, effects, CS-style HUD
-- [ ] M5 — bomb plant/defuse mode
+- [x] M5 — bomb plant/defuse mode, halftime swap, match end + map vote
+- [x] Practice mode vs bots (nav graph + bot AI)
 - [ ] M6 — sounds (models and animations are done)
 
 See `ROADMAP.md` for the ticket-sized backlog.

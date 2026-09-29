@@ -16,6 +16,7 @@
 // collision stays axis-aligned everywhere.
 
 import { TEAM } from './constants.js';
+import { PROPS } from './props-data.js';
 
 const hex = (r, g, b) =>
   (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
@@ -96,7 +97,9 @@ const dust = {
     // A platform mass (+64 u deck) and its access
     W(1536, 32, -960, 64, 192, 384, 'wall'),
     W(1536, 32, -1152, 1024, 192, 64, 'wall'),
-    W(1088, 32, -896, 64, 192, 576, 'wall'),
+    // west wall of the A platform, with a gap where the ramp arrives
+    W(1088, 32, -1088, 64, 192, 192, 'wall'),
+    W(1088, 32, -704, 64, 192, 192, 'wall'),
     W(1216, 32, -640, 832, 192, 64, 'wall'),
     W(1024, 96, -1216, 64, 256, 256, 'wall'),
     // A site deck on top of the platform mass
@@ -133,6 +136,8 @@ const dust = {
     RAMP(1088, 0, -896, 1216, 64, -896, 192, 'metal'),
     // up onto the catwalk from T side
     RAMP(-1024, 0, -704, -1024, 64, -832, 128, 'metal'),
+    // second way up to A, from the CT side (north edge of the deck)
+    RAMP(1856, 0, -448, 1856, 64, -576, 160, 'wood'),
   ],
 
   columns: [],
@@ -185,7 +190,8 @@ const inferno = {
     W(-1920, 128, 0, 64, 256, 3136, 'accent'),
 
     // T spawn pocket
-    W(-1664, 128, -768, 512, 256, 64, 'wall'),
+    W(-1824, 128, -768, 192, 256, 64, 'wall'),   // T spawn north wall, door at x -1728..-1568
+    W(-1488, 128, -768, 160, 256, 64, 'wall'),
     W(-1408, 128, -1216, 64, 256, 896, 'wall'),
     // CT spawn pocket
     W(1536, 128, 896, 768, 256, 64, 'wall'),
@@ -251,7 +257,7 @@ const inferno = {
     G(1408, -448, 768, 128, 'wood', 128),
 
     // terraces (non-walkable roofs for skyline)
-    W(-1664, 96, -1152, 256, 64, 768, 'accent'),
+    W(-1856, 96, -1152, 64, 64, 768, 'accent'),     // (was on top of the T spawn; now hugs the perimeter)
     W(704, 96, 512, 128, 64, 1024, 'accent'),
     W(-512, 96, 1344, 1024, 64, 64, 'accent'),
   ],
@@ -321,7 +327,8 @@ const aztec = {
     W(-1792, 128, -896, 576, 256, 64, 'wall'),
     // CT spawn pocket
     W(1408, 128, 1248, 64, 256, 960, 'wall'),
-    W(1792, 128, 896, 576, 256, 64, 'wall'),
+    W(1664, 128, 896, 320, 256, 64, 'wall'),     // CT spawn south wall, door at x 1824..1984
+    W(2048, 128, 896, 128, 256, 64, 'wall'),
 
     // canal walls (decorative depression; water is a sheet on the floor)
     W(0, 32, -1024, 2048, 64, 64, 'wall'),
@@ -427,6 +434,8 @@ const aztec = {
   },
   bombsites: { A: [1408, 64, -832], B: [-1088, 0, 992] },
 };
+
+for (const m of [dust, inferno, aztec]) m.props = PROPS[m.id] || [];
 
 export const MAPS = { de_aq_dust: dust, de_aq_inferno: inferno, de_aq_aztec: aztec };
 export const MAP_LIST = [dust, inferno, aztec];

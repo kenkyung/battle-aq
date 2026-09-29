@@ -62,3 +62,17 @@ Project, scenes, scripts, license, README, .gitignore.
 - [ ] Replay / demo recording.
 - [ ] Spectator camera.
 - [ ] Server-side lag compensation for fairer hit registration.
+## Web build — done since M2
+- [x] Bomb mode (C4 plant/defuse, kit, drop/pick-up, blast), freeze time,
+      halftime side swap, match end + map vote / rotation.
+- [x] Practice rooms vs bots: nav graph from the colliders (server/nav.js),
+      bot brain (server/bot.js), headless match simulator (server/sim.js).
+- [x] CS 1.6 ballistics (shared/ballistics.js): KickBack recoil, accuracy,
+      spread, hit groups, armour ratios, range modifiers; UMP45 + M249.
+- [x] Map fixes: sealed inferno T / aztec CT spawns opened, dust A reachable
+      by two ramps; props + arches generated and route-validated.
+- [x] Esc pause menu, fullscreen keyboard lock, CS 1.6 dynamic crosshair.
+
+## Next
+- [ ] M6 sounds (weapons, footsteps, bomb beeps, radio).
+- [ ] Grenades (HE / flash / smoke).

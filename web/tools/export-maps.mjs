@@ -17,7 +17,10 @@ for (const map of MAP_LIST) {
     palette: Object.fromEntries(Object.entries(map.palette).map(([k, v]) => [k, v.toString(16).padStart(6, '0')])),
     sky: { top: map.sky.top.toString(16).padStart(6, '0'), horizon: map.sky.horizon.toString(16).padStart(6, '0') },
     sun: map.sun, ambient: map.ambient,
-    boxes: buildColliders(map).map((c) => ({ min: c.min, max: c.max, mat: c.mat })),
+    // level geometry without props (those are modelled separately, over the
+    // same footprints the server collides with)
+    boxes: buildColliders({ ...map, props: [] }).map((c) => ({ min: c.min, max: c.max, mat: c.mat })),
+    props: map.props || [],
     water: (map.water || []).map((w) => ({ y: w.y, w: w.w, d: w.d, pos: w.pos || [0, 0] })),
     bombsites: map.bombsites || {},
     coverSeed: map.coverSeed,

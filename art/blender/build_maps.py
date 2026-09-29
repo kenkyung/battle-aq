@@ -20,6 +20,8 @@ import os, sys, json, math, random
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy, bmesh, numpy as np
 from mathutils import Vector
+import prims
+from prims import PARTS, box as pbox, cyl as pcyl, capsule as pcap
 from lib import reset_scene, hexcol, rgb, new_image, bake, save_image, save_raw, export_glb, args, BUILD, PUBLIC, REPO
 
 LM_SIZE = 2048
@@ -264,6 +266,12 @@ def build_map(path, quick=False):
         world.box([px - wtr['w'] / 2, wtr['y'] - 2, pz - wtr['d'] / 2], [px + wtr['w'] / 2, wtr['y'] + 2, pz + wtr['d'] / 2], tid, 256, skip_sides=True)
 
     ob = world.object(mid, materials)
+    props_ob = build_props(data, materials, mat_for)
+    if props_ob:
+        bpy.ops.object.select_all(action='DESELECT')
+        props_ob.select_set(True); ob.select_set(True)
+        bpy.context.view_layer.objects.active = ob
+        bpy.ops.object.join()
     print(f'   trimmed {world.culled} faces against hidden/coplanar regions, {len(world.faces)} quads')
 
     # --- lightmap UVs: area-proportional islands, one atlas for the whole map
@@ -326,6 +334,126 @@ def build_map(path, quick=False):
     ob.data.uv_layers.active = ob.data.uv_layers['UVMap']
     ob.data.uv_layers['UVMap'].active_render = True
     export_glb(os.path.join(OUT, mid + '.glb'), [ob, sky])
+
+
+def world_uv(ob, tile):
+    """Tiling UVs for a prop: project each face on its dominant axis, in game
+    units / tile (same convention as the level boxes)."""
+    me = ob.data
+    uv = me.uv_layers.get('UVMap') or me.uv_layers.new(name='UVMap')
+    for poly in me.polygons:
+        n = poly.normal
+        ax = max(range(3), key=lambda i: abs(n[i]))
+        a, b = [i for i in range(3) if i != ax]
+        for li in poly.loop_indices:
+            co = ob.matrix_world @ me.vertices[me.loops[li].vertex_index].co
+            uv.data[li].uv = (co[a] / tile, co[b] / tile)
+
+
+def prop_parts_to_object(name, mat_name, materials, tile):
+    parts = [o for o, _ in PARTS]
+    PARTS.clear()
+    if not parts:
+        return None
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in parts:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = parts[0]
+    bpy.ops.object.join()
+    o = bpy.context.view_layer.objects.active
+    o.name = name
+    o.data.materials.clear()
+    o.data.materials.append(materials[mat_name])
+    world_uv(o, tile)
+    return o
+
+
+def build_props(data, materials, mat_for):
+    """Model every prop over its collision footprint. Built in Blender Z-up
+    from game coords (x, y-up, z) via to_bl()."""
+    for tex, hexc in (('barrel_paint', '8a2a1a'), ('burlap', 'a08a60'), ('terracotta', 'b0603a'), ('planks', '9a7a50'), ('hedge', '3a5a2a')):
+        if tex not in materials:
+            materials[tex] = make_material(tex, hexc)
+    arch_tex = mat_for('accent')
+    dummy = bpy.data.materials.new('dummy')
+    objs = []
+    V = lambda x, y, z: to_bl((x, y, z))
+    for i, p in enumerate(data.get('props', [])):
+        x, y, z = p['pos']
+        rot = p.get('rot', 0) == 90
+        k = p['kind']
+        if k in ('barrel', 'barrels'):
+            offs = [0] if k == 'barrel' else [-14.5, 14.5]
+            for o in offs:
+                bx, bz = (x, z + o) if rot else (x + o, z)
+                pcyl('drum', V(bx, y, bz), V(bx, y + 44, bz), 13.5, 'g', dummy, verts=16)
+                for hy in (1.5, 15, 29, 42.5):
+                    pcyl('hoop', V(bx, y + hy, bz), V(bx, y + hy + 1.5, bz), 14.1, 'g', dummy, verts=16)
+            ob = prop_parts_to_object(f'prop{i}', 'barrel_paint', materials, 48)
+        elif k == 'sandbags':
+            L = 112
+            for row in range(4):
+                n = 4 if row % 2 == 0 else 3
+                for c in range(n):
+                    along = -L / 2 + 14 + c * 28 + (14 if row % 2 else 0)
+                    for depth in (-8, 8) if row < 2 else (0,):
+                        bx, bz = (x + depth, z + along) if rot else (x + along, z + depth)
+                        yy = y + 5 + row * 9.5
+                        dx, dz = (0, 13) if rot else (13, 0)
+                        pcap('bag', V(bx - dx, yy, bz - dz), V(bx + dx, yy, bz + dz), 6.5, 'g', dummy, segs=10)
+            ob = prop_parts_to_object(f'prop{i}', 'burlap', materials, 40)
+        elif k == 'pallets':
+            for lvl in range(2):
+                yb = y + lvl * 12
+                for s_ in (-20, 0, 20):
+                    pbox('blk', V(x + s_, yb + 3, z), (9, 48, 6), 'g', dummy, bevel=0.5)
+                for s_ in range(-4, 5):
+                    pbox('slat', V(x, yb + 7.5, z + s_ * 5.6), (50, 4, 1.4), 'g', dummy, bevel=0.3)
+            wood = prop_parts_to_object(f'prop{i}w', 'planks', materials, 64)
+            if wood: objs.append(wood)
+            for sx in (-12, 12):
+                pcap('sack', V(x + sx, y + 30, z - 14), V(x + sx, y + 30, z + 14), 9, 'g', dummy, segs=12)
+            ob = prop_parts_to_object(f'prop{i}', 'burlap', materials, 40)
+        elif k == 'planter':
+            pcyl('pot', V(x, y, z), V(x, y + 22, z), 12, 'g', dummy, verts=18, r2=16)
+            pcyl('rim', V(x, y + 20, z), V(x, y + 25, z), 17.5, 'g', dummy, verts=18)
+            pot = prop_parts_to_object(f'prop{i}p', 'terracotta', materials, 48)
+            if pot: objs.append(pot)
+            for (ox, oy, oz, r) in ((0, 36, 0, 14), (-6, 44, 4, 10), (6, 42, -5, 10), (0, 50, 0, 8)):
+                pcap('leaf', V(x + ox, y + oy - 3, z + oz), V(x + ox, y + oy + 3, z + oz), r, 'g', dummy, segs=10)
+            ob = prop_parts_to_object(f'prop{i}', 'hedge', materials, 32)
+        elif k == 'arch':
+            span, thick, top = p['span'], p['thick'], p['top']
+            ax = p['axis']
+            def put(along, yy, size):
+                sx, sz = (size[0], size[2]) if ax == 'x' else (size[2], size[0])
+                px = x + along if ax == 'x' else x
+                pz = z if ax == 'x' else z + along
+                pbox('a', V(px, yy + size[1] / 2, pz), (sx, sz, size[1]), 'g', dummy, bevel=0.8)
+            for side in (-1, 1):
+                put(side * (span / 2 + 8), y, (16, top - y + 8, thick + 12))          # pilasters
+                put(side * (span / 2 + 8), top + 4, (24, 8, thick + 16))              # capitals
+            # segmental arch: voussoirs from pilaster to pilaster, rising 26 u
+            n = 11
+            for j in range(n):
+                t0, t1 = j / n, (j + 1) / n
+                a0 = -span / 2 + span * t0; a1 = -span / 2 + span * t1
+                h0 = 26 * (1 - (2 * t0 - 1) ** 2); h1 = 26 * (1 - (2 * t1 - 1) ** 2)
+                yy = top - 44 + (h0 + h1) / 2
+                put((a0 + a1) / 2, yy, (span / n + 0.5, 44 - (h0 + h1) / 2 + 10, thick + 10))
+            ob = prop_parts_to_object(f'prop{i}', arch_tex, materials, 128)
+        else:
+            continue
+        if ob:
+            objs.append(ob)
+    if not objs:
+        return None
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in objs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+    bpy.ops.object.join()
+    return bpy.context.view_layer.objects.active
 
 
 def denoise(img):

@@ -290,6 +290,39 @@ def door_wood(g, u, v):
     return col, height, 0.85
 
 
+def burlap(g, u, v):
+    wu = g.sin(g.mul(u, 6.2832 * 64)); wv = g.sin(g.mul(v, 6.2832 * 64))
+    weave = g.mul(g.add(wu, wv), 0.25)
+    n = g.noise(u, v, 5, detail=5, seed=141)
+    dirt = g.smooth(g.noise(u, v, 3, detail=6, seed=142), 0.55, 0.75)
+    col = g.mix(n, rgb(0.52, 0.44, 0.30), rgb(0.66, 0.57, 0.40))
+    col = g.mix(g.add(weave, 0.5), g.hsv(col, v=0.82), col)
+    col = g.mix(g.mul(dirt, 0.5), col, rgb(0.35, 0.28, 0.18))
+    return col, g.add(g.mul(weave, 0.5), g.mul(n, 0.3)), 0.95
+
+
+def barrel_paint(g, u, v):
+    n = g.noise(u, v, 6, detail=5, seed=151)
+    rust = g.smooth(g.noise(u, v, 4, detail=8, rough=0.65, seed=152), 0.6, 0.72)
+    streak = g.smooth(g.noise(u, v, 30, 2, detail=3, seed=153), 0.6, 0.8)
+    band = g.smooth(g.absv(g.sub(g.fract(g.mul(v, 3.0)), 0.5)), 0.44, 0.47)
+    col = g.mix(n, rgb(0.42, 0.10, 0.07), rgb(0.58, 0.16, 0.10))
+    col = g.mix(g.mul(streak, 0.35), col, rgb(0.30, 0.10, 0.06))
+    col = g.mix(rust, col, g.mix(n, rgb(0.30, 0.16, 0.08), rgb(0.46, 0.26, 0.12)))
+    col = g.mix(g.mul(band, 0.7), col, rgb(0.22, 0.08, 0.05))
+    return col, g.add(g.mul(band, 0.6), g.mul(rust, 0.2)), 0.6
+
+
+def terracotta(g, u, v):
+    n = g.noise(u, v, 5, detail=6, seed=161)
+    fine = g.noise(u, v, 40, detail=3, seed=162)
+    salt = g.smooth(g.noise(u, v, 3, 8, detail=5, seed=163), 0.62, 0.75)
+    col = g.mix(n, rgb(0.62, 0.32, 0.20), rgb(0.74, 0.42, 0.27))
+    col = g.mix(g.mul(fine, 0.3), col, rgb(0.5, 0.25, 0.15))
+    col = g.mix(g.mul(salt, 0.6), col, rgb(0.82, 0.74, 0.62))
+    return col, g.add(g.mul(n, 0.3), g.mul(fine, 0.2)), 0.85
+
+
 RECIPES = {
     'dust_sandstone': sandstone,
     'dust_bigblock': big_blocks,
@@ -308,6 +341,9 @@ RECIPES = {
     'water': water,
     'window_shutter': window_shutter,
     'door_wood': door_wood,
+    'burlap': burlap,
+    'barrel_paint': barrel_paint,
+    'terracotta': terracotta,
 }
 
 

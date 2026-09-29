@@ -9,6 +9,8 @@
 // shared/maps.js.
 
 import { PLAYER, MOVE } from './constants.js';
+import { propColliders } from './props.js';
+import { hitPart, HEAD_RADIUS } from './ballistics.js';
 
 // ---------------------------------------------------------------- vectors
 
@@ -137,6 +139,7 @@ export function buildColliders(map) {
   for (const r of map.ramps) out.push(...rampSteps(r));
   for (const c of map.columns) out.push(columnBox(c));
   out.push(...coverCrates(map));
+  for (const p of (map.props || [])) out.push(...propColliders(p));
   return out;
 }
 
@@ -189,9 +192,11 @@ export function movePlayer(state, input, dt, colliders) {
   if (wl > 0) wishdir = [wish[0] / wl, 0, wish[2] / wl];
 
   // target speed
-  let maxspeed = MOVE.runSpeed;
-  if (input.walk) maxspeed = MOVE.walkSpeed;
-  if (p.crouching) maxspeed = MOVE.runSpeed * MOVE.crouchSpeedMul;
+  // the weapon in hand sets the run speed (CS: AK 221, AWP 210, knife 250…)
+  const run = input.maxSpeed || MOVE.runSpeed;
+  let maxspeed = run;
+  if (input.walk) maxspeed = run * (MOVE.walkSpeed / MOVE.runSpeed);
+  if (p.crouching) maxspeed = run * MOVE.crouchSpeedMul;
 
   // friction (ground only)
   if (p.onGround) {
@@ -352,22 +357,46 @@ export function raycast(origin, dir, colliders, maxDist = 8192) {
 }
 
 // Nearest player hit among candidate player boxes. `players` is a list of
-// { id, box } (box from playerBox). Returns { t, id, point, part } or null.
-// `part` is 'head' | 'legs' | 'body' by hit height.
+// { id, box } (box from hitBox). Returns { t, id, point, part } or null.
+// `part` is a CS hit group (head / chest / stomach / legs) by hit height;
+// the head is narrower than the box, so a ray through the head band that
+// passes beside the head misses that player.
 export function raycastPlayers(origin, dir, players, maxDist, excludeId) {
   let best = null;
   for (const pl of players) {
     if (pl.id === excludeId) continue;
-    const t = rayBox(origin, dir, pl.box);
+    const b = pl.box;
+    const t = rayBox(origin, dir, b);
     if (t === null || t > maxDist) continue;
     if (best !== null && t >= best.t) continue;
-    const y = origin[1] + dir[1] * t;
-    const feet = pl.box.min[1], top = pl.box.max[1];
-    const h = top - feet;
-    let part = 'body';
-    if (y >= top - Math.min(16, h * 0.22)) part = 'head';
-    else if (y <= feet + Math.min(24, h * 0.35)) part = 'legs';
-    best = { t, id: pl.id, point: add(origin, scale(dir, t)), part };
+    const h = b.max[1] - b.min[1];
+    const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
+    let hitT = t, part = hitPart(origin[1] + dir[1] * t - b.min[1], h);
+    if (part === 'head') {
+      // march through the head band looking for the (narrow) head
+      const exit = rayBoxExit(origin, dir, b);
+      let found = false;
+      for (let s = t; s <= exit; s += 1.5) {
+        const px = origin[0] + dir[0] * s - cx, pz = origin[2] + dir[2] * s - cz;
+        const py = origin[1] + dir[1] * s - b.min[1];
+        const pp = hitPart(py, h);
+        if (pp === 'head' && Math.hypot(px, pz) <= HEAD_RADIUS) { hitT = s; found = true; break; }
+        if (pp !== 'head') { hitT = s; part = pp; found = true; break; }
+      }
+      if (!found) continue;
+    }
+    best = { t: hitT, id: pl.id, point: add(origin, scale(dir, hitT)), part };
   }
   return best;
+}
+
+function rayBoxExit(origin, dir, b) {
+  let tmax = Infinity;
+  for (let i = 0; i < 3; i++) {
+    const d = dir[i];
+    if (Math.abs(d) < 1e-9) continue;
+    const t1 = (b.min[i] - origin[i]) / d, t2 = (b.max[i] - origin[i]) / d;
+    tmax = Math.min(tmax, Math.max(t1, t2));
+  }
+  return tmax;
 }
