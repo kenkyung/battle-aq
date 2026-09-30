@@ -41,6 +41,7 @@ export class HostageView {
     if (src) {
       const model = cloneSkinned(src.scene);
       model.traverse((o) => {
+        if (o.isSkinnedMesh && /lod/i.test(o.name)) o.visible = false;   // near enough for the full mesh
         if (o.isMesh) {
           o.material = new THREE.MeshLambertMaterial({ map: o.material.map, normalMap: o.material.normalMap || null });
           o.frustumCulled = false;

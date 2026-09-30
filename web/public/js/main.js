@@ -36,6 +36,7 @@ const store = {
 // Quality tiers: resolution scale + antialiasing. The level is baked (no
 // real-time lights or shadows), so even "low" looks like the real thing.
 const QUALITY = {
+  lowest: { ratio: 0.5, aa: false },
   low:    { ratio: 0.75, aa: false },
   medium: { ratio: 1.0,  aa: true },
   high:   { ratio: 2.0,  aa: true },
@@ -46,13 +47,33 @@ const Q = QUALITY[quality];
 
 const container = $('game');
 const renderer = new THREE.WebGLRenderer({ antialias: Q.aa, powerPreference: 'high-performance', stencil: false });
-renderer.setPixelRatio(quality === 'low' ? Math.min(window.devicePixelRatio, 1) * Q.ratio : Math.min(window.devicePixelRatio, Q.ratio));
+const baseRatio = quality === 'low' || quality === 'lowest' ? Math.min(window.devicePixelRatio, 1) * Q.ratio : Math.min(window.devicePixelRatio, Q.ratio);
+renderer.setPixelRatio(baseRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NoToneMapping;
 renderer.autoClear = false;
+renderer.info.autoReset = false;
 container.appendChild(renderer.domElement);
-setAnisotropy(Math.min(quality === 'low' ? 2 : 8, renderer.capabilities.getMaxAnisotropy()));
+setAnisotropy(Math.min(quality === 'lowest' ? 1 : quality === 'low' ? 2 : 8, renderer.capabilities.getMaxAnisotropy()));
+
+// Dynamic resolution (M17): if frames take longer than the target (60 fps,
+// or fps_max), render fewer pixels; give them back when there is headroom.
+// Checked twice a second, so the canvas is not resized every frame.
+const dyn = { on: true, min: 0.5, scale: 1, acc: 0, n: 0, t: 0 };
+function dynamicResolution(frameMs) {
+  if (!dyn.on) { if (dyn.scale !== 1) { dyn.scale = 1; renderer.setPixelRatio(baseRatio); } return; }
+  dyn.acc += frameMs; dyn.n++;
+  const now = performance.now();
+  if (now - dyn.t < 500 || dyn.n < 10) return;
+  const avg = dyn.acc / dyn.n;
+  dyn.acc = 0; dyn.n = 0; dyn.t = now;
+  const target = 1000 / (fpsMax > 0 ? fpsMax : 60);
+  let s = dyn.scale;
+  if (avg > target * 1.12) s = Math.max(dyn.min, s * 0.88);
+  else if (avg < target * 0.8 && s < 1) s = Math.min(1, s * 1.06);
+  if (Math.abs(s - dyn.scale) > 0.01) { dyn.scale = s; renderer.setPixelRatio(baseRatio * s); }
+}
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(78, window.innerWidth / window.innerHeight, 2, 60000);
@@ -419,7 +440,7 @@ function setTeam(team) {
 const nameOf = (id) => (roster.get(id) || { name: `#${id}`, team: 0 });
 
 // net_graph: fps, latency, rates, bandwidth — once a second
-const netStats = { snaps: 0, frames: 0, t: performance.now(), lastIn: 0, lastOut: 0, text: '' };
+const netStats = { snaps: 0, frames: 0, t: performance.now(), lastIn: 0, lastOut: 0, text: '', cpu: 0 };
 let netGraph = store.get('baq_netgraph', '0') === '1';
 $('ngOn').checked = netGraph;
 $('ngOn').addEventListener('change', (e) => { netGraph = e.target.checked; store.set('baq_netgraph', netGraph ? '1' : '0'); });
@@ -429,7 +450,9 @@ function updateNetGraph() {
   if (nowMs - netStats.t < 1000) return;
   const s = (nowMs - netStats.t) / 1000;
   const me = roster.get(myId);
-  netStats.text = `fps ${Math.round(netStats.frames / s)}  ping ${me && me.ping !== undefined ? me.ping : '?'} ms\n`
+  const ri = { calls: netStats.calls || 0, triangles: netStats.tris || 0 };
+  netStats.text = `fps ${Math.round(netStats.frames / s)}  ping ${me && me.ping !== undefined ? me.ping : '?'} ms  cpu ${netStats.cpu.toFixed(1)} ms\n`
+    + `draws ${ri.calls}  tris ${(ri.triangles / 1000).toFixed(0)}k  res ${Math.round(dyn.scale * 100)}%\n`
     + `in ${((net.bytesIn - netStats.lastIn) / s / 1024).toFixed(1)} k/s  out ${((net.bytesOut - netStats.lastOut) / s / 1024).toFixed(1)} k/s\n`
     + `updaterate ${Math.round(netStats.snaps / s)}/${round.updaterate || '?'}  tickrate ${round.tickrate || '?'}  interp ${Math.round(interp * 1000)} ms  pending ${player ? player.pending.length : 0}`;
   netStats.snaps = 0; netStats.frames = 0; netStats.t = nowMs;
@@ -830,6 +853,8 @@ con.cvar('m_pitch', '0.022', 'vertical mouse factor; negative inverts', (v) => {
 con.cvar('zoom_sensitivity_ratio', '1.2', 'sensitivity scale while zoomed (x zoom fov ratio)', () => {});
 con.cvar('volume', String(sfx.volume), 'master volume 0..1', (v) => { const f = Math.max(0, Math.min(1, parseFloat(v) || 0)); sfx.setVolume(f); store.set('baq_vol', String(f)); });
 con.cvar('fps_max', '0', 'frame rate cap (0 = display rate)', (v) => { fpsMax = Math.max(0, parseInt(v, 10) || 0); });
+con.cvar('r_dynamic', '1', 'dynamic resolution: fewer pixels when frames run slow', (v) => { dyn.on = v !== '0'; });
+con.cvar('r_dynamic_min', '0.5', 'lowest dynamic resolution scale', (v) => { dyn.min = Math.max(0.3, Math.min(1, parseFloat(v) || 0.5)); });
 con.cvar('net_graph', netGraph ? '1' : '0', 'show fps / ping / rates', (v) => { netGraph = v !== '0'; store.set('baq_netgraph', netGraph ? '1' : '0'); $('ngOn').checked = netGraph; const el = $('netgraph'); if (el) el.classList.toggle('hidden', !netGraph); });
 con.cvar('cl_crosshair_color', '50 250 50', 'crosshair colour "r g b"', (v) => {
   const c = String(v).split(/\s+/).map((x) => Math.max(0, Math.min(255, parseInt(x, 10) || 0)));
@@ -1133,6 +1158,9 @@ let fpsT = 0, fpsN = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   if (fpsMax > 0 && now - last < 1000 / fpsMax - 0.5) return;       // fps_max
+  dynamicResolution(now - last);
+  renderer.info.reset();                 // count the whole frame (world + viewmodel)
+  const cpu0 = performance.now();
   if (running) updateNetGraph();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -1153,7 +1181,7 @@ function frame(now) {
   const menuOpen = hud.buyOpen() || pauseVisible() || hud.matchEndOpen();
   player.frozen = round.phase === 'freeze' || round.phase === 'matchend';
   player.update(dt, input, { canAct: !menuOpen && input.locked && !input.typing });
-  remotes.update(dt, camera.position);
+  remotes.update(dt, camera);
   if (bomb.state === 'planted' && bomb.localLeft !== undefined) bomb.localLeft -= dt;
   if (bombView) bombView.update(bomb, dt);
   if (dynWorld) {
@@ -1244,8 +1272,10 @@ function frame(now) {
   });
   lightProbe(dt);
   renderer.clear();
+  netStats.cpu += ((performance.now() - cpu0) - netStats.cpu) * 0.05;     // script time per frame
   renderer.render(scene, camera);
   vm.render(renderer);
+  netStats.calls = renderer.info.render.calls; netStats.tris = renderer.info.render.triangles;
 }
 
 // the planted C4 beeps faster and faster, in step with its LED

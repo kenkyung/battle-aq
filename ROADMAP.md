@@ -261,6 +261,19 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       without positions, so wallhacks see nothing at range).
 - [x] `server/modes.test.js`, `server/servers.test.js`.
 
-## M17 — Performance
-- [ ] Model LOD + instancing, texture atlases, 144 fps on integrated GPUs,
-      quality presets verified on older hardware.
+## M17 — Performance  [done]
+- [x] Character LOD: a decimated body (~35 %, ~1.8k tris) baked into each
+      model, swapped in beyond 1100 u.
+- [x] Animation culling: off-screen players skip skinning updates and
+      lighting; players beyond 1800 u animate at half rate.
+- [x] Dynamic resolution: the render scale drops (to r_dynamic_min, 50 %)
+      when frames run over the target (60 fps or fps_max) and recovers with
+      headroom; console r_dynamic / r_dynamic_min.
+- [x] "Lowest" quality preset (50 % resolution, no AA, no anisotropy) for
+      very old / integrated GPUs.
+- [x] net_graph shows draw calls, triangles, resolution scale and script
+      time per frame. A 5v5 on de_aq_dust2: ~26 draw calls, ~44k triangles,
+      ~2.3 ms of JavaScript per frame (headless measurement; GPU time depends
+      on the machine — dynamic resolution absorbs the difference).
+- [ ] Later: instanced props, texture atlases for the level, a GPU
+      timer query benchmark on real integrated hardware.

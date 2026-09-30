@@ -62,6 +62,7 @@ export class Remotes {
     const src = Models.soldiers[team];
     const group = new THREE.Group();
     let model = null, mixer = null, actions = {}, bones = {};
+    const lod = { hi: null, lo: null };
     if (src) {
       model = cloneSkinned(src.scene);
       model.traverse((o) => {
@@ -70,6 +71,7 @@ export class Remotes {
           o.frustumCulled = false;
         }
         if (o.isBone) { bones[o.name] = o; o.userData.rest = o.quaternion.clone(); }
+        if (o.isSkinnedMesh) { if (/lod/i.test(o.name)) lod.lo = o; else lod.hi = o; }
       });
       group.add(model);
       mixer = new THREE.AnimationMixer(model);
@@ -90,7 +92,7 @@ export class Remotes {
     this.scene.add(group);
 
     r = {
-      id: p.id, team, name: p.name || `#${p.id}`, group, model, mixer, actions, bones, tag,
+      id: p.id, team, name: p.name || `#${p.id}`, group, model, mixer, actions, bones, tag, lod, animAcc: 0,
       cur: { pos: [...p.pos], yaw: p.yaw || 0, pitch: 0 },
       tgt: { pos: [...p.pos], yaw: p.yaw || 0, pitch: 0, crouching: false },
       alive: p.alive !== false, weapon: null, gun: null, muzzle: null,
@@ -272,8 +274,19 @@ export class Remotes {
     r.ivel = [0, 1, 2].map((j) => (c.pos[j] - a.pos[j]) * w);
   }
 
-  update(dt, cameraPos) {
+  // camera: for LOD (decimated body beyond 1100 u) and culling (off-screen
+  // remotes skip animation + lighting; beyond 1800 u they animate at half rate)
+  update(dt, camera) {
     const t = Math.min(1, dt * 12);
+    const cam = camera && camera.isCamera ? camera.position : camera;
+    if (camera && camera.isCamera) {
+      this._pv = this._pv || new THREE.Matrix4();
+      this._fr = this._fr || new THREE.Frustum();
+      this._pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      this._fr.setFromProjectionMatrix(this._pv);
+    }
+    this._sph = this._sph || new THREE.Sphere(new THREE.Vector3(), 60);
+    this._frame = (this._frame || 0) + 1;
     const rt = this.renderTime ? this.renderTime() : null;
     for (const r of this.players.values()) {
       if (r.hidden) { r.group.visible = false; continue; }
@@ -330,7 +343,15 @@ export class Remotes {
           this.sfx.playAt(`step_${this.surfaceAt(r.cur.pos)}_${v}`, [r.cur.pos[0], r.cur.pos[1] + 4, r.cur.pos[2]], { volume: 0.5, ref: 90, max: 2200 });
         }
       }
-      if (r.mixer) {
+      const dist = cam ? Math.hypot(r.cur.pos[0] - cam.x, r.cur.pos[2] - cam.z) : 0;
+      if (r.lod.hi && r.lod.lo) { r.lod.hi.visible = dist < 1100; r.lod.lo.visible = !r.lod.hi.visible; }
+      this._sph.center.set(r.cur.pos[0], r.cur.pos[1] + 36, r.cur.pos[2]);
+      const inView = !this._fr || this._fr.intersectsSphere(this._sph);
+      r.animAcc += dt;
+      const animate = r.mixer && inView && (dist < 1800 || this._frame % 2 === 0);
+      if (animate) {
+        const adt = Math.min(0.25, r.animAcc);
+        r.animAcc = 0;
         // feet planted: one loop per STRIDE units travelled; backwards = reversed
         const act = r.actions[r.clip];
         if (act && STRIDE[r.clip]) {
@@ -341,7 +362,7 @@ export class Remotes {
         // clip does not key would keep the previous frame's tilt and slowly
         // fold the body backwards, so start each frame from the rest pose
         for (const b of AIM_BONES) { const bone = r.bones[b]; if (bone) bone.quaternion.copy(bone.userData.rest); }
-        r.mixer.update(dt);
+        r.mixer.update(adt);
         // aim pitch on top of the clip
         if (r.alive) {
           const p = Math.max(-1.2, Math.min(1.2, r.cur.pitch));
@@ -363,8 +384,9 @@ export class Remotes {
       }
       r.tag.visible = r.alive && r.team === this.myTeam;
 
-      // lightmap tint, refreshed a few times a second
+      // lightmap tint, refreshed a few times a second (not while off-screen)
       r.lightT -= dt;
+      if (!inView) continue;
       if (r.lightT <= 0 && this.world) {
         r.lightT = 0.25;
         r.lightTarget = this.world.sampleLight(r.cur.pos);

@@ -148,9 +148,11 @@ to 0.5 s). Rooms run at 33 Hz (Casual) or 66 Hz (Competitive), snapshots at
 - [x] Grenades, CS 1.6 movement, bot fill, server-checked collisions, new
       soldier models + locomotion
 - [x] M7 — hostage rescue: cs_aq_office, cs_aq_assault, cs_aq_italy
-- [ ] M8 → M17 — CS 1.6 parity in iterations: movement, full arsenal +
-      penetration, rules / economy, netcode (usercmds, lag compensation), HUD,
-      audio, ZBot-level bots, classic map layouts, modes, performance
+- [x] M8 → M17 — CS 1.6 parity in iterations: movement, full arsenal +
+      penetration, rules / economy, netcode (usercmds, lag compensation), HUD +
+      console, audio, ZBot-style bots, dust2 + doors + glass, deathmatch / VIP
+      / server browser / stats / rcon, performance (LOD, culling, dynamic
+      resolution)
 
 See `ROADMAP.md` for the ticket-sized backlog.
 

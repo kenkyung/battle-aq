@@ -521,15 +521,29 @@ def build(team):
     arm_ob = build_armature()
     body = skin(parts, arm_ob)
     bake_atlas(body, team)
-    body.parent = arm_ob
-    mod = body.modifiers.new('rig', 'ARMATURE')
-    mod.object = arm_ob
+    # LOD: the same body decimated to ~35 %, sharing the atlas and the
+    # skin weights; the client swaps it in at distance (M17)
+    lod = body.copy()
+    lod.data = body.data.copy()
+    lod.name = 'body_lod'
+    bpy.context.scene.collection.objects.link(lod)
+    dec = lod.modifiers.new('lod', 'DECIMATE')
+    dec.ratio = 0.35
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = lod
+    lod.select_set(True)
+    bpy.ops.object.modifier_apply(modifier='lod')
+    for ob in (body, lod):
+        ob.parent = arm_ob
+        mod = ob.modifiers.new('rig', 'ARMATURE')
+        mod.object = arm_ob
     build_actions(arm_ob)
     tris = sum(len(p.vertices) - 2 for p in body.data.polygons)
-    print(f'soldier_{team}: {tris} triangles')
+    ltris = sum(len(p.vertices) - 2 for p in lod.data.polygons)
+    print(f'soldier_{team}: {tris} triangles (LOD {ltris})')
     path = os.path.join(OUT, 'hostage.glb' if team == 'H' else f'soldier_{team.lower()}.glb')
     bpy.ops.object.select_all(action='DESELECT')
-    arm_ob.select_set(True); body.select_set(True)
+    arm_ob.select_set(True); body.select_set(True); lod.select_set(True)
     bpy.ops.export_scene.gltf(
         filepath=path, export_format='GLB', use_selection=True, export_yup=True,
         export_animations=True, export_animation_mode='NLA_TRACKS', export_skins=True,
