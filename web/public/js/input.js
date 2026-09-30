@@ -8,6 +8,27 @@ const GAME_KEYS = new Set([
   'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F1', 'F2', 'Comma', 'Period', 'KeyO',
 ]);
 
+// Key bindings, CS style: physical key -> action. The game logic listens for
+// each action's canonical key (CANON), so a rebind is a translation here and
+// nothing else changes. Edited with the console (bind / unbind / binds).
+export const DEFAULT_BINDS = {
+  KeyW: '+forward', KeyS: '+back', KeyA: '+moveleft', KeyD: '+moveright',
+  ArrowUp: '+forward', ArrowDown: '+back', ArrowLeft: '+moveleft', ArrowRight: '+moveright',
+  Space: '+jump', KeyC: '+duck', ControlLeft: '+duck', ControlRight: '+duck', ShiftLeft: '+speed', ShiftRight: '+speed',
+  KeyR: '+reload', KeyE: '+use', KeyG: 'drop', KeyQ: 'lastinv', KeyB: 'buymenu', Tab: '+showscores',
+  KeyY: 'messagemode', KeyZ: 'radio1', KeyX: 'radio2', KeyV: 'radio3', F1: 'autobuy', F2: 'rebuy',
+  Comma: 'buyammo1', Period: 'buyammo2', KeyO: 'buyequip', KeyM: 'chooseteam', Backquote: 'toggleconsole',
+  Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', Digit4: 'slot4', Digit5: 'slot5',
+};
+export const CANON = {
+  '+forward': 'KeyW', '+back': 'KeyS', '+moveleft': 'KeyA', '+moveright': 'KeyD', '+jump': 'Space', '+duck': 'KeyC',
+  '+speed': 'ShiftLeft', '+reload': 'KeyR', '+use': 'KeyE', drop: 'KeyG', lastinv: 'KeyQ', buymenu: 'KeyB',
+  '+showscores': 'Tab', messagemode: 'KeyY', radio1: 'KeyZ', radio2: 'KeyX', radio3: 'KeyV', autobuy: 'F1', rebuy: 'F2',
+  buyammo1: 'Comma', buyammo2: 'Period', buyequip: 'KeyO', chooseteam: 'KeyM', toggleconsole: 'Backquote',
+  slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', slot4: 'Digit4', slot5: 'Digit5',
+};
+const UI_KEYS = ['KeyB', 'Tab', 'KeyY', 'Escape', 'Enter', 'KeyZ', 'KeyX', 'KeyV', 'F1', 'F2', 'Comma', 'Period', 'KeyO', 'KeyM', 'Backquote'];
+
 export class Input {
   constructor() {
     this.keys = new Set();
@@ -30,6 +51,14 @@ export class Input {
     this.sensitivity = 0.0022;
     this.fovScale = 1;         // < 1 while scoped
     this._el = null;
+    this.binds = { ...DEFAULT_BINDS };
+    this.held = new Map();     // canonical key -> physical keys holding it
+  }
+
+  // physical key -> the canonical key of its bound action (or null)
+  canon(code) {
+    const action = this.binds[code];
+    return action ? CANON[action] || null : null;
   }
 
   attach(el) {
@@ -40,27 +69,36 @@ export class Input {
       // Crouch is Ctrl, so Ctrl+D (strafe right) would open Chrome's bookmark
       // dialog, Ctrl+S "save page", etc. While playing, the game owns the
       // keyboard. (Ctrl+W can only be blocked in fullscreen: see lockKeys.)
-      if (this.capture && (e.ctrlKey || e.metaKey || e.altKey || GAME_KEYS.has(e.code))) e.preventDefault();
+      if (this.capture && (e.ctrlKey || e.metaKey || e.altKey || GAME_KEYS.has(e.code) || this.binds[e.code])) e.preventDefault();
       if (e.code === 'Tab' || e.code === 'F1' || e.code === 'F2') e.preventDefault();   // F1 would open Chrome's help
-      if (['KeyB', 'Tab', 'KeyY', 'Escape', 'Enter', 'KeyZ', 'KeyX', 'KeyV', 'F1', 'F2', 'Comma', 'Period', 'KeyO'].includes(e.code) && this.onKey) this.onKey(e.code, e, true);
-      // digits pick a radio line while a radio menu is open
-      if ((this.radioOpen || this.buyOpen) && /^Digit[0-9]$/.test(e.code)) { if (this.onKey) this.onKey(e.code, e, true); return; }
+      if (this.consoleOpen) return;                   // the console has the keyboard
+      // digits pick a radio / buy / team menu line whatever they are bound to
+      if ((this.radioOpen || this.buyOpen || this.menuOpen) && /^Digit[0-9]$/.test(e.code)) { if (this.onKey) this.onKey(e.code, e, true); return; }
+      const code = e.code === 'Escape' || e.code === 'Enter' ? e.code : this.canon(e.code);
+      if (!code) return;
+      if (UI_KEYS.includes(code) && this.onKey) this.onKey(code, e, true);
       if (e.repeat) return;
-      this.keys.add(e.code);
-      if (e.code === 'KeyR') this.reloadPressed = true;
-      if (e.code === 'KeyG') this.dropPressed = true;
-      if (e.code === 'KeyQ') this.lastWeapon = true;
-      if (e.code.startsWith('Digit')) {
-        const n = parseInt(e.code.slice(5), 10);
+      if (!this.held.has(code)) this.held.set(code, new Set());
+      this.held.get(code).add(e.code);
+      this.keys.add(code);
+      if (code === 'KeyR') this.reloadPressed = true;
+      if (code === 'KeyG') this.dropPressed = true;
+      if (code === 'KeyQ') this.lastWeapon = true;
+      if (code.startsWith('Digit')) {
+        const n = parseInt(code.slice(5), 10);
         if (n >= 1 && n <= 5) this.weaponSlot = n;
       }
-      if (e.code === 'ControlLeft' || e.code === 'Space') e.preventDefault();
+      if (code === 'KeyC' || code === 'Space') e.preventDefault();
     });
     window.addEventListener('keyup', (e) => {
-      this.keys.delete(e.code);
-      if (e.code === 'Tab' && this.onKey) this.onKey('Tab', e, false);
+      const code = this.canon(e.code);
+      if (!code) return;
+      const h = this.held.get(code);
+      if (h) h.delete(e.code);
+      if (!h || !h.size) this.keys.delete(code);   // another key bound to it may still hold it
+      if (code === 'Tab' && this.onKey) this.onKey('Tab', e, false);
     });
-    window.addEventListener('blur', () => { this.keys.clear(); this.fireHeld = false; });
+    window.addEventListener('blur', () => { this.keys.clear(); this.held.clear(); this.fireHeld = false; });
 
     el.addEventListener('mousedown', (e) => {
       if (!this.locked) { this.lock(); return; }
@@ -120,13 +158,8 @@ export class Input {
     const k = this.keys;
     if (this.typing) return { f: 0, b: 0, l: 0, r: 0, jump: 0, crouch: 0, walk: 0 };
     return {
-      f: k.has('KeyW') || k.has('ArrowUp'),
-      b: k.has('KeyS') || k.has('ArrowDown'),
-      l: k.has('KeyA') || k.has('ArrowLeft'),
-      r: k.has('KeyD') || k.has('ArrowRight'),
-      jump: k.has('Space'),
-      crouch: k.has('KeyC') || k.has('ControlLeft') || k.has('ControlRight'),
-      walk: k.has('ShiftLeft') || k.has('ShiftRight'),
+      f: k.has('KeyW'), b: k.has('KeyS'), l: k.has('KeyA'), r: k.has('KeyD'),
+      jump: k.has('Space'), crouch: k.has('KeyC'), walk: k.has('ShiftLeft'),
     };
   }
 
@@ -134,7 +167,7 @@ export class Input {
   consumeLook() {
     const s = this.sensitivity * this.fovScale;
     const dx = this.lookX * s;
-    const dy = this.lookY * s;
+    const dy = this.lookY * s * (this.pitchSign || 1);   // m_pitch < 0: inverted
     this.lookX = 0; this.lookY = 0;
     this.lastLookX = dx; this.lastLookY = dy;
     return [dx, dy];

@@ -177,14 +177,26 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       interp, pending commands) — Settings.
 - [x] `server/netcode.test.js`.
 
-## M12 — HUD and UX parity
-- [ ] CS 1.6 HUD layout and fonts, weapon icons in the kill feed (headshot
-      and wallbang markers), damage direction indicators.
-- [ ] VGUI-style buy and team menus (M key), weapon selection bar with
-      slots, "Press USE" hints, message of the day.
-- [ ] Spectator: free look, chase cam, first-person, overview map.
-- [ ] Console with cvars (sensitivity, crosshair colour / size, fps_max,
-      volume) and key bindings.
+## M12 — HUD and UX parity  [done]
+- [x] CS 1.6 HUD layout and colours: orange digits, health / armour
+      bottom-left, round clock bottom-centre, money + ammo bottom-right.
+- [x] Kill feed with weapon icons (silhouettes rendered from the weapon
+      models in Blender: art/blender/build_killicons.py), HS / WB tags.
+- [x] Team menu (M): Terrorists / Counter-Terrorists / auto-select,
+      mp_limitteams 2, switching while alive kills you (no death counted).
+- [x] Message of the day on joining (MOTD env var or a room summary);
+      never takes the mouse away from the game.
+- [x] Spectating: first person / chase cam / free look (JUMP cycles,
+      FIRE next player); mp_forcecamera: team-only in competitive.
+- [x] Console (`~`): sensitivity (CS scale), m_pitch, zoom_sensitivity_ratio
+      (zoomed sensitivity now scales), volume, fps_max, net_graph,
+      cl_crosshair_color / _size / _translucent, cl_dynamiccrosshair, name;
+      bind / unbind / binds / resetbinds, status, kill, say, jointeam,
+      buy / autobuy / rebuy / buyammo1 / buyammo2, disconnect, retry.
+      Settings persist (config).
+- [x] Key bindings: every action rebindable (bind f +duck …); the game
+      listens to actions, not keys.
+- [ ] Later: spectator overview map, VGUI buy menu art, custom HUD fonts.
 
 ## M13 — Audio parity
 - [ ] Surface footsteps incl. metal / grate / ladder / water; land sounds.

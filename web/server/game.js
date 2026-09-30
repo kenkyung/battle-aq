@@ -591,6 +591,7 @@ export class Game {
       round: this.roundInfo(),
       bomb: this.bombInfo(p),
       smokes: this.smokes.map((s2) => ({ pos: s2.pos, left: s2.until - now() })),
+      motd: this.motd(),
     });
     this.sendInv(p);
     this.broadcast({ t: 'spawn', player: this.publicPlayer(p) }, id);
@@ -607,6 +608,47 @@ export class Game {
 
   // Public rooms: keep each team at `fillTo` players with bots. A joining
   // human takes a bot's place; an empty room has no bots.
+  // message of the day (MOTD env var, else a short how-to for this room)
+  motd() {
+    if (process.env.MOTD) return process.env.MOTD;
+    const r = this.rules;
+    return `${this.map.id} · ${r.name}\n`
+      + `${Math.floor(r.roundtime / 60)}:${String(r.roundtime % 60).padStart(2, '0')} rounds, first to ${r.winlimit} of ${r.maxrounds}, `
+      + `friendly fire ${r.friendlyfire ? 'ON (35 %)' : 'off'}, tickrate ${r.tickrate}.\n\n`
+      + `B buy · F1 autobuy · F2 rebuy · M team · Z/X/V radio · ~ console · Tab scores\n`
+      + (this.hostageMode ? 'CT: walk up to a hostage and press E, lead it to a rescue zone.' : 'T: plant the C4 at A or B. CT: stop them or defuse it.');
+  }
+
+  // M: change sides. Alive mid-round, that kills you (CS); mp_limitteams 2
+  // keeps humans within two of each other.
+  joinTeam(p, want) {
+    let team = want === 'T' ? TEAM.T : want === 'CT' ? TEAM.CT : 0;
+    if (!team) {
+      const hT = this.humanCount(TEAM.T), hCT = this.humanCount(TEAM.CT);
+      team = hT !== hCT ? (hT < hCT ? TEAM.T : TEAM.CT) : (this.teamSize(TEAM.T) <= this.teamSize(TEAM.CT) ? TEAM.T : TEAM.CT);
+    }
+    if (team === p.team) return this.send(p, { t: 'team_fail', reason: 'you are already on that team' });
+    if (!p.bot && this.humanCount(team) + 1 - (this.humanCount(other(team)) - 1) > 2) {
+      return this.send(p, { t: 'team_fail', reason: 'too many players on that team' });
+    }
+    if (p.alive && this.competitive) {
+      this.kill(p, null, 'world', false);
+      p.deaths = Math.max(0, p.deaths - 1);        // a team change is not a death
+    }
+    if (p.c4) this.dropBomb(p);
+    p.team = team;
+    this.resetLoadout(p);
+    p.money = Math.max(p.money, 0);
+    this.send(p, { t: 'team', team });
+    this.broadcast({ t: 'chat', id: 0, name: '*', team: 0, text: `${p.name} is joining the ${team === TEAM.T ? 'Terrorist' : 'Counter-Terrorist'} force` });
+    if (!this.competitive) this.respawn(p, true);
+    else if (this.phase === 'freeze') this.respawn(p, true);
+    this.sendInv(p);
+    this.balanceBots();
+    this.checkMode();
+    this.checkWinCondition();
+  }
+
   balanceBots() {
     if (!this.fillTo || this.practice) return;
     const anyHuman = this.humans.length > 0;
@@ -948,6 +990,13 @@ export class Game {
         break;
       case 'alt':
         this.handleAlt(p);
+        break;
+      case 'jointeam':
+        this.joinTeam(p, String(msg.team || 'auto'));
+        break;
+      case 'suicide':
+        // console "kill": -1 frag, as in CS
+        if (p.alive && this.phase !== 'freeze') { p.kills--; this.kill(p, null, 'world', false); }
         break;
       case 'autobuy':
         this.autobuy(p);

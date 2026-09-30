@@ -27,9 +27,10 @@
     <canvas id="radar" width="200" height="200"></canvas>
     <div id="topbar">
       <div class="team t"><span id="aliveT" class="pips"></span><b id="scoreT">0</b></div>
-      <div class="clock"><div id="timer">0:00</div><div id="roundPhase">WARMUP</div></div>
       <div class="team ct"><b id="scoreCT">0</b><span id="aliveCT" class="pips"></span></div>
     </div>
+    <!-- CS 1.6: the round clock sits at the bottom centre -->
+    <div class="clock" id="clockbox"><div id="timer">0:00</div><div id="roundPhase">WARMUP</div></div>
     <div id="killfeed"></div>
     <div id="banner" class="hidden"></div>
     <div id="center-msg"></div>
@@ -51,6 +52,24 @@
     <div id="progress" class="hidden"><div id="progressLabel">PLANTING</div><div class="track"><i id="progressFill"></i></div></div>
     <div id="bombIcon" class="hidden" title="bomb"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="11" rx="2"/><path d="M7 7V5h4v2M14 11h4M14 14h4"/><circle cx="8" cy="12.5" r="2"/></svg><span id="bombText"></span></div>
   </div>
+
+  <!-- team menu (M) -->
+  <div id="teammenu" class="hidden"><div class="panel">
+    <h2>SELECT TEAM</h2>
+    <div class="teamopts">
+      <button data-team="T" class="tm t"><b>1</b>TERRORISTS<small id="tmT"></small></button>
+      <button data-team="CT" class="tm ct"><b>2</b>COUNTER-TERRORISTS<small id="tmCT"></small></button>
+      <button data-team="auto" class="tm"><b>5</b>AUTO-SELECT</button>
+    </div>
+    <div class="dim">0 / Esc: cancel · switching sides during a round kills you (as in CS)</div>
+  </div></div>
+
+  <!-- message of the day -->
+  <div id="motd" class="hidden"><div class="panel">
+    <h2 id="motdTitle">WELCOME</h2>
+    <div id="motdText"></div>
+    <button id="motdOk" class="btn primary">OK</button>
+  </div></div>
 
   <!-- pause (Esc) -->
   <div id="pause" class="hidden">

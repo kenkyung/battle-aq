@@ -3,6 +3,11 @@
 
 import { WEAPONS, TEAM, SLOTS } from '../shared/constants.js';
 import { BUY_MENU, itemInfo, buyZoneCenter, ECONOMY, ammoBox } from '../shared/economy.js';
+import { assetUrl } from './assets.js';
+
+// kill-feed icon atlas (art/blender/build_killicons.py)
+let KILLICONS = null;
+fetch(assetUrl('ui/killicons.json')).then((r) => r.json()).then((j) => { KILLICONS = j; }).catch(() => {});
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -196,13 +201,22 @@ export class HUD {
     });
   }
 
+  // CS kill feed: killer, weapon icon (Blender-rendered silhouettes), headshot
   addKill(killer, victim, weapon, headshot, involvesMe, wallbang = false) {
     const div = document.createElement('div');
     div.className = 'kf' + (involvesMe ? ' me' : '');
+    const icon = KILLICONS && KILLICONS.icons[weapon];
+    let w;
+    if (icon) {
+      const k = 22 / icon[3];
+      w = `<i class="ki" title="${esc(WEAPONS[weapon] ? WEAPONS[weapon].name : weapon)}" style="width:${Math.round(icon[2] * k)}px;`
+        + `background-image:url(${assetUrl('ui/killicons.png')});background-size:${KILLICONS.size[0] * k}px ${KILLICONS.size[1] * k}px;`
+        + `background-position:${-icon[0] * k}px ${-icon[1] * k}px"></i>`;
+    } else w = `<span class="w">${esc(WEAPONS[weapon] ? WEAPONS[weapon].name : weapon)}</span>`;
     div.innerHTML = `<span class="${teamCls(killer.team)}">${esc(killer.name)}</span>`
-      + `<span class="w">${esc(WEAPONS[weapon] ? WEAPONS[weapon].name : weapon)}</span>`
-      + (wallbang ? '<span class="hs">WB</span>' : '')
-      + (headshot ? '<span class="hs">HS</span>' : '')
+      + w
+      + (wallbang ? '<span class="wbi">WB</span>' : '')
+      + (headshot ? '<span class="hsi">HS</span>' : '')
       + `<span class="${teamCls(victim.team)}">${esc(victim.name)}</span>`;
     this.el.killfeed.prepend(div);
     while (this.el.killfeed.children.length > 6) this.el.killfeed.lastChild.remove();

@@ -12,6 +12,7 @@ import { Effects } from './fx.js';
 import { BombView } from './bomb3d.js';
 import { HostageView } from './hostages3d.js';
 import { DropView } from './drops3d.js';
+import { GameConsole, keyCode, keyName, ACTIONS, DEFAULT_BINDS } from './console.js';
 import { NadeView } from './nades3d.js';
 import { Sfx, surfaceOf } from './sfx.js';
 import { preloadModels, setAnisotropy } from './assets.js';
@@ -128,6 +129,7 @@ function bindSettings(sensId, valId, qualId) {
     $(valId).textContent = v.toFixed(1);
     input.sensitivity = v / 1000;
     store.set('baq_sens', String(v));
+    store.set('cvar_sensitivity', (input.sensitivity / (0.022 * Math.PI / 180)).toFixed(2));
     for (const [a, b] of [['sens', 'sensVal'], ['pSens', 'pSensVal']]) { $(a).value = v; $(b).textContent = v.toFixed(1); }
   });
   $(qualId).addEventListener('change', (e) => {
@@ -349,6 +351,7 @@ async function onWelcome(welcome) {
   hud.show();
   hud.hideMatchEnd();
   running = true;
+  showMotd(welcome.motd);
   input.capture = true;
   input.lock();
   // ?buy=ak47,assault buys on join (warmup lets you buy anywhere) — for testing
@@ -579,6 +582,7 @@ function applyRound(r) {
   round.buyEndsAt = r.buyTime < 0 ? -1 : now + r.buyTime;
   round.mode = r.mode || 'bomb';
   round.rulesName = r.rulesName || '';
+  round.rules = r.rules;
   round.maxRounds = r.maxRounds;
   round.friendlyfire = !!r.friendlyfire;
   // cl_interp: two update intervals plus a little slack (0.05 .. 0.1 s)
@@ -732,6 +736,99 @@ document.addEventListener('fullscreenchange', () => {
   $('fullscreenBtn').textContent = document.fullscreenElement ? 'EXIT FULLSCREEN' : 'FULLSCREEN';
 });
 
+// ------------------------------------------------------------------ console (~)
+
+const con = new GameConsole({ input, store, onClose: () => { if (running) input.lock(); } });
+window.__con = con;
+try { const b = store.get('baq_binds', null); if (b) input.binds = JSON.parse(b); } catch { /* defaults */ }
+const saveBinds = () => store.set('baq_binds', JSON.stringify(input.binds));
+let fpsMax = 0;
+const xhairCfg = { scale: 1, dynamic: true };
+const DEG = Math.PI / 180;
+con.cvar('sensitivity', (input.sensitivity / (0.022 * DEG)).toFixed(2), 'mouse sensitivity (CS scale: m_yaw 0.022 x this)', (v) => {
+  const f = parseFloat(v); if (!(f > 0)) return;
+  input.sensitivity = f * 0.022 * DEG;
+  const sv = input.sensitivity * 1000;
+  store.set('baq_sens', String(sv));
+  for (const [a, b] of [['sens', 'sensVal'], ['pSens', 'pSensVal']]) { $(a).value = sv; $(b).textContent = sv.toFixed(1); }
+});
+con.cvar('m_pitch', '0.022', 'vertical mouse factor; negative inverts', (v) => { input.pitchSign = parseFloat(v) < 0 ? -1 : 1; });
+con.cvar('zoom_sensitivity_ratio', '1.2', 'sensitivity scale while zoomed (x zoom fov ratio)', () => {});
+con.cvar('volume', String(sfx.volume), 'master volume 0..1', (v) => { const f = Math.max(0, Math.min(1, parseFloat(v) || 0)); sfx.setVolume(f); store.set('baq_vol', String(f)); });
+con.cvar('fps_max', '0', 'frame rate cap (0 = display rate)', (v) => { fpsMax = Math.max(0, parseInt(v, 10) || 0); });
+con.cvar('net_graph', netGraph ? '1' : '0', 'show fps / ping / rates', (v) => { netGraph = v !== '0'; store.set('baq_netgraph', netGraph ? '1' : '0'); $('ngOn').checked = netGraph; const el = $('netgraph'); if (el) el.classList.toggle('hidden', !netGraph); });
+con.cvar('cl_crosshair_color', '50 250 50', 'crosshair colour "r g b"', (v) => {
+  const c = String(v).split(/\s+/).map((x) => Math.max(0, Math.min(255, parseInt(x, 10) || 0)));
+  document.getElementById('crosshair').style.setProperty('--xhc', `rgb(${c[0]},${c[1]},${c[2]})`);
+});
+con.cvar('cl_crosshair_size', 'auto', 'auto | small | medium | large', (v) => { xhairCfg.scale = { small: 0.75, medium: 1, large: 1.35 }[v] || 1; });
+con.cvar('cl_crosshair_translucent', '1', 'translucent crosshair', (v) => { document.getElementById('crosshair').style.opacity = v === '0' ? '1' : '0.75'; });
+con.cvar('cl_dynamiccrosshair', '1', 'crosshair opens with movement and shots', (v) => { xhairCfg.dynamic = v !== '0'; });
+con.cvar('hud_fastswitch', '1', 'weapon keys switch at once (always on here)', () => {});
+con.cvar('name', store.get('baq_name', 'Player'), 'your name (next join)', (v, init) => { if (!init) { store.set('baq_name', v); $('playerName').value = v; } });
+con.cmd('help', 'list commands', () => { for (const [n, c] of Object.entries(con.cmds).sort()) con.print(`${n.padEnd(22)}${c.help}`, 'dim'); con.print('cvars: type "cvarlist"', 'dim'); });
+con.cmd('cvarlist', 'list variables', () => { for (const [n, d] of Object.entries(con.defs).sort()) con.print(`${n.padEnd(26)}"${con.cvars[n]}"  ${d.help}`, 'dim'); });
+con.cmd('bind', 'bind <key> <action>: e.g. bind f +duck (no action: show)', (a) => {
+  const code = keyCode(a[0] || '');
+  if (!code) return con.print('bind <key> <action>');
+  if (a.length < 2) return con.print(`"${a[0]}" = "${input.binds[code] || ''}"`);
+  if (!ACTIONS.includes(a[1])) return con.print(`unknown action "${a[1]}". actions: ${ACTIONS.join(' ')}`);
+  input.binds[code] = a[1]; saveBinds();
+});
+con.cmd('unbind', 'unbind <key>', (a) => { const code = keyCode(a[0] || ''); if (code) { delete input.binds[code]; saveBinds(); } });
+con.cmd('unbindall', 'remove every binding', () => { input.binds = {}; saveBinds(); });
+con.cmd('resetbinds', 'restore the default keys', () => { input.binds = { ...DEFAULT_BINDS }; saveBinds(); });
+con.cmd('binds', 'list key bindings', () => { for (const [k, v] of Object.entries(input.binds).sort((x, y) => x[1].localeCompare(y[1]))) con.print(`${keyName(k).padEnd(12)}${v}`, 'dim'); });
+con.cmd('clear', 'clear the console', () => { con.log.innerHTML = ''; });
+con.cmd('echo', 'print text', (a) => con.print(a.join(' ')));
+con.cmd('kill', 'suicide (-1 frag)', () => net.send({ t: 'suicide' }));
+con.cmd('say', 'say <text>', (a) => net.send({ t: 'chat', text: a.join(' ') }));
+con.cmd('jointeam', 'jointeam 1 | 2 | 5 (auto)', (a) => net.send({ t: 'jointeam', team: { 1: 'T', 2: 'CT' }[a[0]] || 'auto' }));
+con.cmd('chooseteam', 'open the team menu', () => { con.toggle(false); openTeamMenu(true); });
+con.cmd('status', 'players, scores and latency', () => {
+  con.print(`map ${map ? map.id : '?'} · ${round.rulesName || ''} · tick ${round.tickrate || '?'}`, 'dim');
+  for (const r of roster.values()) con.print(`#${String(r.id).padEnd(4)}${(r.name || '').padEnd(18)}${r.team === TEAM.T ? 'T ' : 'CT'} ${String(r.k).padStart(3)} ${String(r.d).padStart(3)}  ${r.bot ? 'BOT' : (r.ping ?? '?') + ' ms'}`, 'dim');
+});
+con.cmd('disconnect', 'leave the server', () => { if (running) { leaving = true; net.close(); } });
+con.cmd('retry', 'reconnect', () => location.reload());
+con.cmd('quit', 'leave the server', () => { if (running) { leaving = true; net.close(); } });
+for (const c of ['autobuy', 'rebuy']) con.cmd(c, c, () => net.send({ t: c }));
+con.cmd('buyammo1', 'one box of primary ammo', () => net.send({ t: 'buy', item: 'ammo1' }));
+con.cmd('buyammo2', 'one box of pistol ammo', () => net.send({ t: 'buy', item: 'ammo2' }));
+con.cmd('buy', 'buy <item> (e.g. buy ak47)', (a) => net.send({ t: 'buy', item: a[0] }));
+con.cmd('version', 'build id', () => con.print(`Battle-AQ ${document.querySelector('script[type=module]')?.src.match(/v\/([^/]+)/)?.[1] || 'dev'}`));
+
+// ------------------------------------------------------------------ team menu (M)
+
+function openTeamMenu(on) {
+  $('teammenu').classList.toggle('hidden', !on);
+  input.menuOpen = on;
+  if (on) {
+    let t = 0, ct = 0;
+    for (const r of roster.values()) { if (r.team === TEAM.T) t++; else if (r.team === TEAM.CT) ct++; }
+    $('tmT').textContent = `${t} player${t === 1 ? '' : 's'}`;
+    $('tmCT').textContent = `${ct} player${ct === 1 ? '' : 's'}`;
+    if (document.pointerLockElement) document.exitPointerLock();
+  } else if (running) input.lock();
+}
+function teamMenuOpen() { return !$('teammenu').classList.contains('hidden'); }
+for (const b of document.querySelectorAll('#teammenu .tm')) b.addEventListener('click', () => { net.send({ t: 'jointeam', team: b.dataset.team }); openTeamMenu(false); });
+net.on('team_fail', (msg) => { hud.centerMsg(msg.reason); setTimeout(() => hud.centerMsg(''), 2000); });
+
+// ------------------------------------------------------------------ MOTD
+
+function showMotd(text) {
+  if (!text || sessionStorage.getItem('baq_motd_seen') === text) return;
+  sessionStorage.setItem('baq_motd_seen', text);
+  $('motdText').textContent = text;
+  $('motd').classList.remove('hidden');
+  // it never takes the mouse away from the game: any key or 8 s dismisses it
+  clearTimeout(showMotd.t);
+  showMotd.t = setTimeout(() => $('motd').classList.add('hidden'), 8000);
+}
+$('motdOk').addEventListener('click', () => $('motd').classList.add('hidden'));
+window.addEventListener('keydown', () => { if (!$('motd').classList.contains('hidden')) $('motd').classList.add('hidden'); });
+
 // ------------------------------------------------------------------ UI keys
 
 function canBuy() {
@@ -785,7 +882,15 @@ net.on('radio', (msg) => {
 const radarPings = [];
 
 input.onKey = (code, e, down) => {
+  if (code === 'Backquote') { if (down) { e.preventDefault(); con.toggle(); } return; }
   if (!running) return;
+  if (teamMenuOpen() && down) {
+    if (code === 'Escape' || code === 'Digit0') { openTeamMenu(false); return; }
+    const pick = { Digit1: 'T', Digit2: 'CT', Digit5: 'auto' }[code];
+    if (pick) { net.send({ t: 'jointeam', team: pick }); openTeamMenu(false); }
+    return;
+  }
+  if (code === 'KeyM' && down && !input.typing) { openTeamMenu(true); return; }
   if (code === 'Tab') { scoresHeld = down; return; }
   if (!down) return;
   if (radioMenu && code.startsWith('Digit')) {
@@ -840,26 +945,68 @@ input.onKey = (code, e, down) => {
 
 // ------------------------------------------------------------------ spectating
 
+// mp_forcecamera: competitive = your team only, casual = anyone
 function spectateTargets() {
-  return [...remotes.players.values()].filter((r) => r.alive && r.team === myTeam);
+  const any = round.rules !== 'competitive';
+  return [...remotes.players.values()].filter((r) => r.alive && (any || r.team === myTeam));
 }
 
+// Dead / spectating, CS style: JUMP cycles first person -> chase cam ->
+// free look; FIRE picks the next player; the mouse orbits the chase cam
+// and steers free look (WASD flies).
+const SPEC_MODES = ['first', 'chase', 'free'];
+const spec = { mode: 'first', yaw: 0, pitch: -0.2, jumpWas: false, pos: null };
 function updateSpectate(dt) {
   const list = spectateTargets();
+  const jump = input.keys.has('Space');
+  if (jump && !spec.jumpWas) {
+    spec.mode = SPEC_MODES[(SPEC_MODES.indexOf(spec.mode) + 1) % SPEC_MODES.length];
+    if (spec.mode === 'free') spec.pos = [camera.position.x, camera.position.y, camera.position.z];
+  }
+  spec.jumpWas = jump;
+  const [dx, dy] = input.consumeLook();
+  spec.yaw -= dx;
+  spec.pitch = Math.max(-1.45, Math.min(1.45, spec.pitch - dy));
   if (input.consumeFirePressed() || !list.find((r) => r.id === spectating)) {
     if (list.length) {
       const i = list.findIndex((r) => r.id === spectating);
       spectating = list[(i + 1) % list.length].id;
     } else spectating = null;
   }
+  if (spec.mode === 'free') {
+    remotes.hiddenId = null;
+    const k = input.moveKeys();
+    const sp = (k.walk ? 250 : 600) * dt;
+    const cp = Math.cos(spec.pitch);
+    const f = [-Math.sin(spec.yaw) * cp, Math.sin(spec.pitch), -Math.cos(spec.yaw) * cp];
+    const rgt = [Math.cos(spec.yaw), 0, -Math.sin(spec.yaw)];
+    const mv = (k.f ? 1 : 0) - (k.b ? 1 : 0), st = (k.r ? 1 : 0) - (k.l ? 1 : 0);
+    for (let i = 0; i < 3; i++) spec.pos[i] += (f[i] * mv + rgt[i] * st) * sp;
+    camera.position.set(...spec.pos);
+    camera.rotation.set(spec.pitch, spec.yaw, 0);
+    hud.setSpectate('free look  ·  WASD fly  ·  jump: first person');
+    return;
+  }
   const r = spectating != null ? remotes.players.get(spectating) : null;
-  remotes.hiddenId = r ? r.id : null;
-  if (r) {
-    const eye = r.tgt.crouching ? PLAYER.crouchEye : PLAYER.standEye;
+  if (r && spec.mode === 'first') {
+    remotes.hiddenId = r.id;
+    const eye = r.icrouch ?? r.tgt.crouching ? PLAYER.crouchEye : PLAYER.standEye;
     camera.position.set(r.cur.pos[0], r.cur.pos[1] + eye, r.cur.pos[2]);
     camera.rotation.set(r.cur.pitch, r.cur.yaw, 0);
-    hud.setSpectate(`spectating ${r.name}  ·  click for next`);
+    hud.setSpectate(`${r.name}  ·  click: next player  ·  jump: chase cam`);
+  } else if (r) {
+    // chase cam: orbit the player at 110 u, pulled in before walls
+    remotes.hiddenId = null;
+    const c = [r.cur.pos[0], r.cur.pos[1] + 52, r.cur.pos[2]];
+    const cp = Math.cos(spec.pitch);
+    const back = [Math.sin(spec.yaw) * cp, -Math.sin(spec.pitch), Math.cos(spec.yaw) * cp];
+    const hit = raycast(c, back, world.colliders, 110);
+    const d = hit ? Math.max(20, hit.t - 8) : 110;
+    camera.position.set(c[0] + back[0] * d, c[1] + back[1] * d, c[2] + back[2] * d);
+    camera.lookAt(c[0], c[1], c[2]);
+    hud.setSpectate(`${r.name}  ·  chase cam  ·  click: next player  ·  jump: free look`);
   } else {
+    remotes.hiddenId = null;
     overview(dt, 0.08);
     hud.setSpectate(round.phase === 'warmup' ? '' : 'waiting for the next round');
   }
@@ -893,7 +1040,8 @@ function crosshair(dt) {
   }
   if (xhair.dist < target) xhair.dist = target;
   else xhair.dist = Math.max(target, xhair.dist - dt * (1.2 * xhair.dist + 3));
-  const scale = Math.max(1, Math.min(2.4, window.innerHeight / 480));
+  if (!xhairCfg.dynamic) xhair.dist = base;                  // cl_dynamiccrosshair 0
+  const scale = Math.max(1, Math.min(2.4, window.innerHeight / 480)) * xhairCfg.scale;
   const bar = ((xhair.dist - base) * 0.5 + 5) * scale;
   return { gap: xhair.dist * scale, len: bar };
 }
@@ -906,6 +1054,7 @@ let fpsT = 0, fpsN = 0;
 
 function frame(now) {
   requestAnimationFrame(frame);
+  if (fpsMax > 0 && now - last < 1000 / fpsMax - 0.5) return;       // fps_max
   if (running) updateNetGraph();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -968,6 +1117,8 @@ function frame(now) {
   hud.setWeapon(player.weapon, player.mag(), player.reserve(), rf, player.mode());
   hud.setTimer(round.phase === 'planted' ? 0 : round.endsAt - tNow, round.phase);
   const scoped = player.alive && player.scoped();
+  // zoomed: sensitivity follows the zoom (x zoom_sensitivity_ratio, CS)
+  input.fovScale = player.alive && player.zoom > 0 ? (camera.fov / 78) * (parseFloat(con.cvars.zoom_sensitivity_ratio) || 1.2) : 1;
   hud.setScope(scoped);
   const xh = crosshair(dt);
   hud.setCrosshair(xh.gap, xh.len, player.alive && !scoped);

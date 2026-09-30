@@ -48,7 +48,7 @@ body { font-family: var(--font); color: var(--hud); user-select: none; }
 
 /* ---------- crosshair / scope ---------- */
 #crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; z-index: 20; pointer-events: none; --gap: 5px; }
-.ch { position: absolute; background: #7dff6a; box-shadow: 0 0 1px #000, 0 0 2px rgba(0,0,0,.8); }
+.ch { position: absolute; background: var(--xhc, #7dff6a); box-shadow: 0 0 1px #000, 0 0 2px rgba(0,0,0,.8); }
 .ch.t { left: -1px; top: calc(-1 * var(--gap) - 7px); width: 2px; height: 7px; }
 .ch.b { left: -1px; top: var(--gap); width: 2px; height: 7px; }
 .ch.l { left: calc(-1 * var(--gap) - 7px); top: -1px; width: 7px; height: 2px; }
@@ -255,5 +255,38 @@ label.check input { accent-color: var(--t); }
 #hostages i.r { background: #74d17f; }
 #hostages i.k { background: #d0443a; opacity: .7; }
 
-#netgraph { position: absolute; right: 18px; bottom: 150px; margin: 0; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #e8e8c8;
+#netgraph { position: absolute; right: 18px; bottom: 196px; margin: 0; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #e8e8c8;
   text-shadow: 0 1px 2px #000; pointer-events: none; text-align: right; }
+
+/* ---- M12: CS 1.6 HUD layout + colours */
+:root { --hudc: rgba(255, 176, 40, .92); }
+#vitals, #vitals svg, #ammo, #money { color: var(--hudc); fill: var(--hudc); }
+#money { color: var(--hudc); }
+#clockbox { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); text-align: center; background: none; }
+#clockbox #timer { font: 700 34px/1 var(--num); color: var(--hudc); text-shadow: 0 2px 3px rgba(0,0,0,.6); }
+#clockbox #roundPhase { font-size: 10px; letter-spacing: 2px; color: var(--hud-dim); }
+.kf .ki { display: inline-block; height: 22px; background-repeat: no-repeat; opacity: .95; }
+.kf .hsi, .kf .wbi { display: inline-block; font: 800 10px var(--font); padding: 1px 4px; border-radius: 2px; }
+.kf .hsi { color: #1a0a08; background: #ff6a55; }
+.kf .wbi { color: #1a140a; background: var(--hudc); }
+
+/* console */
+#console { position: absolute; left: 0; right: 0; top: 0; height: 48vh; z-index: 90; background: rgba(12,14,16,.94); border-bottom: 2px solid var(--hudc);
+  display: flex; flex-direction: column; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; color: #e8e2cc; }
+#conLog { flex: 1; overflow-y: auto; padding: 8px 12px; white-space: pre-wrap; }
+#conLog .echo { color: var(--hudc); } #conLog .dim { color: var(--hud-dim); }
+#conInput { border: 0; border-top: 1px solid var(--line); background: rgba(0,0,0,.4); color: #fff; font: inherit; padding: 6px 12px; outline: none; }
+
+/* team menu + MOTD */
+#teammenu, #motd { position: absolute; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.45); }
+#teammenu h2, #motd h2 { font: 900 22px Impact, "Arial Black", var(--font); letter-spacing: 3px; color: var(--hudc); margin-bottom: 12px; }
+.teamopts { display: grid; grid-template-columns: repeat(3, 190px); gap: 10px; margin-bottom: 10px; }
+.tm { padding: 18px 12px; border-radius: 5px; border: 1px solid var(--line); background: rgba(255,255,255,.05); color: var(--hud); font: 800 13px var(--font); letter-spacing: 1px; cursor: pointer; text-align: left; }
+.tm b { display: block; font: 700 11px var(--num); color: var(--hud-dim); margin-bottom: 6px; }
+.tm small { display: block; font: 600 10px var(--font); color: var(--hud-dim); margin-top: 6px; letter-spacing: .5px; }
+.tm.t { color: var(--t); } .tm.ct { color: var(--ct); }
+.tm:hover, .tm.hover { border-color: var(--hudc); background: rgba(255,176,40,.1); }
+#motd .panel { max-width: 560px; }
+#motdText { white-space: pre-wrap; font-size: 13px; line-height: 1.55; color: var(--hud); margin-bottom: 14px; }
+#teammenu .dim { font-size: 11px; color: var(--hud-dim); }
+.vital span { color: var(--hudc); }
