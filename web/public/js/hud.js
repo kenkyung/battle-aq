@@ -389,16 +389,23 @@ export class HUD {
 
   // ------------------------------------------------------------ scoreboard
 
-  showScores(on, rows, myId) {
+  // CS 1.6 scoreboard: name, status (DEAD / BOMB), score, deaths, latency
+  showScores(on, rows, myId, info = {}) {
     this.el.scoreboard.classList.toggle('hidden', !on);
     if (!on) return;
     const render = (team) => {
       const list = rows.filter((r) => r.team === team).sort((a, b) => b.k - a.k || a.d - b.d);
-      return '<tr class="head"><td class="n">PLAYER</td><td class="k">K</td><td class="d">D</td></tr>'
-        + list.map((r) => `<tr class="${r.alive ? '' : 'dead'} ${r.id === myId ? 'me' : ''}"><td class="n">${esc(r.name)}</td><td class="k">${r.k}</td><td class="d">${r.d}</td></tr>`).join('');
+      return '<tr class="head"><td class="n">NAME</td><td class="s"></td><td class="k">SCORE</td><td class="d">DEATHS</td><td class="l">LATENCY</td></tr>'
+        + list.map((r) => `<tr class="${r.alive ? '' : 'dead'} ${r.id === myId ? 'me' : ''}"><td class="n">${esc(r.name)}</td>`
+          + `<td class="s ${r.c4 ? 'bomb' : ''}">${!r.alive ? 'DEAD' : r.c4 ? 'BOMB' : ''}</td>`
+          + `<td class="k">${r.k}</td><td class="d">${r.d}</td><td class="l">${r.bot ? 'BOT' : r.ping ?? ''}</td></tr>`).join('');
     };
     this.el.sbTbody.innerHTML = render(TEAM.T);
     this.el.sbCTbody.innerHTML = render(TEAM.CT);
+    const count = (team) => { const l = rows.filter((r) => r.team === team); return `${l.length} player${l.length === 1 ? '' : 's'} · ${l.filter((r) => r.alive).length} alive`; };
+    document.getElementById('sbTn').textContent = count(TEAM.T);
+    document.getElementById('sbCTn').textContent = count(TEAM.CT);
+    document.getElementById('sbHead').innerHTML = `<span>${esc(info.map || '')}</span><span>${esc(info.rules || '')}${info.round ? ` · round ${info.round} of ${info.maxRounds}` : ''}</span>`;
   }
 
   // ------------------------------------------------------------ match end + vote

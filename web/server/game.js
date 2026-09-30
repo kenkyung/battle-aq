@@ -34,6 +34,7 @@ import {
 import { navFor } from './nav.js';
 import { radioText } from '../shared/radio.js';
 import { MOVE, weaponStats } from '../shared/constants.js';
+import { rulesFor, FF_DAMAGE } from '../shared/rules.js';
 import { traceBullet, materialClass } from '../shared/penetration.js';
 import { themeFor } from '../shared/themes.js';
 import { NADES, throwVelocity, newNade, stepNade, flashAmount } from '../shared/grenades.js';
@@ -53,8 +54,10 @@ function eyeOf(p) {
 }
 
 export class Game {
-  constructor(mapId = 'de_aq_dust', { practice = false, id = 'public', fillTo = 0, botDifficulty = 'normal' } = {}) {
+  constructor(mapId = 'de_aq_dust', { practice = false, id = 'public', fillTo = 0, botDifficulty = 'normal', rules = 'casual' } = {}) {
     this.id = id;
+    this.rulesId = rules;
+    this.rules = rulesFor(rules);       // mp_* settings of this room
     this.practice = practice;
     this.fillTo = fillTo;               // public rooms: top each team up to this many with bots
     this.botDifficulty = botDifficulty;
@@ -74,7 +77,7 @@ export class Game {
     this.score = { [TEAM.T]: 0, [TEAM.CT]: 0 };
     this.lossStreak = { [TEAM.T]: 0, [TEAM.CT]: 0 };
     this.roundNumber = 0;
-    this.halftimeRound = ROUND.halftimeAfter;
+    this.halftimeRound = this.rules.halftime;
     this.matchOver = false;
     this.bomb = { state: 'none', pos: null, carrier: null, plantedAt: 0, explodeAt: 0 };
     this.plantedThisRound = false;
@@ -255,8 +258,8 @@ export class Game {
     this.nades = []; this.smokes = [];
     this.drops = [];              // guns on the floor are cleared each round (CS)
     this.planting.clear(); this.defusing.clear();
-    this.buyEndsAt = now() + ROUND.freezeTime + ECONOMY.buyTimeIntoRound;
-    this.setPhase('freeze', ROUND.freezeTime);
+    this.buyEndsAt = now() + this.rules.freezetime + this.rules.buytime;
+    this.setPhase('freeze', this.rules.freezetime);
     // what each player bought last round becomes their F2 rebuy
     for (const p of this.players.values()) {
       if (p.roundBuys && p.roundBuys.length) p.lastBuys = p.roundBuys;
@@ -283,7 +286,8 @@ export class Game {
       timer: this.phase === 'warmup' ? 0 : Math.max(0, this.phaseEndsAt - now()),
       buyTime: this.phase === 'warmup' ? -1 : Math.max(0, this.buyEndsAt - now()),
       scoreT: this.score[TEAM.T], scoreCT: this.score[TEAM.CT],
-      round: this.roundNumber, maxRounds: ROUND.maxRounds, halftime: this.halftimeRound,
+      round: this.roundNumber, maxRounds: this.rules.maxrounds, halftime: this.halftimeRound,
+      rules: this.rulesId, rulesName: this.rules.name, winlimit: this.rules.winlimit, friendlyfire: this.rules.friendlyfire,
       map: this.map.id, practice: this.practice, mode: this.hostageMode ? 'hostage' : 'bomb',
       rescueZones: this.hostageMode ? this.rescueZones() : undefined,
     };
@@ -304,7 +308,7 @@ export class Game {
     this.updateNades(dt, t);
     this.updateHostages(dt, t);
     if (this.phase === 'warmup' || t < this.phaseEndsAt) return;
-    if (this.phase === 'freeze') this.setPhase('round', ROUND.roundTime);
+    if (this.phase === 'freeze') this.setPhase('round', this.rules.roundtime);
     // time: the bomb was never planted (CT win) / hostages not rescued (T win)
     else if (this.phase === 'round') this.endRound(this.hostageMode ? TEAM.T : TEAM.CT, 'time');
     else if (this.phase === 'planted') this.explode();
@@ -326,6 +330,7 @@ export class Game {
     else if (how === 'defuse') winBonus = ECONOMY.winBonusDefuse;
     else if (winner === TEAM.CT && how === 'elim') winBonus = ECONOMY.winBonusElimCT;
     else if (how === 'rescue') winBonus = ECONOMY.winBonusRescue;
+    else if (how === 'time') winBonus = ECONOMY.winBonusTime;
     const lossPay = lossBonus(this.lossStreak[loser]);
     for (const p of this.players.values()) {
       if (p.team === winner) this.addMoney(p, winBonus, 'round win');
@@ -335,14 +340,14 @@ export class Game {
         this.addMoney(p, pay, 'round loss');
       }
     }
-    const lastRound = this.roundNumber >= ROUND.maxRounds;
-    this.matchOver = this.score[winner] >= ROUND.roundsToWin || lastRound;
+    const lastRound = this.roundNumber >= this.rules.maxrounds;
+    this.matchOver = this.score[winner] >= this.rules.winlimit || lastRound;
     this.broadcast({
       t: 'round_end', winner, how,
       scoreT: this.score[TEAM.T], scoreCT: this.score[TEAM.CT],
       matchOver: this.matchOver, halftime: this.roundNumber === this.halftimeRound,
     });
-    this.setPhase('end', ROUND.roundEndTime);
+    this.setPhase('end', this.rules.roundEnd);
   }
 
   checkWinCondition() {
@@ -514,13 +519,13 @@ export class Game {
     p.c4 = false;
     p.weapon = p.inv.primary || p.inv.secondary || 'knife';
     const pos = p.pos.slice();
-    this.bomb = { state: 'planted', pos, carrier: null, plantedAt: now(), explodeAt: now() + ROUND.bombTime, site: this.inSite(pos) };
+    this.bomb = { state: 'planted', pos, carrier: null, plantedAt: now(), explodeAt: now() + this.rules.c4timer, site: this.inSite(pos) };
     this.plantedThisRound = true;
     this.addMoney(p, ECONOMY.planterReward, 'bomb planted');
     this.sendInv(p);
     this.phase = 'planted';
     this.phaseEndsAt = this.bomb.explodeAt;
-    this.broadcast({ t: 'bomb_event', kind: 'planted', by: p.id, pos, site: this.bomb.site, time: ROUND.bombTime });
+    this.broadcast({ t: 'bomb_event', kind: 'planted', by: p.id, pos, site: this.bomb.site, time: this.rules.c4timer });
     this.broadcast({ t: 'round', ...this.roundInfo() });
     for (const q of this.players.values()) if (q.bot) q.bot.goal = null;
   }
@@ -870,6 +875,9 @@ export class Game {
           this.broadcast({ t: 'votes', tally: this.tally() });
         }
         break;
+      case 'pong':
+        if (Number.isFinite(msg.ts)) p.ping = Math.max(0, Math.min(999, Math.round((now() - msg.ts) * 1000)));
+        break;
       case 'chat': {
         const text = String(msg.text || '').trim().slice(0, 140);
         if (text) this.broadcast({ t: 'chat', id: p.id, name: p.name, team: p.team, text });
@@ -946,9 +954,10 @@ export class Game {
         const chest = [q.pos[0], q.pos[1] + 36, q.pos[2]];
         const d = Math.hypot(chest[0] - pos[0], chest[1] - pos[1], chest[2] - pos[2]);
         if (d >= spec.radius || !visible(chest)) continue;
-        // no friendly fire, but you can hurt yourself
-        if (owner && q !== owner && q.team === n.team && this.competitive) continue;
-        const raw = spec.damage * (1 - d / spec.radius);
+        // you can always hurt yourself; teammates only with friendly fire (at 35 %)
+        const mate = owner && q !== owner && q.team === n.team && this.competitive;
+        if (mate && !this.rules.friendlyfire) continue;
+        const raw = spec.damage * (1 - d / spec.radius) * (mate ? FF_DAMAGE : 1);
         const { hpDmg, armorDmg } = armorAbsorb(raw, 'chest', q.armor, q.helmet, 1.0);
         q.armor = Math.max(0, q.armor - armorDmg);
         q.hp -= hpDmg;
@@ -1102,8 +1111,10 @@ export class Game {
   applyDamage(attacker, phit, w, dmgIn, pen = false) {
     const victim = this.players.get(phit.id);
     if (!victim || !victim.alive) return;
-    if (victim.team === attacker.team && this.competitive) return; // no friendly fire
+    const team = victim.team === attacker.team && victim !== attacker;
+    if (team && this.competitive && !this.rules.friendlyfire) return;    // mp_friendlyfire 0
     let dmg = dmgIn !== undefined ? dmgIn : baseDamage(attacker.weapon, phit.part, phit.t);
+    if (team && this.competitive) dmg *= FF_DAMAGE;                     // CS: teammates take 35 %
     if (w.melee && w.backstab) {
       // knife stab from behind the victim: triple damage
       const fx = -Math.sin(victim.yaw), fz = -Math.cos(victim.yaw);
@@ -1120,7 +1131,7 @@ export class Game {
     this.broadcast({
       t: 'hit', victim: victim.id, attacker: attacker.id,
       part: phit.part, dmg: hpDmg, hp: Math.max(0, victim.hp), armor: victim.armor, helmet: !!victim.helmet,
-      weapon: attacker.weapon, point: phit.point, pen,
+      weapon: attacker.weapon, point: phit.point, pen, team: team || undefined,
       from: [attacker.pos[0], attacker.pos[1], attacker.pos[2]],
     });
 
@@ -1141,6 +1152,12 @@ export class Game {
       if (attacker.bot && Math.random() < 0.3) setTimeout(() => this.radio(attacker, 'c', 8), 400);   // Enemy down
       const reward = WEAPONS[weapon] && WEAPONS[weapon].melee ? ECONOMY.knifeKillReward : ECONOMY.killReward;
       if (victim.team !== attacker.team) this.addMoney(attacker, reward, 'kill');
+      else if (this.competitive) {
+        // team kill: -$3300 and the frag back off (CS)
+        attacker.kills -= 2;
+        this.addMoney(attacker, ECONOMY.teamKill, 'killed a teammate');
+        this.broadcast({ t: 'chat', id: 0, name: '*', team: 0, text: `${attacker.name} killed a teammate` });
+      }
     }
     const by = attacker ? attacker.id : victim.id;
     this.broadcast({ t: 'kill', attacker: by, victim: victim.id, weapon, headshot, wallbang });
@@ -1442,7 +1459,8 @@ export class Game {
         id: p.id, team: p.team, pos: p.pos, yaw: p.yaw, pitch: p.pitch,
         alive: p.alive, crouching: p.crouching, moving: p.moving,
         weapon: p.weapon, mode: p.modes[p.weapon] || undefined, reloading: !!p.reloadUntil || !!p.shellAt,
-        k: p.kills, d: p.deaths,
+        k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined,
+        c4: viewer.team === TEAM.T && p.c4 ? 1 : undefined,
         planting: this.planting.has(p.id), defusing: this.defusing.has(p.id),
       })),
     };
@@ -1450,6 +1468,12 @@ export class Game {
 
   // snapshots differ per team only in the bomb field; build two and reuse
   broadcastSnapshots() {
+    // latency: a ping every 2 s, the client echoes it (scoreboard / net_graph)
+    const t = now();
+    if (t - (this._pingAt || 0) > 2) {
+      this._pingAt = t;
+      for (const p of this.players.values()) if (p.ws) this.send(p, { t: 'ping', ts: t });
+    }
     const byTeam = {};
     for (const p of this.players.values()) {
       if (!p.ws || p.ws.readyState !== 1) continue;

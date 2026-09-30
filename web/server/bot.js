@@ -521,7 +521,7 @@ export class BotBrain {
     if (off > (sniper ? 0.02 : 0.09)) return;               // not on target yet
     if (now < this.burstPauseUntil || now < p.nextFire) return;
     // never spray through a hostage standing between us and the target
-    if (this.game.hostageMode && this.hostageInLine(me, dist)) return;
+    if (this.blockedLine(me, dist)) return;
     if (w.auto) {
       if (this.burstLeft <= 0) this.burstLeft = Math.round(rnd(...this.skill.burst)) + (dist < 500 ? 3 : 0);
       this.burstLeft--;
@@ -536,9 +536,14 @@ export class BotBrain {
     kick(p.recoil, p.weapon, { onGround: this.state.onGround, speed: Math.hypot(this.state.vel[0], this.state.vel[2]), ducking: p.crouching });
   }
 
-  hostageInLine(me, dist) {
+  // a hostage (or, with friendly fire, a teammate) between us and the target
+  blockedLine(me, dist) {
+    const g = this.game;
     const aim = norm(aimWithPunch(this.state.yaw, this.state.pitch, [0, 0]));
-    const hs = this.game.hostages.filter((h) => h.alive && !h.rescued).map((h) => ({ id: h.id, box: hitBox(h.pos, false) }));
+    const hs = g.hostageMode ? g.hostages.filter((h) => h.alive && !h.rescued).map((h) => ({ id: h.id, box: hitBox(h.pos, false) })) : [];
+    if (g.rules.friendlyfire && g.competitive) {
+      for (const q of g.players.values()) if (q !== this.p && q.alive && q.team === this.p.team) hs.push({ id: q.id, box: hitBox(q.pos, q.crouching) });
+    }
     if (!hs.length) return false;
     // a little wider than the hull: spread and recoil wander
     for (const h of hs) { h.box.min[0] -= 8; h.box.min[2] -= 8; h.box.max[0] += 8; h.box.max[2] += 8; }

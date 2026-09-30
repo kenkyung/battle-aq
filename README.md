@@ -80,9 +80,11 @@ captured and shows its own cursor.
   presses E next to one (+$150) and it follows; walking it into a rescue
   zone (green ring) pays $1000 (+$850 to the team). All living hostages out
   = CT win; the clock running out = T win. Killing a hostage costs $1500.
-- **Economy**: $800 start, $300 per kill ($1500 knife), $3250 round win
-  ($3500 CT elimination), loss bonus $1400 → $3400 on a losing streak,
-  $16000 cap. Buy in your spawn during buy time + 20 s.
+- **Economy** (cstrike's rewards): $800 start, $300 per kill (any weapon),
+  -$3300 for a team kill, $3000 elimination win, $3500 detonation, $3250
+  defuse or time win, loss bonus $1400 → $2000 → $2500 → $3000, $16000 cap.
+- **Rules**: Casual (2:30 rounds, first to 8) or Competitive MR15 (30 rounds,
+  first to 16, 1:45, friendly fire at 35 %), picked in the menu.
 - **Weapons** are CS 1.6's (`shared/ballistics.js`): the same KickBack view
   punch per stance (the spray pattern), accuracy that decays with shots fired
   (automatics) or recovers between shots (pistols), FireBullets3 spread, hit

@@ -16,6 +16,7 @@ import { WebSocketServer } from 'ws';
 import { Game } from './game.js';
 import { MAPS } from '../shared/maps.js';
 import { TICK_RATE, SNAPSHOT_RATE, TEAM } from '../shared/constants.js';
+import { RULES } from '../shared/rules.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -128,14 +129,15 @@ const PUBLIC_ROOM_SIZE = 20;
 
 // bots top each team up to `size` (3-5; 0 = humans only)
 const DEFAULT_FILL = Math.max(0, Math.min(5, parseInt(process.env.BOT_FILL || '5', 10)));
-function publicRoom(mapId, size = DEFAULT_FILL) {
+function publicRoom(mapId, size = DEFAULT_FILL, rules = 'casual') {
   const want = MAPS[mapId] ? mapId : args.map;
   const fill = [0, 3, 4, 5].includes(size) ? size : DEFAULT_FILL;
+  const r = RULES[rules] ? rules : 'casual';
   for (const g of rooms.values()) {
-    if (!g.practice && g.map.id === want && g.fillTo === fill && g.humans.length < PUBLIC_ROOM_SIZE) return g;
+    if (!g.practice && g.map.id === want && g.fillTo === fill && g.rulesId === r && g.humans.length < PUBLIC_ROOM_SIZE) return g;
   }
   const id = 'public-' + (++roomSeq);
-  const g = new Game(want, { id, fillTo: fill });
+  const g = new Game(want, { id, fillTo: fill, rules: r });
   rooms.set(id, g);
   return g;
 }
@@ -156,7 +158,7 @@ function roomsInfo() {
 function practiceRoom(msg) {
   const mapId = MAPS[msg.map] ? msg.map : args.map;
   const id = 'practice-' + (++roomSeq);
-  const game = new Game(mapId, { id, practice: true });
+  const game = new Game(mapId, { id, practice: true, rules: RULES[msg.rules] ? msg.rules : 'casual' });
   rooms.set(id, game);
   return game;
 }
@@ -201,7 +203,7 @@ wss.on('connection', (ws) => {
         fillBots(game, player, msg);
         log(`practice ${game.id} "${player.name}" map=${game.map.id} bots=${game.players.size - 1}`);
       } else {
-        game = publicRoom(msg.map, parseInt(msg.size, 10));
+        game = publicRoom(msg.map, parseInt(msg.size, 10), String(msg.rules || 'casual'));
         player = game.addPlayer(ws, msg.name, { team });
         log(`join  #${player.id} "${player.name}" ${game.id} map=${game.map.id} team=${player.team} (${game.humans.length} here)`);
       }

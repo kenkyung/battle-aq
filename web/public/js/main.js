@@ -167,7 +167,8 @@ function surfaceAt(pos) {
 // practice options
 for (const m of MAP_LIST) $('pMap').insertAdjacentHTML('beforeend', `<option value="${m.id}">${m.id.replace(/^(de|cs)_aq_/, '')}</option>`);
 $('pMap').value = params.get('map') || store.get('baq_pmap', 'de_aq_dust');
-$('pTeam').value = store.get('baq_pteam', 'T');
+$('gRules').value = params.get('rules') || store.get('baq_rules', 'casual');
+$('pTeam').value = params.get('team') || store.get('baq_pteam', 'T');
 $('pDiff').value = store.get('baq_pdiff', 'normal');
 $('pBots').value = store.get('baq_pbots', '5');
 $('oSize').value = store.get('baq_osize', '5');
@@ -180,7 +181,7 @@ function setMode(m) {
   $('modeOnline').classList.toggle('on', m === 'online');
   $('modePractice').classList.toggle('on', m === 'practice');
   $('onlineOpts').classList.toggle('hidden', m !== 'online');
-  $('onlineSize').classList.toggle('hidden', m !== 'online');
+  $('oSizeWrap').classList.toggle('hidden', m !== 'online');
   $('sideOpts').classList.toggle('hidden', m !== 'practice');
   $('practiceOpts').classList.toggle('hidden', m !== 'practice');
   playBtn.textContent = m === 'practice' ? 'START PRACTICE' : 'PLAY ONLINE';
@@ -283,7 +284,8 @@ function join() {
   store.set('baq_name', name);
   store.set('baq_server', $('serverAddr').value.trim());
   store.set('baq_osize', $('oSize').value);
-  const msg = { t: 'join', name, map: $('pMap').value, size: +$('oSize').value };
+  store.set('baq_rules', $('gRules').value);
+  const msg = { t: 'join', name, map: $('pMap').value, size: +$('oSize').value, rules: $('gRules').value };
   if (mode === 'practice') {
     Object.assign(msg, { mode: 'practice', map: $('pMap').value, team: $('pTeam').value, bots: +$('pBots').value, difficulty: $('pDiff').value });
     store.set('baq_pmap', msg.map); store.set('baq_pteam', msg.team); store.set('baq_pdiff', msg.difficulty); store.set('baq_pbots', String(msg.bots));
@@ -368,7 +370,7 @@ net.on('state', (msg) => {
   for (const p of msg.players) {
     seen.add(p.id);
     const r = roster.get(p.id) || { id: p.id, name: `#${p.id}` };
-    Object.assign(r, { team: p.team, alive: p.alive, k: p.k, d: p.d, pos: p.pos });
+    Object.assign(r, { team: p.team, alive: p.alive, k: p.k, d: p.d, pos: p.pos, ping: p.ping, bot: p.bot, c4: p.c4 });
     roster.set(p.id, r);
     if (p.id === myId) continue;
     remotes.setTarget({ ...p, name: r.name });
@@ -410,6 +412,11 @@ net.on('hit', (msg) => {
     if (msg.part === 'head' && msg.helmet) sfx.playAt('helmet', msg.point, { volume: 0.9, ref: 200, max: 3000 });
     else if (msg.victim !== myId) sfx.playAt(msg.weapon === 'knife' ? 'knife_hit' : 'hit_flesh', msg.point, { volume: 0.7, ref: 120, max: 1800 });
   }
+  // friendly fire: CS prints who attacked a teammate
+  if (msg.team && msg.attacker !== msg.victim && msg.weapon !== 'hegrenade') {
+    const a = roster.get(msg.attacker);
+    if (a && (!teamAttackAt[a.id] || performance.now() - teamAttackAt[a.id] > 3000)) { teamAttackAt[a.id] = performance.now(); hud.addChat('*', a.team, `${a.name} attacked a teammate`); }
+  }
   if (msg.victim === myId) {
     player.hp = msg.hp;
     player.armor = msg.armor;
@@ -422,6 +429,7 @@ net.on('hit', (msg) => {
   }
 });
 
+const teamAttackAt = {};
 net.on('kill', (msg) => {
   const k = nameOf(msg.attacker), v = nameOf(msg.victim);
   hud.addKill(k, v, msg.weapon, msg.headshot, msg.attacker === myId || msg.victim === myId, msg.wallbang);
@@ -535,6 +543,9 @@ function applyRound(r) {
   round.endsAt = now + (r.timer || 0);
   round.buyEndsAt = r.buyTime < 0 ? -1 : now + r.buyTime;
   round.mode = r.mode || 'bomb';
+  round.rulesName = r.rulesName || '';
+  round.maxRounds = r.maxRounds;
+  round.friendlyfire = !!r.friendlyfire;
   if (r.phase === 'freeze' || r.phase === 'warmup') { hostageTally.rescued = 0; hostageTally.killed = 0; }
   if (player) player.hostageMode = round.mode === 'hostage';
   if (r.rescueZones && hostageView) hostageView.setZones(r.rescueZones);
@@ -554,6 +565,7 @@ function applyRound(r) {
 }
 
 net.on('round', applyRound);
+net.on('ping', (msg) => net.send({ t: 'pong', ts: msg.ts }));
 
 // hostage events: follow / stay (to the CT who used it), rescued, hurt, killed
 net.on('hostage', (msg) => {
@@ -929,7 +941,7 @@ function frame(now) {
     if (r.team === TEAM.T) { tN++; if (r.alive) tA++; } else if (r.team === TEAM.CT) { cN++; if (r.alive) cA++; }
   }
   hud.setAlive(tA, tN, cA, cN);
-  if (scoresHeld) hud.showScores(true, [...roster.values()], myId);
+  if (scoresHeld) hud.showScores(true, [...roster.values()], myId, { map: map ? map.id : '', rules: round.rulesName, round: round.round, maxRounds: round.maxRounds });
   else hud.showScores(false);
 
   radarT -= dt;

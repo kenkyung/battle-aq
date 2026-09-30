@@ -160,7 +160,12 @@ body { font-family: var(--font); color: var(--hud); user-select: none; }
 #buyStatus { min-height: 18px; margin-top: 8px; font-size: 12px; color: var(--bad); }
 
 /* ---------- scoreboard ---------- */
-#scoreboard .panel { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; min-width: min(760px, calc(100vw - 32px)); }
+#scoreboard .panel { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; min-width: min(860px, calc(100vw - 32px)); }
+.sbhead { grid-column: 1 / -1; font-size: 11px; letter-spacing: 1px; color: var(--hud-dim); display: flex; justify-content: space-between; }
+.sbteam h3 small { font: 600 10px var(--font); letter-spacing: 1px; color: var(--hud-dim); margin-left: 6px; }
+.sbteam td.s { width: 44px; font-size: 10px; letter-spacing: 1px; color: var(--hud-dim); }
+.sbteam td.s.bomb { color: #ff6a55; font-weight: 700; }
+.sbteam td.l { text-align: right; width: 54px; font-family: var(--num); color: var(--hud-dim); }
 .sbteam h3 { font: 800 14px var(--font); letter-spacing: 2px; padding-bottom: 6px; border-bottom: 2px solid currentColor; margin-bottom: 6px; display: flex; justify-content: space-between; }
 .sbteam.t h3 { color: var(--t); } .sbteam.ct h3 { color: var(--ct); }
 .sbteam table { width: 100%; border-collapse: collapse; font-size: 13px; }

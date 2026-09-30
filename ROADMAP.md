@@ -142,13 +142,21 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
 - [ ] Later: per-weapon viewmodel animations (pump / bolt / silencer screw),
       night vision, tactical shield.
 
-## M10 — Round, economy and rules parity
-- [ ] Money table from the source: loss bonus streak (1400 -> 3400), kill
-      rewards, team-kill penalty, hostage values, bomb plant bonus to T.
-- [ ] mp_* settings: freezetime, buytime, roundtime, maxrounds / MR15,
-      friendly fire (with team damage and team-kill penalties), c4timer.
-- [ ] Spawn-protection-free, CS-style spawn order; auto team balance.
-- [ ] Scoreboard as CS (score, deaths, latency, DEAD / BOMB markers).
+## M10 — Round, economy and rules parity  [done]
+- [x] Money from cstrike's REWARD_* table: $300 per kill (knife too),
+      team kill -$3300 (and -1 frag), elimination win $3000, detonation
+      $3500, defuse $3250, time win $3250 (bomb saved / hostages kept), all
+      hostages rescued $2500 (+$750 per rescue to the team), plant bonus
+      $800, loss bonus 1400 -> 2000 -> 2500 -> 3000.
+- [x] Rules presets as mp_* cvars (shared/rules.js), chosen per room from
+      the menu: Casual (2:30, first to 8) and Competitive MR15 (30 rounds,
+      first to 16, 1:45 rounds, 15 s freeze, 15 s buy, c4timer 35,
+      friendly fire).
+- [x] Friendly fire at CS's 35 % for bullets and HE, "attacked a
+      teammate" messages; bots hold fire when a teammate is in the way.
+- [x] CS scoreboard: score / deaths / latency, DEAD and BOMB markers,
+      players and alive per team, map + rules + round; ping measured.
+- [x] `server/rules.test.js`.
 
 ## M11 — Netcode parity
 - [ ] Input-command movement (usercmds) simulated on the server with client

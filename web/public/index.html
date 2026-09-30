@@ -97,8 +97,9 @@
 
   <!-- scoreboard -->
   <div id="scoreboard" class="hidden"><div class="panel">
-    <div class="sbteam t"><h3>TERRORISTS <b id="sbT">0</b></h3><table id="sbTbody"></table></div>
-    <div class="sbteam ct"><h3>COUNTER-TERRORISTS <b id="sbCT">0</b></h3><table id="sbCTbody"></table></div>
+    <div class="sbhead" id="sbHead"></div>
+    <div class="sbteam t"><h3><span>TERRORISTS <small id="sbTn"></small></span><b id="sbT">0</b></h3><table id="sbTbody"></table></div>
+    <div class="sbteam ct"><h3><span>COUNTER-TERRORISTS <small id="sbCTn"></small></span><b id="sbCT">0</b></h3><table id="sbCTbody"></table></div>
   </div></div>
 
   <!-- loading -->
@@ -120,8 +121,8 @@
         <div id="onlineOpts"><label>Online now</label><div id="online">—</div></div>
       </div>
       <div id="onlineSize" class="row">
-        <div><label>Fill with bots up to</label><select id="oSize"><option value="5">5 v 5</option><option value="4">4 v 4</option><option value="3">3 v 3</option><option value="0">no bots</option></select></div>
-        <div></div>
+        <div id="oSizeWrap"><label>Fill with bots up to</label><select id="oSize"><option value="5">5 v 5</option><option value="4">4 v 4</option><option value="3">3 v 3</option><option value="0">no bots</option></select></div>
+        <div><label>Rules</label><select id="gRules"><option value="casual">Casual</option><option value="competitive">Competitive (MR15)</option></select></div>
         <div id="sideOpts" class="hidden"><label>Side</label><select id="pTeam"><option value="T">Terrorists</option><option value="CT">Counter-Terrorists</option></select></div>
       </div>
       <div id="practiceOpts" class="hidden">

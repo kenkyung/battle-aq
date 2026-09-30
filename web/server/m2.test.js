@@ -136,7 +136,7 @@ async function main() {
     ok(aMoney.length === 1 && aMoney[0].delta === ECONOMY.killReward, 'kill reward $300');
     const win = a.msgs.filter((m) => m.t === 'inv' && m.reason === 'round win');
     const loss = b.msgs.filter((m) => m.t === 'inv' && m.reason === 'round loss');
-    ok(win.length === 1 && win[0].delta === ECONOMY.winBonus, 'round win bonus $3250');
+    ok(win.length === 1 && win[0].delta === ECONOMY.winBonus, 'round win bonus (elimination $3000)');
     ok(loss.length === 1 && loss[0].delta === ECONOMY.lossBonus[0], 'first loss bonus $1400');
     const bRespawnsBefore = b.got('respawn').length;
     await sleep(1800);

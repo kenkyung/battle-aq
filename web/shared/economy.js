@@ -4,28 +4,31 @@
 
 import { WEAPONS, TEAM } from './constants.js';
 
+// Rewards are cstrike's (ReGameDLL gamerules: REWARD_*).
 export const ECONOMY = {
   startMoney: 800,
   maxMoney: 16000,
   warmupMoney: 16000,     // warmup is for trying things, so everything is affordable
-  killReward: 300,
-  knifeKillReward: 1500,
-  winBonus: 3250,
-  winBonusElimCT: 3500,   // CT wins by eliminating the terrorists
-  lossBonus: [1400, 1900, 2400, 2900, 3400], // by consecutive losses (5+ = last)
+  killReward: 300,        // REWARD_KILLED_ENEMY: every weapon, knife included
+  knifeKillReward: 300,
+  teamKill: -3300,        // killing a teammate (friendly fire on)
+  winBonus: 3000,         // REWARD_CTS_WIN / REWARD_TERRORISTS_WIN: elimination
+  winBonusElimCT: 3000,
+  winBonusTime: 3250,     // REWARD_TARGET_BOMB_SAVED / REWARD_HOSTAGE_NOT_RESCUED
+  lossBonus: [1400, 2000, 2500, 3000], // REWARD_LOSER_BONUS: 1400, then +500 per loss up to 3000
   buyZoneRadius: 720,     // u from the centre of your team's spawn
-  buyTimeIntoRound: 54,   // buying stays open for the first minute (freeze + 54 s)
+  buyTimeIntoRound: 54,   // default buy time after the freeze (rules override)
   ammoPrice: 100,         // refills every reserve you carry
-  plantBonus: 800,        // every T, when the bomb was planted but T lost
+  plantBonus: 800,        // REWARD_BOMB_PLANTED: every T, when the bomb was planted but T lost
   planterReward: 300,
   defuserReward: 300,
-  winBonusBomb: 3500,     // T win by detonation
-  winBonusDefuse: 3500,   // CT win by defusing
+  winBonusBomb: 3500,     // REWARD_TARGET_BOMB: T win by detonation
+  winBonusDefuse: 3250,   // REWARD_BOMB_DEFUSED
   hostageUse: 150,        // first time a CT gets a hostage to follow
   hostageRescue: 1000,    // to the CT who brings one home
-  hostageRescueTeam: 850, // to every CT, per hostage rescued
+  hostageRescueTeam: 750, // REWARD_RESCUED_HOSTAGE: to every CT, per hostage rescued
   hostageKill: -1500,     // whoever kills a hostage
-  winBonusRescue: 3500,   // CT win by rescuing them all
+  winBonusRescue: 2500,   // REWARD_ALL_HOSTAGES_RESCUED
 };
 
 export const EQUIPMENT = {
