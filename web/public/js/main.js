@@ -24,6 +24,7 @@ import { inBuyZone, BUY_MENU } from '../shared/economy.js';
 import { raycast, tag } from '../shared/physics.js';
 import { tagModifier } from '../shared/ballistics.js';
 import { RADIO } from '../shared/radio.js';
+import { Snow, underWater } from './weather.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -210,7 +211,7 @@ function surfaceAt(pos) {
 }
 
 // practice options
-for (const m of MAP_LIST) $('pMap').insertAdjacentHTML('beforeend', `<option value="${m.id}">${m.id.replace(/^(de|cs)_aq_/, '')}</option>`);
+for (const m of MAP_LIST) $('pMap').insertAdjacentHTML('beforeend', `<option value="${m.id}">${m.id.replace(/^(de|cs)_aq_/, '').replace(/^fy_aq_/, 'fy_')}</option>`);
 $('pMap').value = params.get('map') || store.get('baq_pmap', 'de_aq_dust');
 $('gRules').value = params.get('rules') || store.get('baq_rules', 'casual');
 $('pTeam').value = params.get('team') || store.get('baq_pteam', 'T');
@@ -252,6 +253,14 @@ function setLoad(frac, text) {
 }
 
 let mapLoading = null;
+let snowFx = null, uwOn = false;
+// weather + under-water tint, every frame before the scene renders
+function envFx(dt) {
+  if (snowFx) snowFx.update(dt, camera.position);
+  const uw = underWater(map, camera.position);
+  if (uw !== uwOn) { uwOn = uw; $('underwater').classList.toggle('hidden', !uw); if (sfx.setMuffle) sfx.setMuffle(uw); }
+}
+
 async function useMap(id) {
   if (map && map.id === id && world) return;
   if (mapLoading) await mapLoading;
@@ -265,6 +274,8 @@ async function useMap(id) {
     if (dynWorld) dynWorld.dispose();
     map = getMap(id);
     if (player) player.map = map;
+    if (snowFx) { snowFx.dispose(); snowFx = null; }
+    if (map.snow) snowFx = new Snow(scene);
     world = await loadWorld(scene, map);
     fx = new Effects(scene, map, world.colliders);
     fx.sfx = sfx;
@@ -1123,7 +1134,8 @@ window.addEventListener('keydown', () => { if (!$('motd').classList.contains('hi
 
 function canBuy() {
   if (!player || !player.alive || !map) return false;
-  if (round.phase === 'warmup') return true;
+  if (round.phase === 'warmup' || round.phase === 'dm') return true;
+  if (map.fy) return false;                  // fy_: the guns are on the floor
   if (round.phase === 'end' || round.phase === 'matchend') return false;
   return performance.now() / 1000 < round.buyEndsAt && inBuyZone(map, myTeam, player.state.pos);
 }
@@ -1504,6 +1516,7 @@ function frame(now) {
   lightProbe(dt);
   renderer.clear();
   netStats.cpu += ((performance.now() - cpu0) - netStats.cpu) * 0.05;     // script time per frame
+  envFx(dt);
   gpuTimer.begin();
   renderer.render(scene, camera);
   vm.render(renderer);

@@ -53,6 +53,7 @@ export class BotBrain {
     this.state = { pos: this.p.pos, vel: [0, 0, 0], yaw: this.p.yaw, pitch: 0, onGround: true, crouching: false };
     this.path = null; this.pathIdx = 0; this.goal = null; this.goalKey = '';
     this.repathAt = 0;
+    this.pushed = false; this._gun = null;
     this.target = null; this.seenAt = 0; this.lastSeen = null; this.lastSeenAt = -99;
     this.heard = null; this.heardAt = -99;
     this.hurtBy = null; this.hurtAt = -99;
@@ -211,6 +212,43 @@ export class BotBrain {
 
   sites() { return Object.entries(this.game.map.bombsites || {}); }
 
+  // A gun lying on the floor worth fetching: a primary when we have none
+  // (anywhere on fy_ maps and in deathmatch, nearby otherwise), a pistol
+  // when we have nothing but the knife.
+  floorGun(now) {
+    const g = this.game, p = this.p;
+    if (this.target || !g.drops.length) return null;
+    const slot = !p.inv.primary ? 'primary' : null;
+    const need = slot || (!p.inv.secondary ? 'secondary' : null);
+    if (!need) return null;
+    if (this._gun && now < this._gunUntil) return g.drops.find((d) => d.id === this._gun) || null;
+    const range = g.fy || g.dm || g.phase === 'warmup' ? 3000 : 700;
+    let best = null, bd = range;
+    for (const d of g.drops) {
+      const w = WEAPONS[d.weapon];
+      if (!w || w.slot !== need || Math.abs(d.pos[1] - p.pos[1]) > 260) continue;
+      const dist = Math.hypot(d.pos[0] - p.pos[0], d.pos[2] - p.pos[2]) + (w.cls === 'sniper' && this.skill.aggression > 0.6 ? 150 : 0);
+      if (dist < bd) { bd = dist; best = d; }
+    }
+    this._gun = best ? best.id : null;
+    this._gunUntil = now + 1;
+    return best;
+  }
+
+  // No objective (fy_ maps): push toward the enemy's side, then roam.
+  huntGoal() {
+    const g = this.game, p = this.p;
+    if (this.goal && this.goal.key.startsWith('fy') && !this.reached(this.goal.pos, 90)) return this.goal;
+    if (!this.pushed) {
+      this.pushed = true;
+      const e = g.spawnSpots(p.team === TEAM.T ? TEAM.CT : TEAM.T);
+      const s = e[(p.id + g.roundNumber) % e.length];
+      return { key: 'fypush', pos: s.slice() };
+    }
+    const n = this.nav.randomNode();
+    return { key: 'fyroam' + n.i, pos: [n.x, n.y, n.z] };
+  }
+
   chooseGoal(now) {
     const g = this.game, p = this.p, bomb = g.bomb;
     // recent contact beats the plan
@@ -228,6 +266,9 @@ export class BotBrain {
       return { key: 'save', pos: this.saveSpot };
     }
 
+    const gun = this.floorGun(now);
+    if (gun) return { key: 'gun' + gun.id, pos: gun.pos };
+
     if (g.phase === 'warmup' || g.phase === 'dm') {
       if (!this.goal || this.reached(this.goal.pos, 64)) {
         const n = this.nav.randomNode();
@@ -237,6 +278,7 @@ export class BotBrain {
     }
     if (g.hostageMode) return this.hostageGoal(now);
     if (g.vipMode) return this.vipGoal(now);
+    if (g.fy || !this.sites().length) return this.huntGoal();
     const plan = g.tactics ? g.tactics.plan(p.team) : null;
     const follows = plan && this.rollFor('team', this.skill.teamwork);
     if (!this.site) {
@@ -409,6 +451,8 @@ export class BotBrain {
     if (WEAPONS[p.weapon].grenade) g.handleSwitch(p, p.inv.primary || p.inv.secondary || 'knife');
     else if (p.weapon === 'c4' || p.weapon === 'knife') {
       if (!(p.weapon === 'c4' && g.planting.has(p.id))) g.handleSwitch(p, p.inv.primary || p.inv.secondary || 'knife');
+    } else if (!this.target && p.inv.primary && p.weapon === p.inv.secondary && p.ammo[p.inv.primary] && p.ammo[p.inv.primary].mag + p.ammo[p.inv.primary].reserve > 0) {
+      g.handleSwitch(p, p.inv.primary);          // picked a rifle up: use it
     } else if (a && a.mag === 0 && a.reserve === 0) {
       const alt = [p.inv.primary, p.inv.secondary, 'knife'].find((id) => id && id !== p.weapon && (id === 'knife' || (p.ammo[id] && p.ammo[id].mag + p.ammo[id].reserve > 0)));
       if (alt) g.handleSwitch(p, alt);

@@ -158,12 +158,13 @@ export async function loadWorld(scene, map) {
       // skyline + thin fixtures (ladders) are lit live, the level is baked
       const inSkyline = isUnder(o, 'skyline') || isUnder(o, 'fixtures');
       const name = (o.material.name || '').replace(/\.\d+$/, '');
-      const water = name === 'water';
+      const water = /water/.test(name);
       const mat = inSkyline
         ? new THREE.MeshLambertMaterial({ color: 0xe8e2d8 })
         : new THREE.MeshBasicMaterial({
           lightMap: lm, lightMapIntensity: LM_SCALE * Math.PI,
-          transparent: water, opacity: water ? 0.82 : 1,
+          transparent: water, opacity: water ? (name === 'pool_water' ? 0.62 : 0.82) : 1,
+          side: water ? THREE.DoubleSide : THREE.FrontSide, depthWrite: !water,
         });
       mat.name = name;
       if (!texFor.has(name)) texFor.set(name, loadTexture(`tex/${name}.jpg`).catch(() => null));

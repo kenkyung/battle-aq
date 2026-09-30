@@ -382,12 +382,17 @@ export class Sfx {
       this.ctx = new AC();
       this.master = this.ctx.createGain();
       this.master.gain.value = this.volume;
-      this.master.connect(this.ctx.destination);
+      // under water (M20): everything goes through a lowpass that closes
+      this.muffle = this.ctx.createBiquadFilter();
+      this.muffle.type = 'lowpass'; this.muffle.frequency.value = 20000;
+      this.master.connect(this.muffle);
+      this.muffle.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
 
   setVolume(v) { this.volume = v; if (this.master) this.master.gain.value = v; }
+  setMuffle(on) { if (this.muffle) this.muffle.frequency.setTargetAtTime(on ? 650 : 20000, this.ctx.currentTime, 0.08); }
 
   // camera position + orientation (three.js camera)
   setListener(cam) {

@@ -109,6 +109,7 @@ export class Game {
       return this._matClass[k];
     };
     this.drops = [];
+    this.spawnFloorWeapons();
     this._spawnYaw = {};
     this._spawnSpots = {};
     this.resetHostages();
@@ -117,6 +118,41 @@ export class Game {
   get competitive() { return this.phase !== 'warmup'; }
   get hostageMode() { return !this.rules.mode && (this.map.hostages || []).length > 0; }
   get dm() { return this.rules.mode === 'dm'; }
+  // fy_ maps (M20): no objective and no buying, guns on the floor
+  aliveCount(team) { let n = 0; for (const p of this.players.values()) if (p.alive && p.team === team) n++; return n; }
+  get fy() { return !!this.map.fy && !this.rules.mode; }
+  get freezeTime() { return this.fy ? Math.min(this.rules.freezetime, 3) : this.rules.freezetime; }
+  get roundTime() { return this.fy ? Math.min(this.rules.roundtime, 105) : this.rules.roundtime; }
+
+  // Lay the map's floor guns out (fy_ maps): every round, and in deathmatch /
+  // warmup a taken one comes back after 20 s.
+  spawnFloorWeapons(only = null) {
+    const list = this.map.floorWeapons || [];
+    this._floorGone = this._floorGone || {};
+    list.forEach(([weapon, x, y, z], i) => {
+      if (only && !only.includes(i)) return;
+      const w = WEAPONS[weapon];
+      if (!w) return;
+      const hit = raycast([x, y + 40, z], [0, -1, 0], this.colliders, 400);
+      this.dropSeq = (this.dropSeq || 0) + 1;
+      this.drops.push({ id: this.dropSeq, weapon, pos: [x, hit ? hit.point[1] : y, z], yaw: (i * 2.39996) % (Math.PI * 2),
+        ammo: { mag: w.mag, reserve: w.reserve }, by: 0, at: 0, spot: i });
+      delete this._floorGone[i];
+    });
+  }
+
+  tickFloorWeapons(t) {
+    if (!this.map.floorWeapons || !(this.dm || this.phase === 'warmup') || t < (this._floorCheck || 0)) return;
+    this._floorCheck = t + 1;
+    const here = new Set(this.drops.filter((d) => d.spot !== undefined).map((d) => d.spot));
+    const back = [];
+    this.map.floorWeapons.forEach((_, i) => {
+      if (here.has(i)) return;
+      if (!this._floorGone[i]) this._floorGone[i] = t;
+      else if (t - this._floorGone[i] > 20) back.push(i);
+    });
+    if (back.length) this.spawnFloorWeapons(back);
+  }
   get vipMode() { return this.rules.mode === 'vip'; }
 
   // VIP escape zone: the map's, else the spot farthest from the CT spawn
@@ -275,6 +311,7 @@ export class Game {
   startDeathmatch() {
     this.clearBomb();
     this.drops = [];
+    this.spawnFloorWeapons();
     this.setPhase('dm', this.rules.timelimit);
     for (const p of this.players.values()) { p.money = ECONOMY.warmupMoney; this.respawn(p, true); }
     this.broadcast({ t: 'round', ...this.roundInfo() });
@@ -310,10 +347,11 @@ export class Game {
     this.plantedThisRound = false;
     this.nades = []; this.smokes = [];
     this.drops = [];              // guns on the floor are cleared each round (CS)
+    this.spawnFloorWeapons();
     this.resetWorld();
     this.planting.clear(); this.defusing.clear();
-    this.buyEndsAt = now() + this.rules.freezetime + this.rules.buytime;
-    this.setPhase('freeze', this.rules.freezetime);
+    this.buyEndsAt = now() + this.freezeTime + this.rules.buytime;
+    this.setPhase('freeze', this.freezeTime);
     // what each player bought last round becomes their F2 rebuy
     for (const p of this.players.values()) {
       if (p.roundBuys && p.roundBuys.length) p.lastBuys = p.roundBuys;
@@ -368,10 +406,12 @@ export class Game {
     this.updateNades(dt, t);
     this.updateHostages(dt, t);
     this.checkVipEscape();
+    this.tickFloorWeapons(t);
     if (this.phase === 'warmup' || t < this.phaseEndsAt) return;
-    if (this.phase === 'freeze') this.setPhase('round', this.rules.roundtime);
-    // time: the bomb was never planted (CT win) / hostages not rescued (T win)
-    else if (this.phase === 'round') this.endRound(this.hostageMode || this.vipMode ? TEAM.T : TEAM.CT, 'time');
+    if (this.phase === 'freeze') this.setPhase('round', this.roundTime);
+    // time: the bomb was never planted (CT win) / hostages not rescued (T win);
+    // fy_: the side with more players alive, a tie to the CTs
+    else if (this.phase === 'round') this.endRound(this.hostageMode || this.vipMode ? TEAM.T : this.fy && this.aliveCount(TEAM.T) > this.aliveCount(TEAM.CT) ? TEAM.T : TEAM.CT, 'time');
     else if (this.phase === 'planted') this.explode();
     else if (this.phase === 'end') {
       if (this.matchOver) this.startVote();
@@ -680,10 +720,13 @@ export class Game {
     if (process.env.MOTD) return process.env.MOTD;
     const r = this.rules;
     return `${this.map.id} · ${r.name}\n`
-      + `${Math.floor(r.roundtime / 60)}:${String(r.roundtime % 60).padStart(2, '0')} rounds, first to ${r.winlimit} of ${r.maxrounds}, `
+      + `${Math.floor(this.roundTime / 60)}:${String(this.roundTime % 60).padStart(2, '0')} rounds, first to ${r.winlimit} of ${r.maxrounds}, `
       + `friendly fire ${r.friendlyfire ? 'ON (35 %)' : 'off'}, tickrate ${r.tickrate}.\n\n`
       + `B buy · F1 autobuy · F2 rebuy · M team · Z/X/V radio · ~ console · Tab scores\n`
-      + (this.hostageMode ? 'CT: walk up to a hostage and press E, lead it to a rescue zone.' : 'T: plant the C4 at A or B. CT: stop them or defuse it.');
+      + (this.dm ? 'Deathmatch: instant respawns, most frags wins.'
+        : this.fy ? 'fy_: no buying — grab a gun off the floor. Last side standing wins the round.'
+        : this.vipMode ? 'CT: escort the VIP to the escape zone. T: take the VIP out.'
+        : this.hostageMode ? 'CT: walk up to a hostage and press E, lead it to a rescue zone.' : 'T: plant the C4 at A or B. CT: stop them or defuse it.');
   }
 
   // M: change sides. Alive mid-round, that kills you (CS); mp_limitteams 2
@@ -1655,6 +1698,7 @@ export class Game {
     if (!p.alive) return 'you are dead';
     if (p.vip && this.vipMode) return 'the VIP cannot buy';
     if (this.phase === 'warmup' || this.phase === 'dm') return null;
+    if (this.fy) return 'no buying on fy_ maps: grab a gun off the floor';
     if (this.phase === 'end' || this.phase === 'matchend') return 'the round is over';
     if (now() > this.buyEndsAt) return 'buy time is over';
     if (!inBuyZone(this.map, p.team, p.pos)) return 'you are not in a buy zone';

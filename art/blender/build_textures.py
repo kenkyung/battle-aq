@@ -333,6 +333,34 @@ def snow(g, u, v):
     return col, g.add(g.mul(n, 0.5), g.mul(fine, 0.2)), 0.8
 
 
+def pool_tile(g, u, v):
+    # 8 x 8 small glazed tiles, pale aqua with white grout (fy_pool_day)
+    fu, fv = g.fract(g.mul(u, 8.0)), g.fract(g.mul(v, 8.0))
+    grout = g.sub(1.0, g.smooth(g.mn(g.mn(fu, g.sub(1.0, fu)), g.mn(fv, g.sub(1.0, fv))), 0.02, 0.05))
+    n = g.noise(u, v, 30, detail=3, seed=232)
+    col = g.mix(g.mul(g.smooth(n, 0.3, 0.8), 0.5), rgb(0.55, 0.80, 0.86), rgb(0.70, 0.90, 0.94))
+    col = g.mix(grout, col, rgb(0.88, 0.90, 0.90))
+    return col, g.mul(grout, -0.8), 0.25
+
+
+def pool_water(g, u, v):
+    n = g.noise(u, v, 5, detail=4, distort=0.5, seed=241)
+    r = g.noise(u, v, 16, 5, detail=3, seed=242)
+    col = g.ramp(n, [(0.3, rgb(0.16, 0.52, 0.66)), (0.7, rgb(0.30, 0.68, 0.78))])
+    col = g.mix(g.smooth(r, 0.6, 0.7, 0.0, 0.45), col, rgb(0.85, 0.96, 0.98))
+    return col, g.add(g.mul(n, 0.4), g.mul(r, 0.3)), 0.05
+
+
+def grass(g, u, v):
+    n = g.noise(u, v, 3, detail=5, seed=251)
+    blades = g.noise(u, v, 90, 30, detail=2, seed=252)
+    patch = g.smooth(g.noise(u, v, 2, detail=4, seed=253), 0.55, 0.7)
+    col = g.mix(n, rgb(0.20, 0.36, 0.12), rgb(0.33, 0.50, 0.18))
+    col = g.mix(g.mul(blades, 0.5), col, rgb(0.42, 0.58, 0.24))
+    col = g.mix(g.mul(patch, 0.4), col, rgb(0.42, 0.40, 0.20))
+    return col, g.add(g.mul(blades, 0.6), g.mul(n, 0.3)), 0.9
+
+
 def carpet(g, u, v):
     loops = g.noise(u, v, 90, detail=2, seed=181)
     n = g.noise(u, v, 5, detail=5, seed=182)
@@ -464,6 +492,9 @@ RECIPES = {
     'asphalt': asphalt,
     'container_paint': container_paint,
     'roof_tiles': roof_tiles,
+    'pool_tile': pool_tile,
+    'pool_water': pool_water,
+    'grass': grass,
 }
 
 

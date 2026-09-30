@@ -319,15 +319,24 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
 - [ ] Later: per-skin first-person sleeves / gloves.
 
 ## M20 — New maps
-- [ ] fy_pool_day2: the classic pool-day fun map (house on each side, deep
-      pool in the middle to swim through, weapons lying on the ground).
-- [ ] fy_snow: snowy fy courtyard, crates and walls, guns on the floor.
-- [ ] An original fy map built for quick deathmatch fights.
-- [ ] fy rules: weapons spawn on the floor each round, short rounds, no buy.
+- [x] fy_pool_day2: two houses (glass patio windows) facing across a back
+      yard; a real pool — deep end you can drown in, slope to the shallow
+      end, steps out, a diving board; an AWP at the bottom of the deep end.
+- [x] fy_snow: fenced snowy lots with the guns, a log cabin (glass windows)
+      in the courtyard, crate stacks, two watch platforms; falling snow.
+- [x] fy_aq_rooftops (original, for deathmatch): 3 x 3 flat roofs at 96 / 128
+      / 160 over narrow streets, ramps to the roofs, plank bridges to the
+      middle roof where the AWP is; sunset light.
+- [x] fy rules: guns laid on the floor every round (they come back 20 s after
+      pickup in deathmatch / warmup), no buying, 3 s freeze, 1:45 rounds,
+      time out = the side with more players alive. Bots fetch floor guns
+      (and switch to a rifle they pick up) and hunt on objective-less maps.
+- [x] Under water: blue tint + muffled sound; pool tile / pool water / grass
+      textures; `server/fy.test.js`, validator checks every floor gun is
+      reachable.
 - [ ] de_aq_nuke-style: two stacked sites (outside + ramp, vents between),
       crouch-only vents, ladders.
 - [ ] de_aq_train-style: rail yard, trains as cover, ladders onto the cars.
-- [ ] A water map (deep canal to swim through) for swimming/drowning.
 - [ ] Bots: nav through vents and ladders.
 
 ## M21 — Weapon finishes

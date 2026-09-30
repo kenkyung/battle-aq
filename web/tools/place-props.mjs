@@ -21,11 +21,15 @@ const KINDS = {
   cs_aq_office: ['pallets', 'barrels', 'barrel', 'pallets'],
   cs_aq_assault: ['barrels', 'pallets', 'sandbags', 'barrel', 'pallets'],
   cs_aq_italy: ['planter', 'barrels', 'pallets', 'planter', 'barrel'],
+  fy_pool_day2: [],                     // the deck is raised: ground-level spots are the pool
+  fy_snow: ['barrels', 'pallets', 'barrel', 'pallets'],
+  fy_aq_rooftops: ['barrels', 'pallets', 'sandbags', 'barrel'],
 };
 
 // what every map must keep reachable: bombsites, or hostages + rescue zones
 function goals(map) {
   if (map.hostages && map.hostages.length) return [...map.hostages, ...(map.rescueZones || []).map((z) => [z[0], z[1], z[2]])];
+  if (map.floorWeapons) return map.floorWeapons.map(([, x, y, z]) => [x, y, z]);
   return Object.values(map.bombsites || {});
 }
 const SIZES = { barrel: [28, 28], barrels: [58, 30], sandbags: [112, 34], pallets: [52, 52], planter: [34, 34] };
@@ -68,6 +72,7 @@ function arches(map, cols) {
 function props(map, cols, rand) {
   const nav = new NavGraph(map, cols);
   const kinds = KINDS[map.id] || KINDS.de_aq_dust;
+  if (!kinds.length) return [];
   const avoid = [...Object.values(map.spawns).map((s) => s[0]), ...goals(map)];
   const cands = [];
   for (const n of nav.main) {

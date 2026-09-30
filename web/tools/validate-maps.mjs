@@ -21,6 +21,8 @@ for (const m of Object.values(MAPS)) {
     const from = m.spawns[team][0];
     for (const [label, pos] of goals) if (!nav.path(from, pos)) problems.push(`${team === TEAM.T ? 'T' : 'CT'} spawn cannot reach ${label}`);
     if (!nav.path(from, m.spawns[3 - team][0])) problems.push('spawns are not connected');
+    // fy_: every gun on the floor can be walked to (roofs, the pool bottom)
+    for (const [w, x, y, z] of m.floorWeapons || []) if (!nav.path(from, [x, y, z])) problems.push(`${team === TEAM.T ? 'T' : 'CT'} spawn cannot reach the ${w} at ${x},${y},${z}`);
     for (const sp of m.spawns[team]) if (cols.some((c) => aabbOverlap(playerBox(sp, false), c))) problems.push(`spawn ${sp} is inside geometry`);
   }
   for (const h of m.hostages || []) if (cols.some((c) => aabbOverlap(playerBox(h, false), c))) problems.push(`hostage ${h} is inside geometry`);

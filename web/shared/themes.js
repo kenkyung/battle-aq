@@ -97,6 +97,49 @@ export const THEMES = {
     sunDir: [0.5, 0.78, -0.35], sunColor: 'fff0d0', sunStrength: 4.0,
     skyStrength: 0.95, clouds: 0.3, skyline: 'town',
   },
+  fy_pool_day2: {
+    mats: {
+      floor:   { tex: 'pool_tile',    tile: 128 },
+      deck:    { tex: 'concrete',     tile: 192 },
+      wall:    { tex: 'drywall',      tile: 192 },
+      accent:  { tex: 'roof_tiles',   tile: 96 },
+      grass:   { tex: 'grass',        tile: 256 },
+      foliage: { tex: 'hedge',        tile: 96 },
+      wood:    { tex: 'planks',       tile: 96 },
+      cover:   { tex: 'crate',        tile: 0 },
+      metal:   { tex: 'metal_plate',  tile: 128 },
+      water:   { tex: 'pool_water',   tile: 256 },
+    },
+    sunDir: [0.45, 0.85, 0.3], sunColor: 'fff6e4', sunStrength: 4.2,
+    skyStrength: 1.1, clouds: 0.25, skyline: 'town',
+  },
+  fy_snow: {
+    mats: {
+      floor:    { tex: 'snow',         tile: 256 },
+      wall:     { tex: 'concrete',     tile: 192 },
+      concrete: { tex: 'concrete',     tile: 192 },
+      accent:   { tex: 'planks_dark',  tile: 96 },
+      wood:     { tex: 'planks_dark',  tile: 96 },
+      cover:    { tex: 'crate',        tile: 0 },
+      metal:    { tex: 'metal_plate',  tile: 128 },
+    },
+    sunDir: [0.3, 0.7, 0.6], sunColor: 'e8eef8', sunStrength: 2.0,
+    skyStrength: 1.5, clouds: 0.9, skyline: 'town',
+  },
+  fy_aq_rooftops: {
+    mats: {
+      floor:  { tex: 'asphalt',     tile: 256 },
+      wall:   { tex: 'brick_red',   tile: 128 },
+      house:  { tex: 'plaster',     tile: 192 },
+      roof:   { tex: 'concrete',    tile: 192 },
+      accent: { tex: 'brick_red',   tile: 96 },
+      wood:   { tex: 'planks',      tile: 96 },
+      cover:  { tex: 'crate',       tile: 0 },
+      metal:  { tex: 'metal_plate', tile: 128 },
+    },
+    sunDir: [0.75, 0.38, 0.35], sunColor: 'ffc88e', sunStrength: 3.4,
+    skyStrength: 0.9, clouds: 0.4, skyline: 'town',
+  },
 };
 
 THEMES.de_aq_dust2 = THEMES.de_aq_dust;
