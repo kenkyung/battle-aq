@@ -42,25 +42,24 @@ export const AMMO_BOX = {
   '762nato': [80, 30], '556nato': [60, 30], '556natobox': [60, 30], '338magnum': [125, 10],
   '9mm': [20, 30], '45acp': [25, 12], '50ae': [40, 7], '357sig': [50, 13], '57mm': [50, 50], 'buckshot': [65, 8],
 };
-export const CALIBER = {
-  glock: '9mm', mp5: '9mm', usp: '45acp', ump45: '45acp', deagle: '50ae',
-  ak47: '762nato', scout: '762nato', m4a1: '556nato', m249: '556natobox', awp: '338magnum',
-};
-export function ammoBox(weaponId) { return AMMO_BOX[CALIBER[weaponId]] || [50, 30]; }
+export function ammoBox(weaponId) { return AMMO_BOX[(WEAPONS[weaponId] || {}).caliber] || [50, 30]; }
 
 // CS 1.6's default cl_autobuy (F1): the first affordable primary you are
 // allowed, then ammo, then a kit and armour. Ids not in the game are skipped.
 export const AUTOBUY = ['m4a1', 'ak47', 'famas', 'galil', 'p90', 'mp5', 'primammo', 'secammo', 'kit', 'assault', 'kevlar'];
 
 // Buy menu layout: categories in display order. Weapon ids refer to WEAPONS.
+// Buy menu in CS 1.6's layout and numbering (team-only guns sit in the same
+// place for each side, so the number keys match CS's).
 export const BUY_MENU = [
-  { key: 'pistols', title: 'Pistols', items: ['glock', 'usp', 'deagle'] },
-  { key: 'smgs',    title: 'SMGs',    items: ['mp5', 'ump45'] },
-  { key: 'rifles',  title: 'Rifles',  items: ['ak47', 'm4a1'] },
-  { key: 'snipers', title: 'Snipers', items: ['scout', 'awp'] },
-  { key: 'heavy',   title: 'Machine gun', items: ['m249'] },
-  { key: 'nades',   title: 'Grenades', items: ['hegrenade', 'flashbang', 'smokegrenade'] },
-  { key: 'gear',    title: 'Gear',    items: ['kevlar', 'assault', 'kit', 'ammo'] },
+  { key: 'pistols',  title: 'Handguns',  items: ['glock', 'usp', 'p228', 'deagle', 'elites', 'fiveseven'] },
+  { key: 'shotguns', title: 'Shotguns',  items: ['m3', 'xm1014'] },
+  { key: 'smgs',     title: 'SMGs',      items: ['mp5', 'tmp', 'mac10', 'ump45', 'p90'] },
+  { key: 'rifles',   title: 'Rifles',    items: ['galil', 'famas', 'ak47', 'm4a1', 'scout', 'sg552', 'aug', 'awp', 'g3sg1', 'sg550'] },
+  { key: 'heavy',    title: 'Machine gun', items: ['m249'] },
+  { key: 'ammo1',    title: 'Prim. ammo', items: ['ammo1'], direct: true },
+  { key: 'ammo2',    title: 'Sec. ammo',  items: ['ammo2'], direct: true },
+  { key: 'gear',     title: 'Equipment', items: ['kevlar', 'assault', 'flashbang', 'hegrenade', 'smokegrenade', 'kit'] },
 ];
 
 export function itemInfo(id) {

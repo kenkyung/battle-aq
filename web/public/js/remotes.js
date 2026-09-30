@@ -102,11 +102,14 @@ export class Remotes {
     return r;
   }
 
-  setWeapon(r, id) {
-    if (r.weapon === id || !r.model) return;
+  setWeapon(r, id, mode = null) {
+    const mid = mode === 'silenced' && weaponModel(id + '_s') ? id + '_s' : id;
+    if ((r.weapon === id && r.modelId === mid) || !r.model) return;
     r.weapon = id;
+    r.modelId = mid;
+    r.mode = mode;
     if (r.gun) r.gun.parent.remove(r.gun);
-    const gun = weaponModel(id);
+    const gun = weaponModel(mid);
     if (!gun) return;
     gun.traverse((o) => { if (o.isMesh) o.material = new THREE.MeshLambertMaterial({ map: o.material.map }); });
     // Place it at the grip in model space while the rig is at rest, then let
@@ -119,7 +122,7 @@ export class Remotes {
     if (chest) chest.attach(gun);
     pose();
     r.gun = gun;
-    r.muzzle = gun.getObjectByName(`${id}_muzzle`) || gun;
+    r.muzzle = gun.getObjectByName(`${mid}_muzzle`) || gun;
   }
 
   // Temporarily return the skeleton to its bind pose; returns a restore fn.
@@ -196,25 +199,29 @@ export class Remotes {
     if (!alive && r.alive) this.play(r, 'death', 0.1);
     if (alive && !r.alive) { r.cur.pos = [...p.pos]; this.resetPose(r); }
     r.alive = alive;
-    if (p.weapon) this.setWeapon(r, p.weapon);
+    if (p.weapon) this.setWeapon(r, p.weapon, p.mode || null);
   }
 
   // A remote player fired: flash at their muzzle, tracer + impacts from it.
   onShoot(msg, others) {
     const r = this.players.get(msg.id);
     let muzzle = null;
+    const silenced = msg.mode === 'silenced';
     if (r && r.muzzle) {
       r.muzzle.getWorldPosition(this._v);
       muzzle = [this._v.x, this._v.y, this._v.z];
-      if (r.weapon !== 'knife') this.fx.muzzleFlash(muzzle, 12);
+      if (r.weapon !== 'knife' && !silenced) this.fx.muzzleFlash(muzzle, 12);
     }
     if (this.sfx) {
       const at = muzzle || msg.origin;
-      if (msg.weapon === 'knife') this.sfx.playAt('knife_slash', at, { volume: 0.7, max: 1200 });
+      if (msg.weapon === 'knife') this.sfx.playAt(msg.mode === 'stab' ? 'knife_stab' : 'knife_slash', at, { volume: 0.7, max: 1200 });
+      // a suppressed shot is quiet and carries a short way
+      else if (silenced) this.sfx.playAt(`fire_${msg.weapon}_s`, at, { volume: 0.7, ref: 120, max: 1800 });
       else this.sfx.playAt(`fire_${msg.weapon}`, at, { volume: 1, ref: 260, max: 7000 });
     }
     if (msg.weapon === 'knife') return;
-    this.fx.shot(msg.origin, msg.dir, muzzle, others, msg.id);
+    const dirs = msg.dirs || [msg.dir];
+    dirs.forEach((d, k) => this.fx.shot(msg.origin, d, k === 0 ? muzzle : null, others, msg.id, { tracer: k === 0, exits: k === 0 ? msg.exits : null }));
   }
 
   update(dt, cameraPos) {

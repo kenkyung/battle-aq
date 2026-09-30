@@ -114,18 +114,33 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
 - [ ] Later: swimming for deep water (no deep water in the maps yet),
       ladders on more maps (with M15 layouts).
 
-## M9 — Weapon parity II (full arsenal)
-- [ ] Every CS 1.6 weapon: P228, Five-SeveN, Dual Elites, Galil, FAMAS
-      (burst), AUG / SG552 (scope), SG550 / G3SG1, M3 / XM1014 (pellets,
-      shell-by-shell reload), MAC-10, TMP, P90.
-- [ ] Silencers (M4A1, USP: damage / recoil / sound changes), Glock burst,
-      FAMAS burst, knife primary / secondary + backstab.
-- [ ] Bullet penetration (wallbangs): per-weapon penetration power and
-      distance, material modifiers (wood / metal / concrete).
-- [ ] Deploy times, scope-in delays, sniper movement inaccuracy, scoped
-      speed penalties, weapon weights -> run speeds.
-- [ ] Dropped weapons on the ground (G drop, pick up by walking over, death
-      drops), buy restrictions per team exactly as CS.
+## M9 — Weapon parity II (full arsenal)  [done]
+- [x] Every CS 1.6 gun: P228, Five-SeveN, Dual Berettas, M3, XM1014, TMP,
+      MAC-10, P90, Galil, FAMAS, AUG, SG 552, SG 550, G3/SG-1 (+ the ten we
+      had), with cstrike values: damage, range modifier, armour ratio, fire
+      rate, magazine, run speed, spread / accuracy model, KickBack.
+- [x] Right click as CS: M4A1 / USP silencer (2 s / 3.1 s, different
+      damage + spread, quiet shot, no flash, short hearing range for bots),
+      Glock / FAMAS burst, AUG / SG552 zoom (55, faster fire rate unzoomed),
+      2-level zoom on autosnipers, knife stab (65, 32 u, x3 from behind).
+- [x] Shotguns: 9 / 6 pellets, fixed cone, linear falloff to the gun's
+      range, shell-by-shell reloads that firing interrupts, random kick.
+- [x] Autosniper accuracy (recovers with time between shots), bolt-action
+      scope drop, scoped run speeds, CS zoom magnification.
+- [x] Bullet penetration (FireBullets3): calibre power / range, weapon
+      penetration count, material classes (metal / concrete / tile / wood),
+      damage per material, players passed through; wallbang marker (WB) in
+      the kill feed and exit marks.
+- [x] Deploy times (0.75 s, Scout 1.25 s, AWP 1.45 s).
+- [x] Dropped weapons: G drops the gun in hand, the dead drop their best
+      gun, buying over a gun drops the old one, walk over to pick up (with
+      its ammo and silencer state); cleared each round.
+- [x] Buy menu in CS 1.6 layout and numbering (1-8, 6/7 buy ammo directly).
+- [x] Blender models for every new gun (+ suppressed M4A1 / USP), sounds,
+      crosshairs; bots buy the whole arsenal.
+- [x] `server/weapons.test.js`.
+- [ ] Later: per-weapon viewmodel animations (pump / bolt / silencer screw),
+      night vision, tactical shield.
 
 ## M10 — Round, economy and rules parity
 - [ ] Money table from the source: loss bonus streak (1400 -> 3400), kill

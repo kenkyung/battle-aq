@@ -2,7 +2,7 @@
 // beyond formatting. Includes the radar, buy menu and scoreboard.
 
 import { WEAPONS, TEAM, SLOTS } from '../shared/constants.js';
-import { BUY_MENU, itemInfo, buyZoneCenter, ECONOMY } from '../shared/economy.js';
+import { BUY_MENU, itemInfo, buyZoneCenter, ECONOMY, ammoBox } from '../shared/economy.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -59,9 +59,9 @@ export class HUD {
     this._mdT = setTimeout(() => el.classList.remove('show'), 1800);
   }
 
-  setWeapon(id, mag, reserve, reloadFrac) {
+  setWeapon(id, mag, reserve, reloadFrac, mode = null) {
     const w = WEAPONS[id];
-    this.set('wname', id, () => { this.el.weaponName.textContent = w.name; });
+    this.set('wname', id + (mode || ''), () => { this.el.weaponName.textContent = w.name + (mode === 'silenced' ? ' · silenced' : mode === 'burst' ? ' · burst' : ''); });
     const melee = !!w.melee || !!w.bomb;
     this.set('mag', melee ? '—' : mag, (v) => {
       this.el.mag.textContent = v;
@@ -196,11 +196,12 @@ export class HUD {
     });
   }
 
-  addKill(killer, victim, weapon, headshot, involvesMe) {
+  addKill(killer, victim, weapon, headshot, involvesMe, wallbang = false) {
     const div = document.createElement('div');
     div.className = 'kf' + (involvesMe ? ' me' : '');
     div.innerHTML = `<span class="${teamCls(killer.team)}">${esc(killer.name)}</span>`
       + `<span class="w">${esc(WEAPONS[weapon] ? WEAPONS[weapon].name : weapon)}</span>`
+      + (wallbang ? '<span class="hs">WB</span>' : '')
       + (headshot ? '<span class="hs">HS</span>' : '')
       + `<span class="${teamCls(victim.team)}">${esc(victim.name)}</span>`;
     this.el.killfeed.prepend(div);
@@ -303,7 +304,10 @@ export class HUD {
   buyKey(n) {
     const cats = this._buyCats || [];
     if (this._buyCat === null || this._buyCat === undefined) {
-      if (cats[n - 1]) { this._buyCat = n - 1; this.highlightBuy(); }
+      if (!cats[n - 1]) return;
+      // 6 / 7: ammo is bought straight away, as in CS
+      if (BUY_MENU[n - 1] && BUY_MENU[n - 1].direct) { if (this._onBuy) this._onBuy(cats[n - 1][0]); return; }
+      this._buyCat = n - 1; this.highlightBuy();
       return;
     }
     const items = cats[this._buyCat] || [];
@@ -369,10 +373,12 @@ export class HUD {
       const it = itemInfo(id);
       let price = it.price;
       if (id === 'assault' && armor >= 100 && !helmet) price = 350;
+      let none = false;
+      if (id === 'ammo1' || id === 'ammo2') { const g = inv[id === 'ammo1' ? 'primary' : 'secondary']; price = g ? ammoBox(g)[0] : 0; none = !g; }
       const own = it.weapon ? Object.values(inv).includes(id)
         : (id === 'kevlar' ? armor >= 100 : id === 'assault' ? armor >= 100 && helmet : id === 'kit' ? !!kit : false);
-      const cls = ['bitem', money < price ? 'no' : '', own ? 'own' : ''].join(' ');
-      return `<button class="${cls}" data-item="${id}"><i class="k">${ii + 1}</i>${esc(it.name)}<span class="p">$${price}</span></button>`;
+      const cls = ['bitem', money < price || none ? 'no' : '', own ? 'own' : ''].join(' ');
+      return `<button class="${cls}" data-item="${id}"><i class="k">${ii + 1}</i>${esc(it.name)}<span class="p">${none ? '—' : '$' + price}</span></button>`;
     }).join('')}</div>`).join('');
     for (const btn of this.el.buyCols.querySelectorAll('.bitem')) {
       btn.onclick = () => this._onBuy && this._onBuy(btn.dataset.item);

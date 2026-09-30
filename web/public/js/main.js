@@ -11,6 +11,7 @@ import { Viewmodel } from './viewmodel.js';
 import { Effects } from './fx.js';
 import { BombView } from './bomb3d.js';
 import { HostageView } from './hostages3d.js';
+import { DropView } from './drops3d.js';
 import { NadeView } from './nades3d.js';
 import { Sfx, surfaceOf } from './sfx.js';
 import { preloadModels, setAnisotropy } from './assets.js';
@@ -84,6 +85,7 @@ let world = null;
 let fx = null;
 let bombView = null;
 let hostageView = null;
+let dropView = null;
 let useHint = '';
 const hostageTally = { rescued: 0, killed: 0 };
 function hostageCount() {
@@ -213,6 +215,7 @@ async function useMap(id) {
     if (fx) fx.dispose();
     if (bombView) bombView.dispose();
     if (hostageView) hostageView.dispose();
+    if (dropView) dropView.dispose();
     map = getMap(id);
     if (player) player.map = map;
     world = await loadWorld(scene, map);
@@ -221,6 +224,7 @@ async function useMap(id) {
     fx.surfaceOf = (mat) => surfaceOf(mat, map.id);
     bombView = new BombView(scene, fx);
     hostageView = new HostageView(scene, world);
+    dropView = new DropView(scene, world);
     if (map.rescueZones) hostageView.setZones(map.rescueZones);
     if (nadeView) nadeView.clear();
     nadeView = new NadeView(scene, fx, sfx, world.colliders);
@@ -372,6 +376,7 @@ net.on('state', (msg) => {
   for (const id of [...remotes.players.keys()]) if (!seen.has(id)) remotes.remove(id);
   for (const id of [...roster.keys()]) if (!seen.has(id)) roster.delete(id);
   if (hostageView) hostageView.sync(msg.hostages || []);
+  if (dropView) dropView.sync(msg.drops || []);
   if (msg.bomb) {
     const was = bomb.state;
     bomb = msg.bomb;
@@ -419,7 +424,7 @@ net.on('hit', (msg) => {
 
 net.on('kill', (msg) => {
   const k = nameOf(msg.attacker), v = nameOf(msg.victim);
-  hud.addKill(k, v, msg.weapon, msg.headshot, msg.attacker === myId || msg.victim === myId);
+  hud.addKill(k, v, msg.weapon, msg.headshot, msg.attacker === myId || msg.victim === myId, msg.wallbang);
   if (msg.attacker === myId && msg.victim !== myId) player.kills++;
 });
 
@@ -463,6 +468,15 @@ net.on('inv', (msg) => {
 });
 
 net.on('ammo', (msg) => { if (player) player.applyAmmo(msg); });
+net.on('mode', (msg) => {
+  if (!player) return;
+  player.applyMode(msg);
+  const label = { silenced: 'silencer on', burst: 'switched to burst-fire mode' }[msg.mode]
+    || (WEAPONS[msg.weapon].alt === 'burst' ? 'switched to ' + (WEAPONS[msg.weapon].auto ? 'full auto' : 'semi-automatic') : 'silencer off');
+  hud.centerMsg(label); setTimeout(() => hud.centerMsg(''), 1200);
+});
+net.on('pmode', (msg) => { const r = remotes && remotes.players.get(msg.id); if (r) remotes.setWeapon(r, msg.weapon, msg.mode); });
+net.on('pickup', (msg) => { sfx.play('deploy', { volume: 0.6 }); hud.addChat('*', 0, `picked up: ${WEAPONS[msg.weapon].name}`); });
 net.on('reload', () => {});
 net.on('buy_fail', (msg) => { hud.buyFail(msg.reason); if (!hud.buyOpen()) { hud.centerMsg(msg.reason); setTimeout(() => hud.centerMsg(''), 1800); } });
 net.on('error', (msg) => { menuStatus.textContent = msg.text; });
@@ -899,9 +913,9 @@ function frame(now) {
   const buyable = canBuy();
   hud.setMoney(player.money, buyable);
   const rf = player.reloading(tNow) ? (tNow - player.reloadStart) / w.reload : -1;
-  hud.setWeapon(player.weapon, player.mag(), player.reserve(), rf);
+  hud.setWeapon(player.weapon, player.mag(), player.reserve(), rf, player.mode());
   hud.setTimer(round.phase === 'planted' ? 0 : round.endsAt - tNow, round.phase);
-  const scoped = player.alive && player.zoom > 0;
+  const scoped = player.alive && player.scoped();
   hud.setScope(scoped);
   const xh = crosshair(dt);
   hud.setCrosshair(xh.gap, xh.len, player.alive && !scoped);

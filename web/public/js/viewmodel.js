@@ -82,11 +82,16 @@ export class Viewmodel {
     if (w) this.setWeapon(w, false);
   }
 
-  setWeapon(id, animate = true) {
-    if (id === this.weapon) return;
+  // mode 'silenced' shows the suppressed model (<id>_s in weapons.glb)
+  setWeapon(id, mode = null, animate = true) {
+    const mid = mode === 'silenced' && weaponModel(id + '_s') ? id + '_s' : id;
+    if (id === this.weapon && mid === this.modelId) return;
+    const same = id === this.weapon;
     this.weapon = id;
+    this.modelId = mid;
+    this.silenced = mid !== id;
     this.holder.clear();
-    const gun = weaponModel(id);
+    const gun = weaponModel(mid);
     if (!gun) { this.gun = null; return; }
     this.gun = gun;
     gun.traverse((o) => { if (o.isMesh) { o.material = this.pbr(o.material, id === 'deagle' || id === 'knife'); o.frustumCulled = false; } });
@@ -95,7 +100,7 @@ export class Viewmodel {
     this.holder.position.set(...hold.pos);
     this.holder.rotation.set(...hold.rot);
 
-    this.muzzle = gun.getObjectByName(`${id}_muzzle`) || gun;
+    this.muzzle = gun.getObjectByName(`${mid}_muzzle`) || gun;
     this.muzzle.add(this.flash);
     this.flash.position.set(0, 0, -1.5);
 
@@ -110,19 +115,19 @@ export class Viewmodel {
       hand.traverse((o) => { if (o.isMesh) { o.material = this.pbr(o.material, false); o.frustumCulled = false; } });
       socket.add(hand);
     };
-    attach('hand_r_' + team, `${id}_grip`);
-    if (!w.melee && !w.grenade) attach('hand_l_' + team, `${id}_lhand`);
-    if (animate) this.drawT = 0;
+    attach('hand_r_' + team, `${mid}_grip`);
+    if (!w.melee && !w.grenade) attach('hand_l_' + team, `${mid}_lhand`);
+    if (animate && !same) this.drawT = 0;
     this.reloadT = 1;
   }
 
-  fire() {
+  fire(alt = false) {
     const w = WEAPONS[this.weapon];
-    if (w.melee || w.grenade) { this.swingT = 0; return; }
+    if (w.melee || w.grenade) { this.swingT = 0; this.stab = alt; return; }
     const heavy = w.zoomFov ? 1.6 : w.slot === 'secondary' ? 1.0 : 0.7;
     this.kick = Math.min(this.kick + 1.4 * heavy, 3.5);
     this.kickRot = Math.min(this.kickRot + 0.05 * heavy, 0.16);
-    this.flashT = 0.045;
+    this.flashT = this.silenced ? 0 : 0.045;   // a suppressor hides the flash
     this.flash.material.rotation = Math.random() * Math.PI;
     const s = (w.slot === 'secondary' ? 5 : 8) * (0.85 + Math.random() * 0.3);
     this.flash.scale.set(s, s, 1);

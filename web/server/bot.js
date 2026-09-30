@@ -150,18 +150,33 @@ export class BotBrain {
     if (!inBuyZone(g.map, p.team, p.pos) && g.phase !== 'warmup') return;
     const money = () => p.money;
     const pistolRound = g.roundNumber === 1 || (g.roundNumber === g.halftimeRound + 1);
-    const rifle = p.team === TEAM.T ? 'ak47' : 'm4a1';
+    const T = p.team === TEAM.T;
+    const rifle = T ? 'ak47' : 'm4a1';
+    const cheapRifle = T ? 'galil' : 'famas';
+    const scoped = T ? 'sg552' : 'aug';
+    const autoSniper = T ? 'g3sg1' : 'sg550';
+    const pick = (list) => list[Math.floor(Math.random() * list.length)];
+    const can = (id, spare = 650) => money() >= WEAPONS[id].price + spare;
     if (!p.inv.primary) {
-      if (money() >= WEAPONS.awp.price + 1000 && Math.random() < 0.18) g.handleBuy(p, 'awp');
-      else if (money() >= WEAPONS[rifle].price + 650) g.handleBuy(p, rifle);
-      else if (money() >= WEAPONS.m249.price + 1000 && Math.random() < 0.06) g.handleBuy(p, 'm249');
-      else if (!pistolRound && money() >= WEAPONS.ump45.price + 650 && money() < 2600 && Math.random() < 0.6) g.handleBuy(p, Math.random() < 0.5 ? 'mp5' : 'ump45');
-      else if (!pistolRound && money() >= WEAPONS.scout.price && money() < WEAPONS[rifle].price && Math.random() < 0.25) g.handleBuy(p, 'scout');
+      const r = Math.random();
+      if (can('awp', 1000) && r < 0.16) g.handleBuy(p, 'awp');
+      else if (can(autoSniper, 1000) && r < 0.2) g.handleBuy(p, autoSniper);
+      else if (can(scoped, 1000) && r < 0.32) g.handleBuy(p, scoped);
+      else if (can(rifle)) g.handleBuy(p, rifle);
+      else if (can(cheapRifle, 400) && !pistolRound) g.handleBuy(p, cheapRifle);
+      else if (can('m249', 1000) && r < 0.05) g.handleBuy(p, 'm249');
+      else if (!pistolRound && money() < 2600 && can('ump45', 400) && r < 0.65) g.handleBuy(p, pick(['mp5', 'ump45', 'p90', T ? 'mac10' : 'tmp', 'm3']));
+      else if (!pistolRound && can('scout', 0) && money() < WEAPONS[rifle].price && r < 0.85) g.handleBuy(p, 'scout');
     }
     if (money() >= 1000 && p.armor < 100) g.handleBuy(p, 'assault');
     else if (money() >= 650 && p.armor < 100) g.handleBuy(p, 'kevlar');
     if (p.team === TEAM.CT && !p.kit && money() >= 200) g.handleBuy(p, 'kit');
-    if (!p.inv.primary && p.inv.secondary !== 'deagle' && money() >= 650 && Math.random() < 0.6) g.handleBuy(p, 'deagle');
+    // eco / pistol rounds: a better pistol
+    if (!p.inv.primary && money() >= 600) {
+      const r = Math.random();
+      const want = r < 0.45 ? 'deagle' : r < 0.7 ? (p.team === TEAM.T ? 'elites' : 'fiveseven') : r < 0.85 ? 'p228' : null;
+      if (want && p.inv.secondary !== want && money() >= WEAPONS[want].price) g.handleBuy(p, want);
+    }
     // utility with what is left
     if (money() >= 300 && Math.random() < 0.6) g.handleBuy(p, 'hegrenade');
     if (money() >= 200 && Math.random() < 0.45) g.handleBuy(p, 'flashbang');
@@ -481,7 +496,7 @@ export class BotBrain {
     const off = this.turnTo(yaw, pitch, dt, 1);
 
     // footwork: strafe mid/long range with rifles and pistols; hold still with snipers
-    const sniper = !!w.zoomFov;
+    const sniper = w.cls === 'sniper';     // AUG / SG552 fight unscoped
     let strafe = 0;
     if (!sniper && Math.random() < this.skill.strafe && dist > 250) {
       if (now > this.strafeSwap) { this.strafeSwap = now + rnd(0.35, 0.9); this.strafeDir *= -1; }

@@ -7,7 +7,7 @@
 // armour are the server's, mirrored from `inv`.
 
 import { movePlayer, waterLevel } from '../shared/physics.js';
-import { PLAYER, WEAPONS, DRAW_TIME, SLOTS } from '../shared/constants.js';
+import { PLAYER, WEAPONS, DRAW_TIME, SLOTS, weaponStats } from '../shared/constants.js';
 import { newRecoil, resetRecoil, shotSpread, spreadDir, kick, decayPunch, aimWithPunch } from '../shared/ballistics.js';
 
 const PITCH_LIMIT = 1.5;
@@ -37,6 +37,8 @@ export class LocalPlayer {
     this.lastFire = 0;
     this.recoil = newRecoil(); // CS punch angles (the spray pattern) + accuracy state
     this.zoom = 0;        // 0 none, 1, 2
+    this.modes = {};      // weapon id -> 'silenced' | 'burst' (server's, mirrored)
+    this.burstLeft = 0;   // rounds still to come in a Glock / FAMAS burst
     this.planting = false; // holding the trigger with the C4 out
     this.pinPulled = false; // grenade: armed while the trigger is held
     this.nades = {};
@@ -69,6 +71,7 @@ export class LocalPlayer {
     this.armor = m.armor; this.helmet = m.helmet;
     if (typeof m.hp === 'number' && this.alive) this.hp = m.hp;
     this.inv = m.inv;
+    if (m.modes) this.modes = m.modes;
     this.ammo = {};
     for (const [id, a] of Object.entries(m.ammo)) this.ammo[id] = { mag: a[0], reserve: a[1] };
     if (!m.reloading) this.reloadUntil = 0;
@@ -78,8 +81,22 @@ export class LocalPlayer {
   applyAmmo(m) {
     if (m.weapon !== this.weapon) return;
     this.ammo[m.weapon] = { mag: m.mag, reserve: m.reserve };
+    const w = WEAPONS[m.weapon];
+    if (w && w.shell) {
+      // a shell went in: its sound; done when full or out of shells
+      if (this.reloadUntil && m.mag > 0) this.sound('mag_in', { volume: 0.55 });
+      if (m.mag >= w.mag || m.reserve <= 0) this.reloadUntil = 0;
+      return;
+    }
     if (!m.reloading && this.reloadUntil) { this.reloadUntil = 0; }
   }
+
+  applyMode(m) {
+    this.modes[m.weapon] = m.mode;
+    if (m.weapon === this.weapon) this.vm.setWeapon(this.weapon, m.mode);
+  }
+
+  mode(id = this.weapon) { return this.modes[id] || null; }
 
   spawnAt(pos, yaw) {
     this.state.pos = [pos[0], pos[1], pos[2]];
@@ -99,7 +116,8 @@ export class LocalPlayer {
   eyeHeight() { return this.state.eye || (this.state.crouching ? PLAYER.crouchEye : PLAYER.standEye); }
   speed() { return Math.hypot(this.state.vel[0], this.state.vel[2]); }
   isMoving() { return this.speed() > 12; }
-  reloading(now = performance.now() / 1000) { return this.reloadUntil > now; }
+  // a shotgun reloads shell by shell and may fire in between (if it has one)
+  reloading(now = performance.now() / 1000) { return this.reloadUntil > now && !(WEAPONS[this.weapon].shell && this.mag() > 0); }
   mag() {
     if (WEAPONS[this.weapon] && WEAPONS[this.weapon].grenade) return this.nades[this.weapon] || 0;
     return this.ammo[this.weapon] ? this.ammo[this.weapon].mag : 0;
@@ -123,11 +141,12 @@ export class LocalPlayer {
     if (id !== this.weapon) this.prevWeapon = this.weapon;
     this.weapon = id;
     this.reloadUntil = 0;
+    this.burstLeft = 0;
     resetRecoil(this.recoil, id);
-    this.nextFire = performance.now() / 1000 + DRAW_TIME;
+    this.nextFire = performance.now() / 1000 + (WEAPONS[id].deploy || DRAW_TIME);
     this.setZoom(0);
     this.cancelReloadSounds();
-    this.vm.setWeapon(id);
+    this.vm.setWeapon(id, this.mode(id));
     this.sound('deploy', { volume: 0.5 });
     if (tell) this.net.send({ t: 'weapon', id });
   }
@@ -156,14 +175,44 @@ export class LocalPlayer {
 
   setZoom(level) {
     const w = WEAPONS[this.weapon];
-    this.zoom = w && w.zoomFov ? level : 0;
+    this.zoom = w && w.zoomFov ? Math.min(level, w.zoomLevels || 2) : 0;
+  }
+
+  // AWP / Scout / autosnipers show the scope overlay; AUG / SG552 just zoom
+  scoped() { const w = WEAPONS[this.weapon]; return this.zoom > 0 && w.cls === 'sniper'; }
+
+  // right click: zoom, silencer, burst mode or the knife's stab
+  secondary(now) {
+    const w = WEAPONS[this.weapon];
+    if (w.zoomFov) { if (!this.reloading(now)) this.setZoom((this.zoom + 1) % ((w.zoomLevels || 2) + 1)); return; }
+    if (w.alt === 'stab') { if (now >= this.nextFire) this.fire(now, true); return; }
+    if (w.alt === 'silencer') {
+      if (now < this.nextFire || this.reloading(now)) return;
+      this.nextFire = now + w.silencerTime;
+      this.vm.reload(w.silencerTime);
+      this._reloadTimers.push(setTimeout(() => this.sound('bolt', { volume: 0.5 }), w.silencerTime * 700));
+      this.net.send({ t: 'alt' });
+      return;
+    }
+    if (w.alt === 'burst') { this.net.send({ t: 'alt' }); this.sound('dryfire', { volume: 0.4 }); }
   }
 
   startReload() {
     const w = WEAPONS[this.weapon];
     const a = this.ammo[this.weapon];
-    if (w.melee || !a || this.reloading() || a.mag >= w.mag || a.reserve <= 0) return;
+    if (w.melee || !a || this.reloadUntil > performance.now() / 1000 || a.mag >= w.mag || a.reserve <= 0) return;
     const now = performance.now() / 1000;
+    this.burstLeft = 0;
+    if (w.shell) {
+      // shotgun: shells go in one by one (the server sends the count as they do)
+      const n = Math.min(w.mag - a.mag, a.reserve);
+      this.reloadStart = now;
+      this.reloadUntil = now + w.shell.start + w.shell.each * n;
+      this.setZoom(0);
+      this.vm.reload(this.reloadUntil - now);
+      this.net.send({ t: 'reload' });
+      return;
+    }
     this.reloadStart = now;
     this.reloadUntil = now + w.reload;
     this.setZoom(0);
@@ -177,35 +226,47 @@ export class LocalPlayer {
 
   cancelReloadSounds() { for (const t of this._reloadTimers) clearTimeout(t); this._reloadTimers = []; }
 
-  fire(now) {
-    const w = WEAPONS[this.weapon];
+  fire(now, alt = false) {
+    const base = WEAPONS[this.weapon];
+    const mode = base.alt === 'stab' ? (alt ? 'stab' : null) : this.mode();
+    const w = weaponStats(this.weapon, mode);
     const a = this.ammo[this.weapon];
-    this.sound(w.melee ? 'knife_slash' : `fire_${this.weapon}`, { volume: w.melee ? 0.7 : 0.95, jitter: 0.03 });
+    const snd = w.melee ? (alt ? 'knife_stab' : 'knife_slash') : mode === 'silenced' ? `fire_${this.weapon}_s` : `fire_${this.weapon}`;
+    this.sound(snd, { volume: w.melee ? 0.7 : mode === 'silenced' ? 0.6 : 0.95, jitter: 0.03 });
     if (!w.melee) {
       if (!a || a.mag <= 0) return;
       a.mag--;
     }
+    if (this.reloadUntil && w.shell) { this.reloadUntil = 0; this.vm.reload(0.01); }   // firing breaks a shell reload
     this.lastFire = now;
-    this.nextFire = now + w.rof;
-    const ctx = { now, onGround: this.state.onGround, speed: this.speed(), ducking: this.state.crouching, zoomed: this.zoom > 0 };
+    const zoomed = this.zoom > 0;
+    if (mode === 'burst') {
+      // first round of a burst: the rest follow on their own (update)
+      if (this.burstLeft <= 0) { this.burstLeft = w.count - 1; this.burstStart = now; }
+      else this.burstLeft--;
+      this.nextFire = this.burstLeft > 0 ? now + w.gap : this.burstStart + w.cycle;
+    } else this.nextFire = now + (zoomed && w.zoomRof ? w.zoomRof : w.rof);
+    const ctx = { now, onGround: this.state.onGround, speed: this.speed(), ducking: this.state.crouching, zoomed, mode };
     const spread = shotSpread(this.recoil, this.weapon, ctx);   // mirrors the server's roll
     const dir = this.aimDir();
     const origin = this.eyePos();
     this.shotCount++;
-    this.net.send({ t: 'fire', origin, dir, zoomed: this.zoom > 0 });
+    this.net.send({ t: 'fire', origin, dir, zoomed, alt: alt || undefined });
     kick(this.recoil, this.weapon, ctx);                        // next shot climbs
-    this.vm.fire();
+    this.vm.fire(alt);
 
     // local impacts with a guessed spread (the server rolls its own)
     if (w.melee) {
-      this.fx.shot(origin, dir, null, this.others(), null, { tracer: false });
+      this.fx.shot(origin, dir, null, this.others(), null, { tracer: false, reach: w.reach });
     } else {
-      const d = spreadDir(dir, spread);
       const muz = this.vm.muzzleWorld(this.camera);
-      this.fx.shot(origin, d, Math.random() < 0.5 ? [muz.x, muz.y, muz.z] : null, this.others());
+      for (let k = 0; k < (w.pellets || 1); k++) {
+        const d = spreadDir(dir, spread);
+        this.fx.shot(origin, d, k === 0 && Math.random() < 0.5 ? [muz.x, muz.y, muz.z] : null, this.others(), null, { tracer: k === 0, silent: k > 0 });
+      }
     }
-    if (w.zoomFov) this.setZoom(0); // bolt-action: the scope drops after the shot
-    if (!w.melee && a.mag === 0) this.startReload();
+    if (w.cls === 'sniper' && !w.autoSniper) this.setZoom(0); // bolt-action: the scope drops after the shot
+    if (!w.melee && a.mag === 0) { this.burstLeft = 0; this.startReload(); }
   }
 
   // ------------------------------------------------------------ frame
@@ -219,7 +280,8 @@ export class LocalPlayer {
       // frozen at round start, and rooted while planting or defusing (as in CS)
       const still = this.frozen || this.planting || this.defusing;
       const keys = input.moveKeys();
-      keys.maxSpeed = WEAPONS[this.weapon].speed;
+      const wz = WEAPONS[this.weapon];
+      keys.maxSpeed = this.zoom > 0 && wz.zoomSpeed ? wz.zoomSpeed : wz.speed;   // scoped snipers walk slower
       keys.ladders = this.map && this.map.ladders;
       // other players block you, as in CS
       const bodies = this.bodies();
@@ -260,10 +322,10 @@ export class LocalPlayer {
         if (this.hostageMode) { if (use && !this.useWas) this.net.send({ t: 'defuse', on: true }); this.useWas = use; }
         else if (use !== this.defusing) { this.defusing = use; this.net.send({ t: 'defuse', on: use }); }
         if (input.consumeDrop()) this.net.send({ t: 'drop' });
-        if (input.consumeZoom() && w.zoomFov && !this.reloading(now)) {
-          this.setZoom((this.zoom + 1) % 3);
-        }
-        const wantFire = !w.bomb && !w.grenade && !this.frozen && (w.auto ? input.fireHeld : input.consumeFirePressed());
+        if (input.consumeZoom() && !this.frozen) this.secondary(now);
+        // a burst keeps going by itself once started
+        if (this.burstLeft > 0 && now >= this.nextFire && this.mag() > 0 && this.mode() === 'burst') this.fire(now);
+        const wantFire = !w.bomb && !w.grenade && !this.frozen && this.burstLeft <= 0 && (w.auto && this.mode() !== 'burst' ? input.fireHeld : input.consumeFirePressed());
         if (w.auto) input.consumeFirePressed();
         if (wantFire && !this.reloading(now) && now >= this.nextFire) {
           if (w.melee || this.mag() > 0) this.fire(now);
@@ -316,11 +378,14 @@ export class LocalPlayer {
     }
   }
 
+  // CS zoom levels are fields of view out of its 90 degrees: the same
+  // magnification, tan(f/2) / tan(45), applied to our base view
   fovTarget() {
     const w = WEAPONS[this.weapon];
-    if (this.zoom === 1) return w.zoomFov;
-    if (this.zoom === 2) return w.zoomFov2 || w.zoomFov;
-    return BASE_FOV;
+    const f = this.zoom === 1 ? w.zoomFov : this.zoom === 2 ? (w.zoomFov2 || w.zoomFov) : 0;
+    if (!f) return BASE_FOV;
+    const mag = Math.tan((f / 2) * Math.PI / 180);
+    return 2 * Math.atan(Math.tan((BASE_FOV / 2) * Math.PI / 180) * mag) * 180 / Math.PI;
   }
 
   applyCamera(dt) {

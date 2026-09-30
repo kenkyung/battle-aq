@@ -86,10 +86,18 @@ export class Effects {
 
   // A shot from `from` along `dir`: tracer + whatever it hits. `players` is
   // [{id, pos, crouching}] for blood (the server decides real damage).
-  shot(from, dir, muzzle, players = [], excludeId = null, { tracer = true } = {}) {
-    const world = raycast(from, dir, this.colliders, 8192);
+  // opts: tracer, reach (knife), exits (wallbang: the points where the bullet
+  // came out of walls, from the server — they get impact marks too)
+  shot(from, dir, muzzle, players = [], excludeId = null, { tracer = true, reach = 8192, exits = null } = {}) {
+    const world = raycast(from, dir, this.colliders, reach);
     const boxes = players.map((p) => ({ id: p.id, box: hitBox(p.pos, p.crouching) }));
-    const ph = boxes.length ? raycastPlayers(from, dir, boxes, 8192, excludeId) : null;
+    const ph = boxes.length ? raycastPlayers(from, dir, boxes, reach, excludeId) : null;
+    for (const e of exits || []) {
+      const back = [e[0] - dir[0] * 60, e[1] - dir[1] * 60, e[2] - dir[2] * 60];
+      const hit = raycast(e, [-dir[0], -dir[1], -dir[2]], this.colliders, 60);
+      if (hit) this.impact(hit.point, normalOf(hit.point, hit.box), hit.box.mat);
+      void back;
+    }
     let end;
     if (ph && (!world || ph.t < world.t)) {
       end = ph.point;

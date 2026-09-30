@@ -14,7 +14,7 @@
 //  - Damage: base x hit group (head 4, stomach 1.25, legs 0.75) x
 //    rangeMod ^ (distance / 500); kevlar lets through 0.5 x armorRatio.
 
-import { WEAPONS, HITGROUP, PLAYER } from './constants.js';
+import { WEAPONS, HITGROUP, PLAYER, weaponStats } from './constants.js';
 
 // Per-shooter state (one per player, per weapon switch it resets).
 export function newRecoil() {
@@ -24,7 +24,7 @@ export function newRecoil() {
 export function resetRecoil(r, weaponId) {
   const w = WEAPONS[weaponId];
   r.shots = 0;
-  r.accuracy = w && w.acc && w.acc.type === 'pistol' ? w.acc.start : 0.2;
+  r.accuracy = w && w.acc ? (w.acc.type === 'pistol' ? w.acc.start : w.acc.type === 'autosniper' ? 0.98 : 0.2) : 0.2;
   r.dir = 1;
 }
 
@@ -37,10 +37,13 @@ function stanceOf({ onGround, speed, ducking }, threshold = 140) {
 
 // Call once per shot BEFORE computing spread. Returns the spread (tangent
 // units, as FireBullets3 uses) for this bullet.
+// ctx: { now, onGround, speed, ducking, zoomed, mode } — mode picks the
+// silenced / burst variant's spread.
 export function shotSpread(r, weaponId, ctx) {
-  const w = WEAPONS[weaponId];
+  const w = weaponStats(weaponId, ctx.mode);
   if (!w || w.melee || w.bomb) return 0;
   const now = ctx.now;
+  if (w.pellets) { r.lastFire = now; r.shots++; return w.pelletSpread; }   // shotguns: a fixed cone per pellet
   const gap = now - r.lastFire;
   // letting go of the trigger bleeds off the burst (CS: one shot per 22.5 ms
   // once you stop firing), so taps are accurate and sprays are not
@@ -52,19 +55,28 @@ export function shotSpread(r, weaponId, ctx) {
     // accuracy recovers the longer you wait between shots
     if (r.shots === 1 || gap > 1) r.accuracy = w.acc.start;
     else r.accuracy = Math.max(w.acc.min, Math.min(w.acc.start, r.accuracy - (w.acc.t - gap) * w.acc.k));
+  } else if (w.acc && w.acc.type === 'autosniper') {
+    // SG550 / G3SG1: accuracy recovers with the time since the last shot
+    r.accuracy = Math.min(0.98, w.acc.base + (r.shots <= 1 ? 1 : gap) * w.acc.k);
   }
   r.lastFire = now;
   const sp = w.spread;
+  if (w.acc && w.acc.type === 'autosniper') {
+    const st = stanceOf(ctx, 0);
+    const s = st === 'move' ? sp.move[1] : sp[st][0] * (1 - r.accuracy);
+    return s + (ctx.zoomed ? 0 : w.unscoped);
+  }
   const st = stanceOf(ctx, sp.move[0] || 140);
   const pistol = w.acc && w.acc.type === 'pistol';
+  const bolt = w.cls === 'sniper';          // AWP / Scout: fixed spread per stance
   let s;
   if (st === 'move') s = pistol ? sp.move[2] * (1 - r.accuracy) : sp.move[1] + sp.move[2] * r.accuracy;
   else {
     const [a, b] = sp[st];
-    s = pistol ? b * (1 - r.accuracy) : a + b * (w.zoomFov ? 1 : r.accuracy);
+    s = pistol ? b * (1 - r.accuracy) : a + b * (bolt ? 1 : r.accuracy);
   }
-  if (w.zoomFov) s = sp[st === 'move' ? 'move' : st][st === 'move' ? 1 : 0] + (ctx.zoomed ? 0 : w.unscoped);
-  return s;
+  if (bolt) s = sp[st === 'move' ? 'move' : st][st === 'move' ? 1 : 0] + (ctx.zoomed ? 0 : w.unscoped);
+  return s + (w.spreadAdd || 0);
 }
 
 // FireBullets3: offset the aim by the spread, two uniform samples per axis.
@@ -84,8 +96,19 @@ export function spreadDir(dir, spread, rand = Math.random) {
 
 // KickBack: adds to r.punch (degrees; [0] = up, [1] = sideways).
 export function kick(r, weaponId, ctx, rand = Math.random) {
-  const w = WEAPONS[weaponId];
+  const w = weaponStats(weaponId, ctx.mode);
   if (!w || w.melee || w.bomb) return;
+  const R = (a, b) => a + (b - a) * rand();
+  if (w.punchRand) {
+    const pr = w.punchRand;
+    if (pr.up) {                // autosnipers: up by a random amount + a quarter of the current punch
+      r.punch[0] = Math.min(r.punch[0] + R(...pr.up) + r.punch[0] * 0.25, 12);
+      r.punch[1] += R(-pr.lat, pr.lat);
+    } else {                    // shotguns: a big random kick, bigger in the air
+      r.punch[0] = Math.min(r.punch[0] + R(...(ctx.onGround ? pr.ground : pr.air)), 16);
+    }
+    return;
+  }
   if (w.punch) { r.punch[0] = Math.min(r.punch[0] + w.punch, 12); return; }
   const k = w.kick[stanceOf(ctx, w.spread.move[0] || 140)] || w.kick.stand;
   const [upBase, latBase, upMod, latMod, upMax, latMax, dirChange] = k;
@@ -116,11 +139,13 @@ export function aimWithPunch(yaw, pitch, punch) {
 }
 
 // Damage for a hit on `part` at `dist` units, before armour.
-export function baseDamage(weaponId, part, dist) {
-  const w = WEAPONS[weaponId];
+export function baseDamage(weaponId, part, dist, mode) {
+  const w = weaponStats(weaponId, mode);
   const g = HITGROUP[part] || HITGROUP.chest;
   let dmg = w.dmg * g.mul;
-  if (!w.melee) dmg *= Math.pow(w.rangeMod, dist / 500);
+  // buckshot (FireBullets): falls off linearly to nothing at the gun's range
+  if (w.pellets) dmg *= Math.max(0, 1 - dist / w.range);
+  else if (!w.melee) dmg *= Math.pow(w.rangeMod, dist / 500);
   return dmg;
 }
 
@@ -154,8 +179,9 @@ export const RUN_SPEED = (weaponId) => (WEAPONS[weaponId] ? WEAPONS[weaponId].sp
 // Being hit slows you (cstrike TakeDamage -> m_flVelocityModifier): a "large
 // flinch" (rifle / sniper / machine-gun round to the upper body of a standing
 // player) leaves 65 % speed, anything else 50 %. Falling does not tag.
-const LARGE_FLINCH = new Set(['ak47', 'm4a1', 'scout', 'awp', 'm249']);
+const LARGE_FLINCH = new Set(['rifle', 'sniper', 'mg', 'shotgun']);
 export function tagModifier(weaponId, part, ducking) {
   if (weaponId === 'fall') return 1;
-  return LARGE_FLINCH.has(weaponId) && part !== 'legs' && !ducking ? 0.65 : 0.5;
+  const w = WEAPONS[weaponId];
+  return w && LARGE_FLINCH.has(w.cls) && part !== 'legs' && !ducking ? 0.65 : 0.5;
 }

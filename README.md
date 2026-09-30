@@ -87,8 +87,14 @@ captured and shows its own cursor.
   punch per stance (the spray pattern), accuracy that decays with shots fired
   (automatics) or recovers between shots (pistols), FireBullets3 spread, hit
   groups (head x4, stomach x1.25, legs x0.75, narrow head box), range falloff,
-  per-weapon armour penetration and run speed, knife backstabs. Glock, USP,
-  Desert Eagle, MP5, UMP45, AK-47, M4A1, Scout, AWP, M249 Para.
+  per-weapon armour penetration and run speed. The full CS 1.6 arsenal:
+  Glock (burst), USP (silencer), P228, Desert Eagle, Dual Berettas,
+  Five-SeveN, M3 / XM1014 (pellets, shell reloads), MP5, TMP, MAC-10, UMP45,
+  P90, Galil, FAMAS (burst), AK-47, M4A1 (silencer), SG 552 / AUG (zoom),
+  Scout, AWP, SG 550 / G3/SG-1, M249, knife (slash / stab). Bullets go
+  through thin walls and players (penetration by calibre and material).
+  Right click = zoom / silencer / burst / stab; G drops your gun, walk over a
+  gun to pick it up.
 
 ## Graphics
 

@@ -29,7 +29,7 @@ console.log('HE');
 // open ground in the middle of the map, two players 150 u apart
 t.pos = [0, 0, -400]; t.yaw = 0; t.pitch = -0.6; c.pos = [0, 0, -560]; c.armor = 0;
 g.onMessage(t, { t: 'weapon', id: 'hegrenade' });
-advance(g, 0.5);
+advance(g, 0.8);
 g.onMessage(t, { t: 'throw', vel: [0, 0, 0] });
 ok(w2.got('nade').length === 1, 'everyone sees the throw');
 ok(t.nades.hegrenade === 0 && t.weapon !== 'hegrenade', 'last grenade thrown -> back to the gun');
@@ -39,14 +39,14 @@ ok(w2.got('nade_boom').some((m) => m.kind === 'hegrenade'), 'HE goes off after i
 ok(c.hp < hpBefore, `nearby enemy is hurt (${hpBefore} -> ${c.hp})`);
 
 console.log('flash');
-g.onMessage(t, { t: 'weapon', id: 'flashbang' }); advance(g, 0.5);
+g.onMessage(t, { t: 'weapon', id: 'flashbang' }); advance(g, 0.8);
 t.pos = [0, 0, -400]; t.yaw = 0; t.pitch = -0.6;   // flash lands just in front of the thrower
 c.pos = [0, 0, -250]; c.yaw = Math.PI; c.pitch = 0; // CT behind the thrower, looking away (+z)
 g.onMessage(t, { t: 'throw', vel: [0, 0, 0] });
 advance(g, 1.7);
 const fl = w2.last('flashed');
 ok(fl && fl.amount > 0, 'CT near the flash is blinded');
-g.onMessage(t, { t: 'weapon', id: 'flashbang' }); advance(g, 0.5);
+g.onMessage(t, { t: 'weapon', id: 'flashbang' }); advance(g, 0.8);
 t.pos = [0, 0, -400]; t.yaw = 0; t.pitch = -0.6;
 c.yaw = 0; // now looking toward the flash (-z)
 w2.msgs.length = 0;
@@ -56,7 +56,7 @@ const fl2 = w2.last('flashed');
 ok(fl2 && fl2.amount > (fl ? fl.amount : 0), `facing the flash blinds more (${fl && fl.amount.toFixed(2)} -> ${fl2 && fl2.amount.toFixed(2)})`);
 
 console.log('smoke');
-g.onMessage(t, { t: 'weapon', id: 'smokegrenade' }); advance(g, 0.5);
+g.onMessage(t, { t: 'weapon', id: 'smokegrenade' }); advance(g, 0.8);
 g.onMessage(t, { t: 'throw', vel: [0, 0, 0] });
 advance(g, 4);
 ok(g.smokes.length === 1, 'smoke cloud is up');

@@ -23,7 +23,7 @@
 import os, sys, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy
-from mathutils import Vector, Euler
+from mathutils import Vector, Euler, Matrix
 from lib import G, reset_scene, rgb, new_image, bake, PUBLIC
 from prims import PARTS, box, limb, cyl, dome, capsule, arc_tube
 
@@ -538,10 +538,268 @@ def flashbang(): return grenade('flashbang', 'flash')
 def smokegrenade(): return grenade('smokegrenade', 'smoke')
 
 
+
+
+# ------------------------------------------------------------------ M9 arsenal
+
+def suppressor(y0, z, r=0.62, length=6.5):
+    cyl('sup', (0, y0, z), (0, y0 + length, z), r, 'g', M('steel'), verts=16)
+    for k in range(3):
+        cyl('supring%d' % k, (0, y0 + 0.4 + k * 2.6, z), (0, y0 + 0.7 + k * 2.6, z), r + 0.04, 'g', M('blued'), verts=16)
+    cyl('supcap', (0, y0 + length, z), (0, y0 + length + 0.2, z), r * 0.75, 'g', M('rubber'), verts=14)
+    return y0 + length + 0.2
+
+
+def m4a1_s():
+    muzzle, lh, lr = m4a1()
+    # the suppressor screws on in place of the flash hider
+    end = suppressor(21.0, 3.9, 0.66, 7.8)
+    GRIP['m4a1_s'] = GRIP['m4a1']
+    return (0, end, 3.9), lh, lr
+
+
+def usp_s():
+    muzzle, lh, lr = usp()
+    end = suppressor(7.0, 3.05, 0.5, 5.2)
+    GRIP['usp_s'] = GRIP['usp']
+    return (0, end, 3.05), lh, lr
+
+
+def p228():
+    box('slide', (0, 3.0, 3.05), (1.05, 7.4, 1.25), 'g', M('blued'), bevel=0.18)
+    box('frame', (0, 2.8, 2.0), (1.0, 6.4, 0.95), 'g', M('steel'), bevel=0.16)
+    for k in range(6):
+        box('serr%d' % k, (0.54, -0.4 + k * 0.28, 3.05), (0.05, 0.12, 0.95), 'g', M('steel'), bevel=0)
+    box('decock', (-0.56, 0.4, 2.55), (0.12, 0.8, 0.35), 'g', M('steel'), bevel=0.04)
+    box('hammer', (0, -1.0, 3.4), (0.45, 0.5, 0.7), 'g', M('steel'), bevel=0.05)
+    pistol_grip('p228', -0.2, 1.8, M('poly'), length=4.0, w=1.2, d=2.0, rake=1.2)
+    box('fsight', (0, 6.4, 3.8), (0.25, 0.3, 0.32), 'g', M('steel'), bevel=0)
+    box('rsight', (0, -0.6, 3.78), (0.85, 0.3, 0.32), 'g', M('steel'), bevel=0.03)
+    return (0, 6.8, 3.05), *pistol_support('p228')
+
+
+def fiveseven():
+    box('slide', (0, 3.1, 3.0), (1.0, 7.8, 1.15), 'g', M('polygrey'), bevel=0.2)
+    box('frame', (0, 3.0, 2.0), (0.98, 6.9, 0.95), 'g', M('poly'), bevel=0.18)
+    box('rail', (0, 5.2, 1.45), (0.8, 2.6, 0.3), 'g', M('poly'), bevel=0.05)
+    for k in range(5):
+        box('serr%d' % k, (0.51, -0.3 + k * 0.3, 3.0), (0.05, 0.12, 0.9), 'g', M('rubber'), bevel=0)
+    pistol_grip('fiveseven', -0.2, 1.8, M('poly'), length=4.3, w=1.15, d=2.1, rake=1.0)
+    box('fsight', (0, 6.8, 3.7), (0.25, 0.3, 0.3), 'g', M('steel'), bevel=0)
+    return (0, 7.1, 3.0), *pistol_support('fiveseven')
+
+
+def beretta(tag, x):
+    box('slide' + tag, (x, 3.2, 3.05), (0.95, 7.8, 1.1), 'g', M('bright'), bevel=0.15)
+    box('cut' + tag, (x, 4.2, 3.55), (0.97, 3.2, 0.3), 'g', M('steel'), bevel=0.04)   # the open-top slide
+    cyl('bbl' + tag, (x, 4.0, 3.3), (x, 7.3, 3.3), 0.3, 'g', M('blued'), verts=10)
+    box('frame' + tag, (x, 3.0, 2.0), (0.95, 6.6, 0.95), 'g', M('bright'), bevel=0.15)
+    box('hammer' + tag, (x, -0.95, 3.35), (0.4, 0.5, 0.7), 'g', M('steel'), bevel=0.05)
+    box('fs' + tag, (x, 6.9, 3.72), (0.22, 0.3, 0.28), 'g', M('steel'), bevel=0)
+
+
+def elites():
+    # two Berettas: the right one in the firing hand, the left in the support hand
+    beretta('R', 0.0)
+    pistol_grip('elites', -0.2, 1.8, M('wood_dark'), length=4.1, w=1.2, d=2.0, rake=1.2)
+    xl = -7.0
+    beretta('L', xl)
+    limb('gripL', (xl, -0.2, 1.8), (xl, -1.4, -2.3), 1.2, 2.0, 'g', M('wood_dark'), bevel=0.3, taper=1.06)
+    arc_tube('guardL', (xl, 1.35, 1.45), 0.95, 0.13, 180, 360, 'g', M('steel'), axis='X', segs=8)
+    (gx, gy, gz), (rx, _, _) = GRIP['elites']
+    return (0, 7.4, 3.3), (xl + gx, gy, gz), (math.pi / 2 + rx, 0, 0)
+
+
+def shotgun(gid, auto=False):
+    body = M('poly')
+    box('recv', (0, 1.8, 3.1), (1.6, 9.0, 2.4), 'g', M('blued') if not auto else M('steel'), bevel=0.25)
+    cyl('barrel', (0, 6.3, 3.75), (0, 26.0, 3.75), 0.52, 'g', M('blued'), verts=16)
+    cyl('tube', (0, 6.3, 2.55), (0, 22.5, 2.55), 0.55, 'g', M('blued'), verts=14)
+    cyl('tubecap', (0, 22.5, 2.55), (0, 23.1, 2.55), 0.5, 'g', M('steel'), verts=14)
+    box('bead', (0, 25.7, 4.35), (0.18, 0.25, 0.2), 'g', M('bright'), bevel=0.05)
+    if auto:
+        box('forend', (0, 11.0, 2.7), (1.9, 7.0, 1.9), 'g', body, bevel=0.5)
+        box('rail', (0, 1.8, 4.45), (0.9, 7.0, 0.35), 'g', M('steel'), bevel=0.05)
+        for k in range(8):
+            box('rs%d' % k, (0, -1.2 + k * 0.85, 4.66), (0.95, 0.35, 0.12), 'g', M('steel'), bevel=0.02)
+        box('stock', (0, -8.0, 2.6), (1.7, 11.0, 3.6), 'g', body, bevel=0.6, taper=(0.95, 0.85))
+        box('butt', (0, -13.6, 2.5), (1.8, 0.7, 4.0), 'g', M('rubber'), bevel=0.25)
+    else:
+        # pump forend with grip ridges
+        cyl('pump', (0, 9.5, 2.6), (0, 15.5, 2.6), 1.05, 'g', body, verts=16)
+        for k in range(8):
+            cyl('ridge%d' % k, (0, 10.0 + k * 0.7, 2.6), (0, 10.25 + k * 0.7, 2.6), 1.12, 'g', body, verts=16)
+        box('stock', (0, -7.6, 2.4), (1.7, 10.5, 3.9), 'g', body, bevel=0.6, taper=(0.95, 0.85))
+        box('butt', (0, -12.9, 2.3), (1.8, 0.7, 4.3), 'g', M('rubber'), bevel=0.25)
+        box('ghost', (0, -0.4, 4.7), (0.8, 0.8, 1.0), 'g', M('steel'), bevel=0.1)
+    box('loadport', (0, 2.8, 1.85), (1.2, 3.6, 0.3), 'g', M('steel'), bevel=0.05)
+    pistol_grip(gid, -0.6, 2.0, body, rake=1.4)
+    return (0, 26.2, 3.75), (0, 12.5 if not auto else 11.0, 2.6), (0, 0, 0)
+
+
+def m3(): return shotgun('m3', False)
+def xm1014(): return shotgun('xm1014', True)
+
+
+def tmp():
+    box('recv', (0, 2.8, 3.2), (1.4, 8.8, 2.2), 'g', M('poly'), bevel=0.4)
+    box('top', (0, 2.4, 4.4), (1.0, 7.0, 0.4), 'g', M('poly'), bevel=0.12)
+    box('rsight', (0, -0.8, 4.8), (0.8, 0.6, 0.6), 'g', M('poly'), bevel=0.1)
+    cyl('barrel', (0, 7.2, 3.3), (0, 9.2, 3.3), 0.4, 'g', M('blued'), verts=12)
+    end = suppressor(9.2, 3.3, 0.72, 6.0)        # the TMP comes suppressed in CS
+    # vertical foregrip
+    limb('fgrip', (0, 5.8, 2.0), (0, 6.2, -1.6), 1.0, 1.3, 'g', M('poly'), bevel=0.3)
+    limb('mag', (0, 1.1, 2.0), (0, 0.7, -5.5), 0.95, 1.8, 'g', M('steel'), bevel=0.15)
+    pistol_grip('tmp', 0.2, 2.2, M('poly'), length=0.1, rake=0.0, guard=True)   # mag is the grip
+    GRIP['tmp'] = ((0, 0.9, 0.2), (-0.05, 0, 0))
+    return (0, end, 3.3), (0, 6.0, 0.4), (math.pi / 2, 0, 0)
+
+
+def mac10():
+    box('recv', (0, 2.2, 3.1), (1.6, 7.5, 2.8), 'g', M('steel'), bevel=0.2)
+    box('top', (0, 2.2, 4.62), (1.3, 7.2, 0.3), 'g', M('steel'), bevel=0.08)
+    box('chandle', (0, 3.2, 4.9), (0.5, 0.8, 0.5), 'g', M('steel'), bevel=0.1)
+    cyl('barrel', (0, 5.9, 3.3), (0, 8.6, 3.3), 0.45, 'g', M('blued'), verts=12)
+    cyl('thread', (0, 8.6, 3.3), (0, 9.1, 3.3), 0.38, 'g', M('steel'), verts=12)
+    limb('mag', (0, 0.6, 1.8), (0, 0.4, -5.0), 0.95, 1.9, 'g', M('steel'), bevel=0.12)
+    arc_tube('guard', (0, 1.9, 1.35), 0.95, 0.13, 180, 360, 'g', M('steel'), axis='X', segs=8)
+    limb('strap', (0, 6.0, 2.0), (0, 6.6, 0.8), 0.3, 1.1, 'g', M('rubber'), bevel=0.05)
+    cyl('stockrod', (0.7, -1.5, 3.4), (0.7, -6.5, 3.4), 0.18, 'g', M('steel'), verts=8)
+    cyl('stockrod2', (-0.7, -1.5, 3.4), (-0.7, -6.5, 3.4), 0.18, 'g', M('steel'), verts=8)
+    box('buttpad', (0, -6.6, 3.2), (1.8, 0.4, 1.4), 'g', M('steel'), bevel=0.08)
+    GRIP['mac10'] = ((0, 0.5, -1.4), (-0.05, 0, 0))
+    return (0, 9.2, 3.3), (0, 6.3, 1.3), (0, 0, 0)
+
+
+def p90():
+    # bullpup: grip hole ahead of the magazine, clear magazine on top
+    box('body', (0, 2.0, 2.6), (1.9, 15.5, 3.8), 'g', M('polygrey'), bevel=0.8, taper=(0.9, 1.0))
+    box('hole', (0, 5.4, 1.4), (2.0, 2.6, 1.8), 'g', M('poly'), bevel=0.6)
+    box('thumbhole', (0, 6.8, 0.6), (1.95, 1.1, 1.6), 'g', M('poly'), bevel=0.4)
+    box('mag', (0, 3.0, 5.0), (1.6, 11.0, 0.9), 'g', M('glass'), bevel=0.2)
+    for k in range(10):
+        box('rnd%d' % k, (0, -1.8 + k * 1.0, 5.0), (0.6, 0.35, 0.5), 'g', M('brass'), bevel=0.05)
+    box('sight', (0, 3.0, 6.1), (1.0, 3.8, 1.2), 'g', M('poly'), bevel=0.25)
+    cyl('lens', (0, 4.95, 6.2), (0, 5.0, 6.2), 0.42, 'g', M('glass'), verts=12)
+    cyl('barrel', (0, 9.6, 3.2), (0, 11.6, 3.2), 0.4, 'g', M('blued'), verts=12)
+    box('butt', (0, -5.9, 2.4), (2.0, 0.8, 4.2), 'g', M('rubber'), bevel=0.3)
+    GRIP['p90'] = ((0, 4.6, 1.2), (-0.35, 0, 0))
+    return (0, 11.8, 3.2), (0, 8.0, 1.4), (0, 0, 0)
+
+
+def ar_body(gid, stock='fixed', furniture='poly', long=1.0):
+    fm = M(furniture)
+    box('recv', (0, 2.2, 3.3), (1.6, 10.0, 2.4), 'g', M('steel'), bevel=0.2)
+    box('cover', (0, 1.8, 4.65), (1.45, 8.5, 0.6), 'g', M('steel'), bevel=0.2)
+    box('hguard', (0, 10.8 * long, 3.2), (1.95, 7.5 * long, 2.1), 'g', fm, bevel=0.55)
+    cyl('barrel', (0, 12.0 * long, 3.4), (0, 22.0 * long, 3.4), 0.38, 'g', M('blued'), verts=14)
+    cyl('hider', (0, 22.0 * long, 3.4), (0, 23.4 * long, 3.4), 0.5, 'g', M('blued'), verts=10)
+    box('fsight', (0, 15.2 * long, 4.4), (0.6, 0.7, 1.4), 'g', M('steel'), bevel=0.1)
+    box('rsight', (0, -1.6, 5.1), (0.9, 1.0, 0.7), 'g', M('steel'), bevel=0.1)
+    if stock == 'folding':
+        limb('stock', (0.9, -2.6, 3.4), (0.9, -12.0, 2.6), 0.4, 1.4, 'g', M('steel'), bevel=0.1)
+        limb('stock2', (0.9, -12.0, 2.6), (0.9, -12.2, 0.6), 0.4, 1.4, 'g', M('steel'), bevel=0.1)
+        box('butt', (0.9, -12.3, 1.6), (0.9, 0.5, 3.2), 'g', M('rubber'), bevel=0.15)
+    else:
+        box('stock', (0, -8.0, 2.8), (1.7, 11.5, 3.3), 'g', fm, bevel=0.6, taper=(0.95, 0.85))
+        box('butt', (0, -13.9, 2.7), (1.8, 0.6, 3.7), 'g', M('rubber'), bevel=0.2)
+    pistol_grip(gid, -0.3, 2.0, fm, rake=1.3)
+    return (0, 23.6 * long, 3.4)
+
+
+def galil():
+    muzzle = ar_body('galil', 'folding', 'wood', 1.0)
+    limb('mag', (0, 5.0, 2.0), (0, 7.4, -5.8), 1.2, 2.8, 'g', M('steel'), bevel=0.2)
+    box('bipodfold', (0, 13.0, 1.9), (0.9, 5.0, 0.5), 'g', M('steel'), bevel=0.08)
+    return muzzle, (0, 10.8, 3.2), (0, 0, 0)
+
+
+def famas():
+    # bullpup with the long carrying handle
+    box('body', (0, 1.5, 3.2), (1.9, 17.0, 3.2), 'g', M('olive') if False else M('grey'), bevel=0.7)
+    box('handle', (0, 3.0, 6.0), (0.8, 12.0, 0.9), 'g', M('grey'), bevel=0.3)
+    for yy in (-2.6, 8.4):
+        box('hpost', (0, yy, 5.1), (0.6, 1.0, 1.6), 'g', M('grey'), bevel=0.15)
+    box('guard', (0, 7.0, 1.5), (1.6, 3.4, 0.4), 'g', M('grey'), bevel=0.1)
+    cyl('barrel', (0, 10.0, 3.4), (0, 16.0, 3.4), 0.36, 'g', M('blued'), verts=14)
+    cyl('hider', (0, 16.0, 3.4), (0, 17.2, 3.4), 0.5, 'g', M('blued'), verts=10)
+    limb('mag', (0, -3.2, 2.0), (0, -3.9, -3.2), 1.0, 2.4, 'g', M('steel'), bevel=0.15)
+    box('butt', (0, -7.3, 3.0), (1.95, 0.6, 3.6), 'g', M('rubber'), bevel=0.2)
+    box('bipod', (0, 11.5, 2.4), (0.8, 4.0, 0.5), 'g', M('steel'), bevel=0.08)
+    pistol_grip('famas', 5.4, 1.9, M('poly'), rake=1.2)
+    return (0, 17.3, 3.4), (0, 10.5, 3.0), (0, 0, 0)
+
+
+def aug():
+    # bullpup, green polymer, integral 1.5x scope
+    box('body', (0, 0.5, 3.0), (2.0, 16.0, 3.4), 'g', M('olive'), bevel=0.9, taper=(0.9, 1.0))
+    box('guard', (0, 6.4, 1.2), (2.0, 4.8, 1.1), 'g', M('olive'), bevel=0.4)
+    limb('fgrip', (0, 10.2, 2.4), (0, 9.8, -1.6), 1.0, 1.3, 'g', M('olive'), bevel=0.3)
+    cyl('scope', (0, 1.0, 6.0), (0, 8.0, 6.0), 0.75, 'g', M('olive'), verts=16, r2=0.85)
+    cyl('slens', (0, 8.0, 6.0), (0, 8.1, 6.0), 0.75, 'g', M('glass'), verts=16)
+    box('smount', (0, 4.5, 5.0), (1.2, 5.0, 1.0), 'g', M('olive'), bevel=0.3)
+    cyl('barrel', (0, 8.4, 3.4), (0, 18.2, 3.4), 0.4, 'g', M('blued'), verts=14)
+    cyl('hider', (0, 18.2, 3.4), (0, 19.6, 3.4), 0.5, 'g', M('blued'), verts=10)
+    limb('mag', (0, -3.0, 1.6), (0, -3.6, -3.8), 0.95, 2.4, 'g', M('glass'), bevel=0.15)
+    box('butt', (0, -7.4, 2.9), (2.0, 0.6, 3.7), 'g', M('rubber'), bevel=0.2)
+    pistol_grip('aug', 4.9, 1.2, M('olive'), rake=0.9, guard=False)
+    return (0, 19.8, 3.4), (0, 10.0, 0.4), (math.pi / 2, 0, 0)
+
+
+def shifted(gid, fn, dy):
+    """Build `fn` and move everything (mesh, grip, muzzle, left hand) dy along
+    the gun's length: bullpups get their grip where a rifle's is, so the
+    viewmodel holds them the same way."""
+    n0 = len(PARTS)
+    muzzle, lh, lr = fn()
+    for ob, _ in PARTS[n0:]:
+        ob.data.transform(Matrix.Translation((0, dy, 0)))
+    (gx, gy, gz), rot = GRIP[gid]
+    GRIP[gid] = ((gx, gy + dy, gz), rot)
+    sh = lambda p: (p[0], p[1] + dy, p[2]) if p else p
+    return sh(muzzle), sh(lh), lr
+
+
+def sg552():
+    muzzle = ar_body('sg552', 'folding', 'poly', 0.9)
+    limb('mag', (0, 4.8, 2.0), (0, 6.4, -5.2), 1.0, 2.6, 'g', M('glass'), bevel=0.2)
+    # compact scope on the rail
+    cyl('scope', (0, -0.5, 6.4), (0, 6.2, 6.4), 0.62, 'g', M('blued'), verts=16)
+    cyl('obj', (0, 6.0, 6.4), (0, 7.4, 6.4), 0.85, 'g', M('blued'), verts=16)
+    for yy in (0.8, 4.8):
+        box('mount', (0, yy, 5.4), (0.9, 0.8, 1.2), 'g', M('steel'), bevel=0.1)
+    return muzzle, (0, 9.7, 3.2), (0, 0, 0)
+
+
+def autosniper(gid):
+    t = gid == 'g3sg1'
+    muzzle = ar_body(gid, 'fixed', 'poly' if t else 'grey', 1.25)
+    limb('mag', (0, 4.8, 2.0), (0, 5.8, -3.6), 1.1, 2.6, 'g', M('steel'), bevel=0.2)
+    cyl('scope', (0, -2.5, 6.6), (0, 8.5, 6.6), 0.6, 'g', M('blued'), verts=16)
+    cyl('obj', (0, 8.0, 6.6), (0, 10.8, 6.6), 1.05, 'g', M('blued'), verts=18, r2=1.12)
+    cyl('lens', (0, 10.8, 6.6), (0, 10.88, 6.6), 0.95, 'g', M('glass'), verts=18)
+    cyl('eye', (0, -4.4, 6.6), (0, -2.5, 6.6), 0.85, 'g', M('blued'), verts=16, r2=0.7)
+    for yy in (0.0, 5.5):
+        box('mount', (0, yy, 5.5), (0.9, 0.9, 1.3), 'g', M('steel'), bevel=0.1)
+    box('cheek', (0, -8.5, 4.6), (1.5, 6.0, 0.8), 'g', M('poly'), bevel=0.3)
+    if not t:
+        for x in (-0.4, 0.4):
+            limb('bipod%d' % int(x * 10), (x, 17.0, 2.1), (x, 11.0, 1.9), 0.3, 0.3, 'g', M('steel'), bevel=0.05)
+    return muzzle, (0, 13.0, 3.2), (0, 0, 0)
+
+
+def sg550(): return autosniper('sg550')
+def g3sg1(): return autosniper('g3sg1')
+
+
 GUNS = {
     'ak47': ak47, 'm4a1': m4a1, 'mp5': mp5, 'ump45': ump45, 'm249': m249, 'awp': awp, 'scout': scout,
     'deagle': deagle, 'glock': glock, 'usp': usp, 'knife': knife, 'c4': c4,
     'hegrenade': hegrenade, 'flashbang': flashbang, 'smokegrenade': smokegrenade,
+    'p228': p228, 'fiveseven': fiveseven, 'elites': elites, 'm3': m3, 'xm1014': xm1014,
+    'tmp': tmp, 'mac10': mac10, 'p90': lambda: shifted('p90', p90, -4.8), 'galil': galil,
+    'famas': lambda: shifted('famas', famas, -5.6), 'aug': lambda: shifted('aug', aug, -5.1),
+    'sg552': sg552, 'sg550': sg550, 'g3sg1': g3sg1, 'm4a1_s': m4a1_s, 'usp_s': usp_s,
 }
 
 
@@ -643,7 +901,8 @@ def main():
     roots = []
     for gid, fn in GUNS.items():
         muzzle, lhand, lrot = fn()
-        ob = finish(gid, 512 if gid in ('glock', 'usp', 'knife', 'c4', 'hegrenade', 'flashbang', 'smokegrenade') else 1024)
+        # full-res textures for the guns seen most, 512 px for the rest (download size)
+        ob = finish(gid, 1024 if gid in ('ak47', 'm4a1', 'm4a1_s', 'awp', 'deagle', 'usp', 'usp_s', 'glock') else 512)
         e = empty(f'{gid}_muzzle', muzzle); e.parent = ob
         if gid in GRIP:
             loc, rot = GRIP[gid]

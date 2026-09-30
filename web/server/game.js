@@ -33,7 +33,9 @@ import {
 } from '../shared/physics.js';
 import { navFor } from './nav.js';
 import { radioText } from '../shared/radio.js';
-import { MOVE } from '../shared/constants.js';
+import { MOVE, weaponStats } from '../shared/constants.js';
+import { traceBullet, materialClass } from '../shared/penetration.js';
+import { themeFor } from '../shared/themes.js';
 import { NADES, throwVelocity, newNade, stepNade, flashAmount } from '../shared/grenades.js';
 import { BotBrain, BOT_NAMES } from './bot.js';
 
@@ -83,6 +85,15 @@ export class Game {
     this.map = getMap(mapId);
     this.colliders = buildColliders(this.map);
     this.nav = navFor(this.map, this.colliders);
+    // penetration material per palette key, from the texture the theme uses
+    const mats = (themeFor(this.map.id) || {}).mats || {};
+    this._matClass = {};
+    this.matOf = (box) => {
+      const k = box && box.mat;
+      if (!(k in this._matClass)) this._matClass[k] = materialClass((mats[k] && mats[k].tex) || k);
+      return this._matClass[k];
+    };
+    this.drops = [];
     this._spawnYaw = {};
     this._spawnSpots = {};
     this.resetHostages();
@@ -242,6 +253,7 @@ export class Game {
     this.roundNumber++;
     this.plantedThisRound = false;
     this.nades = []; this.smokes = [];
+    this.drops = [];              // guns on the floor are cleared each round (CS)
     this.planting.clear(); this.defusing.clear();
     this.buyEndsAt = now() + ROUND.freezeTime + ECONOMY.buyTimeIntoRound;
     this.setPhase('freeze', ROUND.freezeTime);
@@ -284,6 +296,8 @@ export class Game {
     this.lastTick = t;
     for (const p of this.players.values()) {
       if (p.reloadUntil && t >= p.reloadUntil) this.finishReload(p);
+      if (p.shellAt && t >= p.shellAt) this.insertShell(p, t);
+      if (p.alive && this.drops.length) this.checkPickup(p, t);
     }
     for (const p of this.players.values()) if (p.bot) p.bot.think(dt, t);
     this.updateBomb(t);
@@ -616,7 +630,7 @@ export class Game {
       hp: PLAYER.maxHp, armor: 0, helmet: false, kit: false, c4: false, alive: false,
       money: this.competitive ? ECONOMY.startMoney : ECONOMY.warmupMoney,
       inv: {}, ammo: {}, weapon: 'knife', nades: {}, blindUntil: 0,
-      nextFire: 0, lastFire: 0, burst: 0, reloadUntil: 0, recoil: newRecoil(), speed: 0,
+      nextFire: 0, lastFire: 0, burst: 0, reloadUntil: 0, recoil: newRecoil(), speed: 0, modes: {}, burstIdx: 0, shellAt: 0,
       kills: 0, deaths: 0,
     };
     this.resetLoadout(p);
@@ -645,7 +659,8 @@ export class Game {
     p.weapon = pistol;
     p.armor = 0; p.helmet = false; p.kit = false;
     p.nades = {};
-    p.reloadUntil = 0; p.burst = 0;
+    p.modes = {};
+    p.reloadUntil = 0; p.burst = 0; p.shellAt = 0; p.burstIdx = 0;
   }
 
   // Up to 10 spots per team: the map's spawn cluster, then nav nodes around it.
@@ -787,6 +802,14 @@ export class Game {
         p.moving = !!msg.moving;
         p.speed = Number.isFinite(msg.speed) ? Math.min(400, msg.speed) : (p.moving ? 200 : 0);
         break;
+      case 'dev_give': {
+        // test-only (BAQ_DEV): hand a gun over, full ammo, and hold it
+        const w = WEAPONS[msg.id];
+        if (process.env.BAQ_DEV !== '1' || !w || !p.alive || (w.slot !== 'primary' && w.slot !== 'secondary')) break;
+        p.inv[w.slot] = msg.id; p.ammo[msg.id] = { mag: w.mag, reserve: w.reserve }; p.weapon = msg.id; p.nextFire = 0;
+        this.sendInv(p);
+        break;
+      }
       case 'dev_tp':
         if (process.env.BAQ_DEV === '1' && p.alive && this.phase !== 'freeze' && Array.isArray(msg.pos)) { p.pos = msg.pos.map(Number); p.moveT = now(); }
         break;
@@ -801,6 +824,9 @@ export class Game {
         break;
       case 'buy':
         this.handleBuy(p, String(msg.item || ''));
+        break;
+      case 'alt':
+        this.handleAlt(p);
         break;
       case 'autobuy':
         this.autobuy(p);
@@ -833,7 +859,10 @@ export class Game {
         this.throwNade(p, msg);
         break;
       case 'drop':
-        if (p.alive && p.c4 && this.phase !== 'freeze') { p.dropCooldown = now() + 1.5; this.dropBomb(p, true); }
+        if (!p.alive) break;
+        // G drops what you hold: the bomb, or a gun (never the knife or grenades)
+        if (p.weapon === 'c4') { if (p.c4 && this.phase !== 'freeze') { p.dropCooldown = now() + 1.5; this.dropBomb(p, true); } }
+        else this.dropWeapon(p, p.weapon, true);
         break;
       case 'vote':
         if (this.phase === 'matchend' && MAP_LIST.some((m) => m.id === msg.map)) {
@@ -942,27 +971,41 @@ export class Game {
     p.weapon = id;
     resetRecoil(p.recoil, id);
     p.reloadUntil = 0;          // switching cancels a reload (CS)
-    p.burst = 0;
-    p.nextFire = now() + DRAW_TIME;
+    p.shellAt = 0;
+    p.burst = 0; p.burstIdx = 0;
+    p.nextFire = now() + (WEAPONS[id].deploy || DRAW_TIME);
     this.planting.delete(p.id);
     this.sendAmmo(p);
   }
 
   handleFire(p, msg) {
     if (!p.alive || this.phase === 'freeze' || this.phase === 'matchend') return;
-    const w = WEAPONS[p.weapon];
-    if (w.bomb || w.grenade) return; // C4: see 'plant'; grenades: see 'throw'
+    const base = WEAPONS[p.weapon];
+    if (base.bomb || base.grenade) return; // C4: see 'plant'; grenades: see 'throw'
+    const mode = base.alt === 'stab' ? (msg.alt ? 'stab' : null) : p.modes[p.weapon] || null;
+    const w = weaponStats(p.weapon, mode);
     const t = now();
     const ammo = p.ammo[p.weapon];
+    const zoomed = !!msg.zoomed && !!w.zoomFov;
+    // a shell reload is interrupted by firing
+    if (p.shellAt && ammo && ammo.mag > 0) p.shellAt = 0;
     // Tolerance: packets bunch up in transit, so allow a slightly early shot.
-    const early = Math.min(0.05, w.rof * 0.4);
-    if (p.reloadUntil || t < p.nextFire - early || (!w.melee && (!ammo || ammo.mag <= 0))) {
+    const rof = zoomed && w.zoomRof ? w.zoomRof : w.rof;
+    const early = Math.min(0.05, rof * 0.4);
+    if (p.reloadUntil || p.shellAt || t < p.nextFire - early || (!w.melee && (!ammo || ammo.mag <= 0))) {
       this.sendAmmo(p); // resync the client's prediction
       return;
     }
 
     p.lastFire = t;
-    p.nextFire = t + w.rof;
+    if (mode === 'burst') {
+      // three rounds a gap apart, then the burst cycle (Glock 18 / FAMAS)
+      if (t - p.burstAt > w.cycle * 0.8) p.burstIdx = 0;
+      if (p.burstIdx === 0) p.burstAt = t;
+      p.burstIdx++;
+      p.nextFire = p.burstIdx < w.count ? t + w.gap : p.burstAt + w.cycle;
+      if (p.burstIdx >= w.count) p.burstIdx = 0;
+    } else p.nextFire = t + rof;
     if (!w.melee) ammo.mag--;
 
     // CS 1.6 spread: from the shooter's stance and accuracy (shots in the
@@ -970,33 +1013,60 @@ export class Game {
     // direction already includes its view punch, i.e. the spray pattern.
     const spread = shotSpread(p.recoil, p.weapon, {
       now: t, onGround: this.isGrounded(p), speed: p.moving ? (p.speed || 200) : 0,
-      ducking: p.crouching, zoomed: !!msg.zoomed,
+      ducking: p.crouching, zoomed, mode,
     });
     const dir = norm(Array.isArray(msg.dir) && msg.dir.every(Number.isFinite) ? msg.dir : [0, 0, -1]);
-    const shotDir = spreadDir(dir, spread);
     // trust the client's eye origin only if it is where we think the player is
     const eye = [p.pos[0], p.pos[1] + eyeOf(p), p.pos[2]];
     let origin = Array.isArray(msg.origin) && msg.origin.every(Number.isFinite) ? msg.origin : eye;
     if (len(sub(origin, eye)) > 96) origin = eye;
 
-    // tracer / effects for everyone else (even if it hits nothing)
-    this.broadcast({ t: 'shoot', id: p.id, origin, dir: shotDir, weapon: p.weapon }, p.id);
-    if (!w.melee) this.noise(p);
-
-    const maxDist = w.melee ? MELEE_REACH : 8192;
-    const world = raycast(origin, shotDir, this.colliders, maxDist);
     const others = [...this.players.values()]
       .filter((q) => q.alive && q.id !== p.id)
       .map((q) => ({ id: q.id, box: hitBox(q.pos, q.crouching) }));
     if (this.hostageMode) for (const h of this.hostages) if (h.alive && !h.rescued) others.push({ id: h.id, box: hitBox(h.pos, false) });
-    const phit = raycastPlayers(origin, shotDir, others, maxDist, p.id);
 
-    if (phit && (!world || phit.t < world.t)) {
-      const h = phit.id >= 1000 && this.hostages && this.hostages.find((x) => x.id === phit.id);
-      if (h) this.damageHostage(h, p, Math.round(baseDamage(p.weapon, phit.part, phit.t)));
-      else this.applyDamage(p, phit, w);
+    if (!w.melee) this.noise(p, mode === 'silenced');
+    const pellets = w.pellets || 1;
+    const dirs = [];
+    const total = new Map();           // victim id -> { dmg, part, point, pen } (pellets add up)
+    let pens = [];
+    for (let k = 0; k < pellets; k++) {
+      const shotDir = spreadDir(dir, spread);
+      dirs.push(shotDir);
+      if (w.melee) {
+        const reach = w.reach || MELEE_REACH;
+        const world = raycast(origin, shotDir, this.colliders, reach);
+        const ph = raycastPlayers(origin, shotDir, others, reach, p.id);
+        if (ph && (!world || ph.t < world.t)) this.addHit(total, ph.id, baseDamage(p.weapon, ph.part, ph.t, mode), ph, false);
+        continue;
+      }
+      if (w.pellets) {
+        const world = raycast(origin, shotDir, this.colliders, w.range);
+        const ph = raycastPlayers(origin, shotDir, others, w.range, p.id);
+        if (ph && (!world || ph.t < world.t)) this.addHit(total, ph.id, baseDamage(p.weapon, ph.part, ph.t, mode), ph, false);
+        continue;
+      }
+      const tr = traceBullet({ origin, dir: shotDir, colliders: this.colliders, targets: others, exclude: p.id, w, matOf: this.matOf });
+      for (const h of tr.hits) this.addHit(total, h.id, h.dmg, h, h.pen);
+      pens = tr.exits;
+    }
+
+    // tracer / effects for everyone else (even if it hits nothing)
+    this.broadcast({ t: 'shoot', id: p.id, origin, dir: dirs[0], dirs: pellets > 1 ? dirs : undefined, weapon: p.weapon, mode, exits: pens.length ? pens : undefined }, p.id);
+
+    for (const [id, h] of total) {
+      const hostage = id >= 1000 && this.hostages && this.hostages.find((x) => x.id === id);
+      if (hostage) this.damageHostage(hostage, p, Math.round(h.dmg));
+      else this.applyDamage(p, h, w, h.dmg, h.pen);
     }
     if (!w.melee && ammo.mag === 0 && ammo.reserve > 0) this.handleReload(p); // auto-reload
+  }
+
+  addHit(total, id, dmg, h, pen) {
+    const cur = total.get(id);
+    if (cur) { cur.dmg += dmg; cur.pen = cur.pen || pen; if (h.part === 'head') cur.part = 'head'; }
+    else total.set(id, { id, dmg, part: h.part, point: h.point, t: h.t || h.dist || 0, pen });
   }
 
   radio(p, menu, i) {
@@ -1013,10 +1083,11 @@ export class Game {
   }
 
   // gunfire is heard by bots within ~1800 u
-  noise(p) {
+  noise(p, quiet = false) {
     const t = now();
+    const r = quiet ? 500 : 1800;       // a silenced shot carries a short way
     for (const q of this.players.values()) {
-      if (q.bot && q.alive && q.team !== p.team && Math.hypot(q.pos[0] - p.pos[0], q.pos[2] - p.pos[2]) < 1800) q.bot.onNoise(p.pos, t);
+      if (q.bot && q.alive && q.team !== p.team && Math.hypot(q.pos[0] - p.pos[0], q.pos[2] - p.pos[2]) < r) q.bot.onNoise(p.pos, t);
     }
   }
 
@@ -1028,17 +1099,17 @@ export class Game {
       probe.min[2] < c.max[2] && probe.max[2] > c.min[2]);
   }
 
-  applyDamage(attacker, phit, w) {
+  applyDamage(attacker, phit, w, dmgIn, pen = false) {
     const victim = this.players.get(phit.id);
     if (!victim || !victim.alive) return;
     if (victim.team === attacker.team && this.competitive) return; // no friendly fire
-    let dmg = baseDamage(attacker.weapon, phit.part, phit.t);
-    if (w.melee) {
-      // backstab: from behind the victim the knife does triple damage
+    let dmg = dmgIn !== undefined ? dmgIn : baseDamage(attacker.weapon, phit.part, phit.t);
+    if (w.melee && w.backstab) {
+      // knife stab from behind the victim: triple damage
       const fx = -Math.sin(victim.yaw), fz = -Math.cos(victim.yaw);
       const ax = attacker.pos[0] - victim.pos[0], az = attacker.pos[2] - victim.pos[2];
       const al = Math.hypot(ax, az) || 1;
-      if ((fx * ax + fz * az) / al < -0.5) dmg *= 3;
+      if ((fx * ax + fz * az) / al < -0.5) dmg *= w.backstab;
     }
     const { hpDmg, armorDmg } = armorAbsorb(dmg, phit.part, victim.armor, victim.helmet, w.armorRatio);
     victim.armor = Math.max(0, victim.armor - armorDmg);
@@ -1049,16 +1120,18 @@ export class Game {
     this.broadcast({
       t: 'hit', victim: victim.id, attacker: attacker.id,
       part: phit.part, dmg: hpDmg, hp: Math.max(0, victim.hp), armor: victim.armor, helmet: !!victim.helmet,
-      weapon: attacker.weapon, point: phit.point,
+      weapon: attacker.weapon, point: phit.point, pen,
       from: [attacker.pos[0], attacker.pos[1], attacker.pos[2]],
     });
 
-    if (victim.hp <= 0) this.kill(victim, attacker, attacker.weapon, phit.part === 'head');
+    if (victim.hp <= 0) this.kill(victim, attacker, attacker.weapon, phit.part === 'head', pen);
   }
 
-  kill(victim, attacker, weapon, headshot) {
+  kill(victim, attacker, weapon, headshot, wallbang = false) {
     victim.alive = false;
-    victim.reloadUntil = 0;
+    victim.reloadUntil = 0; victim.shellAt = 0;
+    // the dead drop their best gun (primary, else pistol) where they fall
+    if (this.competitive) this.dropWeapon(victim, victim.inv.primary || victim.inv.secondary, false);
     victim.deaths++;
     this.planting.delete(victim.id);
     this.defusing.delete(victim.id);
@@ -1070,7 +1143,7 @@ export class Game {
       if (victim.team !== attacker.team) this.addMoney(attacker, reward, 'kill');
     }
     const by = attacker ? attacker.id : victim.id;
-    this.broadcast({ t: 'kill', attacker: by, victim: victim.id, weapon, headshot });
+    this.broadcast({ t: 'kill', attacker: by, victim: victim.id, weapon, headshot, wallbang });
     this.broadcast({ t: 'die', id: victim.id, by, weapon });
     if (!this.competitive) {
       this.resetLoadout(victim);
@@ -1082,11 +1155,98 @@ export class Game {
   handleReload(p) {
     const w = WEAPONS[p.weapon];
     const a = p.ammo[p.weapon];
-    if (!p.alive || w.melee || w.bomb || !a || p.reloadUntil) return;
+    if (!p.alive || w.melee || w.bomb || !a || p.reloadUntil || p.shellAt) return;
     if (a.mag >= w.mag || a.reserve <= 0) return;
+    if (w.shell) {
+      // shotguns load shell by shell and can fire in between (CS)
+      p.shellAt = now() + w.shell.start;
+      this.send(p, { t: 'reload', weapon: p.weapon, time: w.shell.start + w.shell.each * Math.min(w.mag - a.mag, a.reserve), shell: true });
+      return;
+    }
     p.reloadUntil = now() + w.reload;
     p.burst = 0;
     this.send(p, { t: 'reload', weapon: p.weapon, time: w.reload });
+  }
+
+  insertShell(p, t) {
+    const w = WEAPONS[p.weapon], a = p.ammo[p.weapon];
+    if (!p.alive || !w.shell || !a) { p.shellAt = 0; return; }
+    if (a.mag < w.mag && a.reserve > 0) { a.mag++; a.reserve--; this.sendAmmo(p); }
+    p.shellAt = a.mag < w.mag && a.reserve > 0 ? t + w.shell.each : 0;
+  }
+
+  // Right click: silencer on / off (M4A1, USP), burst mode (Glock, FAMAS).
+  // Zoom is the client's business; the knife's stab rides on the fire message.
+  handleAlt(p) {
+    const w = WEAPONS[p.weapon];
+    if (!p.alive || !w || !w.alt || w.alt === 'stab') return;
+    const t = now();
+    if (w.alt === 'silencer') {
+      if (t < p.nextFire || p.reloadUntil) return;
+      p.modes[p.weapon] = p.modes[p.weapon] === 'silenced' ? null : 'silenced';
+      p.nextFire = t + w.silencerTime;           // screwing it on / off takes a while
+    } else if (w.alt === 'burst') {
+      p.modes[p.weapon] = p.modes[p.weapon] === 'burst' ? null : 'burst';
+    }
+    p.burstIdx = 0;
+    this.send(p, { t: 'mode', weapon: p.weapon, mode: p.modes[p.weapon] || null });
+    this.broadcast({ t: 'pmode', id: p.id, weapon: p.weapon, mode: p.modes[p.weapon] || null }, p.id);
+  }
+
+  // ------------------------------------------------------------- dropped weapons
+
+  // Put a gun on the ground in front of the player (G, buying over it, death).
+  dropWeapon(p, id, toss = true) {
+    const w = WEAPONS[id];
+    if (!w || (w.slot !== 'primary' && w.slot !== 'secondary') || p.inv[w.slot] !== id) return null;
+    const a = p.ammo[id] || { mag: 0, reserve: 0 };
+    p.inv[w.slot] = null;
+    delete p.ammo[id];
+    const mode = p.modes[id] || null;
+    delete p.modes[id];
+    if (p.weapon === id) {
+      p.weapon = p.inv.primary || p.inv.secondary || 'knife';
+      p.reloadUntil = 0; p.shellAt = 0;
+      resetRecoil(p.recoil, p.weapon);
+      p.nextFire = now() + (WEAPONS[p.weapon].deploy || DRAW_TIME);
+    }
+    const out = toss ? 64 : 0;
+    const pos = [p.pos[0] - Math.sin(p.yaw) * out, p.pos[1], p.pos[2] - Math.cos(p.yaw) * out];
+    // not through a wall: stop short of it
+    const eye = [p.pos[0], p.pos[1] + 40, p.pos[2]];
+    const fwd = [pos[0] - p.pos[0], 0, pos[2] - p.pos[2]];
+    const fl = Math.hypot(fwd[0], fwd[2]);
+    if (fl > 0) {
+      const wall = raycast(eye, [fwd[0] / fl, 0, fwd[2] / fl], this.colliders, fl);
+      if (wall) { const k = Math.max(0, wall.t - 20) / fl; pos[0] = p.pos[0] + fwd[0] * k; pos[2] = p.pos[2] + fwd[2] * k; }
+    }
+    const hit = raycast([pos[0], pos[1] + 40, pos[2]], [0, -1, 0], this.colliders, 4000);
+    if (hit) pos[1] = hit.point[1];
+    this.dropSeq = (this.dropSeq || 0) + 1;
+    const d = { id: this.dropSeq, weapon: id, pos, yaw: p.yaw + (Math.random() - 0.5), ammo: { mag: a.mag, reserve: a.reserve }, mode, by: p.id, at: now() };
+    this.drops.push(d);
+    if (this.drops.length > 40) this.drops.shift();
+    this.sendInv(p);
+    return d;
+  }
+
+  // Walking over a gun picks it up if that slot is free (CS 1.6); your own
+  // drop only after a moment, so G does not just hand it back.
+  checkPickup(p, t) {
+    for (let i = 0; i < this.drops.length; i++) {
+      const d = this.drops[i];
+      const w = WEAPONS[d.weapon];
+      if (p.inv[w.slot]) continue;
+      if (d.by === p.id && t - d.at < 1.2) continue;
+      if (Math.hypot(d.pos[0] - p.pos[0], d.pos[2] - p.pos[2]) > 36 || Math.abs(d.pos[1] - p.pos[1]) > 48) continue;
+      p.inv[w.slot] = d.weapon;
+      p.ammo[d.weapon] = { mag: d.ammo.mag, reserve: d.ammo.reserve };
+      if (d.mode) p.modes[d.weapon] = d.mode;
+      this.drops.splice(i, 1);
+      this.send(p, { t: 'pickup', weapon: d.weapon });
+      this.sendInv(p);
+      return;
+    }
   }
 
   finishReload(p) {
@@ -1130,8 +1290,9 @@ export class Game {
       if (p.inv[w.slot] === item) return fail('you already have one');
       if (p.money < price) return fail('not enough money');
       const old = p.inv[w.slot];
-      if (old) delete p.ammo[old];
+      if (old) this.dropWeapon(p, old, true);          // CS: the old gun lands on the floor
       p.inv[w.slot] = item;
+      delete p.modes[item];
       p.ammo[item] = { mag: w.mag, reserve: w.reserve };
       p.weapon = item;
       resetRecoil(p.recoil, item);
@@ -1235,7 +1396,7 @@ export class Game {
     return {
       money: p.money, armor: p.armor, helmet: p.helmet, kit: p.kit, c4: p.c4, hp: p.hp,
       inv: { ...p.inv, c4: p.c4 ? 'c4' : null, grenade: this.currentNade(p) }, nades: { ...p.nades },
-      weapon: p.weapon, ammo, reloading: !!p.reloadUntil,
+      weapon: p.weapon, ammo, reloading: !!p.reloadUntil, modes: { ...p.modes },
     };
   }
 
@@ -1275,11 +1436,12 @@ export class Game {
       t: 'state',
       ts: now(),
       bomb: this.bombInfo(viewer),
+      drops: this.drops.map((d) => ({ id: d.id, w: d.weapon, pos: d.pos, yaw: d.yaw, mode: d.mode || undefined })),
       hostages: this.hostageMode ? this.hostages.map((h) => ({ id: h.id, pos: h.pos, yaw: h.yaw, alive: h.alive, rescued: h.rescued, leader: h.leader, moving: !!h.moving })) : undefined,
       players: [...this.players.values()].map((p) => ({
         id: p.id, team: p.team, pos: p.pos, yaw: p.yaw, pitch: p.pitch,
         alive: p.alive, crouching: p.crouching, moving: p.moving,
-        weapon: p.weapon, reloading: !!p.reloadUntil,
+        weapon: p.weapon, mode: p.modes[p.weapon] || undefined, reloading: !!p.reloadUntil || !!p.shellAt,
         k: p.kills, d: p.deaths,
         planting: this.planting.has(p.id), defusing: this.defusing.has(p.id),
       })),
