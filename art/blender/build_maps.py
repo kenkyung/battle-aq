@@ -297,6 +297,17 @@ def build_map(path, quick=False):
     sun.rotation_euler = sd.to_track_quat('Z', 'Y').to_euler()
     scn.collection.objects.link(sun)
 
+    # indoor lamps (hostage maps: offices, warehouse): baked like the sun.
+    # 1 game unit = 1 Blender unit, so the wattages are large.
+    for i, (x, y, z, watts, col) in enumerate(data.get('lights', [])):
+        ld = bpy.data.lights.new(f'lamp{i}', 'POINT')
+        ld.energy = watts
+        ld.shadow_soft_size = 12
+        ld.color = hexcol(col)[:3]
+        lo = bpy.data.objects.new(f'lamp{i}', ld)
+        lo.location = to_bl([x, y, z])
+        scn.collection.objects.link(lo)
+
     wd = bpy.data.worlds.new('sky')
     scn.world = wd
     wd.use_nodes = True

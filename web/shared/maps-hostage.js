@@ -147,6 +147,8 @@ const assault = {
     // catwalk along the east wall, stairs at its south end
     G(1120, -640, 256, 1216, 'metal', 192, 16),
     W(984, 216, -700, 16, 48, 1096, 'metal'),
+    // posts under the catwalk's open edge
+    ...[-1200, -900, -600, -300].map((z) => W(1008, 88, z, 16, 176, 16, 'metal')),
     // the hall's own office box / tool cages
     W(900, 48, 200, 160, 96, 160, 'metal'),
     // yard: shipping containers, a truck, a pallet stack

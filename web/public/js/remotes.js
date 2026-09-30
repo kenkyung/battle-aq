@@ -34,7 +34,12 @@ function makeNameSprite(name, color) {
   return spr;
 }
 
-const AIM_BONES = ['spine', 'chest', 'head'];
+const AIM_BONES = ['hips', 'spine', 'chest', 'head'];
+// Ground distance one loop of each locomotion clip covers (printed by
+// art/blender/build_characters.py): playback is scaled to the actual speed so
+// the feet stay planted instead of skating.
+const STRIDE = { walk: 61.4, run: 90, crouch_walk: 27.2 };
+const MAX_GAIT = 1.25;   // legs may turn up to ~72 degrees off the aim (CS gait yaw)
 
 export class Remotes {
   constructor(scene, fx, world) {
@@ -61,7 +66,7 @@ export class Remotes {
       model = cloneSkinned(src.scene);
       model.traverse((o) => {
         if (o.isSkinnedMesh || o.isMesh) {
-          o.material = new THREE.MeshLambertMaterial({ map: o.material.map });
+          o.material = new THREE.MeshLambertMaterial({ map: o.material.map, normalMap: o.material.normalMap || null });
           o.frustumCulled = false;
         }
         if (o.isBone) { bones[o.name] = o; o.userData.rest = o.quaternion.clone(); }
@@ -133,12 +138,28 @@ export class Remotes {
     };
   }
 
+  // Switch clip: every other clip that still has weight fades out (not just
+  // the last one), so no pose — the clamped death pose above all — can linger
+  // underneath and bend the body.
   play(r, name, fade = 0.2) {
     if (!r.mixer || r.clip === name || !r.actions[name]) return;
     const next = r.actions[name];
-    next.reset().play();
-    if (r.clip && r.actions[r.clip]) r.actions[r.clip].crossFadeTo(next, fade, false);
+    for (const [n, a] of Object.entries(r.actions)) {
+      if (n === name || !a.isRunning()) continue;
+      if (fade > 0) a.fadeOut(fade); else a.stop();
+    }
+    next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+    if (fade > 0) next.fadeIn(fade);
     r.clip = name;
+  }
+
+  // a fresh start for the rig (respawn): nothing left over from the death clip
+  resetPose(r) {
+    if (!r.mixer) return;
+    r.mixer.stopAllAction();
+    r.clip = null;
+    r.gait = 0;
+    this.play(r, 'idle', 0);
   }
 
   remove(id) {
@@ -156,6 +177,16 @@ export class Remotes {
     if (p.reloading && !r.reloading && this.sfx) this.sfx.playAt('mag_out', r.cur.pos.map((v, i) => v + (i === 1 ? 48 : 0)), { volume: 0.6, max: 1400 });
     r.reloading = !!p.reloading;
     if (p.name) r.name = p.name;
+    // velocity from successive snapshots over wall-clock time (frame dt is
+    // clamped by the render loop, so per-frame deltas lie on slow machines)
+    const now = performance.now() / 1000;
+    if (r.tgtT !== undefined && now - r.tgtT > 0.015) {
+      const w = 1 / (now - r.tgtT);
+      let v = [(p.pos[0] - r.tgt.pos[0]) * w, (p.pos[1] - r.tgt.pos[1]) * w, (p.pos[2] - r.tgt.pos[2]) * w];
+      if (Math.hypot(v[0], v[2]) > 700) v = [0, 0, 0];     // respawn / teleport
+      r.netVel = r.netVel ? r.netVel.map((x, i) => x + (v[i] - x) * 0.5) : v;
+    }
+    r.tgtT = now;
     r.tgt.pos = [...p.pos];
     r.tgt.yaw = p.yaw || 0;
     r.tgt.pitch = p.pitch || 0;
@@ -163,7 +194,7 @@ export class Remotes {
     r.moving = !!p.moving;
     const alive = p.alive !== false;
     if (!alive && r.alive) this.play(r, 'death', 0.1);
-    if (alive && !r.alive) { r.cur.pos = [...p.pos]; r.clip = null; this.play(r, 'idle', 0); }
+    if (alive && !r.alive) { r.cur.pos = [...p.pos]; this.resetPose(r); }
     r.alive = alive;
     if (p.weapon) this.setWeapon(r, p.weapon);
   }
@@ -203,14 +234,32 @@ export class Remotes {
       r.group.rotation.y = r.cur.yaw;
       r.group.visible = r.id !== this.hiddenId;
 
-      const sp = Math.hypot(r.cur.pos[0] - prev[0], r.cur.pos[2] - prev[2]) / Math.max(dt, 1e-3);
-      r.speed += (sp - r.speed) * Math.min(1, dt * 8);
+      // smoothed ground velocity -> speed, and its direction relative to the aim
+      const k = Math.min(1, dt * 8);
+      r.vel = r.vel || [0, 0, 0];
+      const nv = (r.tgtT !== undefined && performance.now() / 1000 - r.tgtT < 0.3 && r.netVel) || [0, 0, 0];
+      for (let i = 0; i < 3; i++) r.vel[i] += (nv[i] - r.vel[i]) * k;
+      r.speed = Math.hypot(r.vel[0], r.vel[2]);
+      let gaitTarget = 0;
+      r.backwards = false;
+      if (r.speed > 20) {
+        const sy = Math.sin(r.cur.yaw), cy = Math.cos(r.cur.yaw);
+        const fwd = -r.vel[0] * sy - r.vel[2] * cy;          // along the aim
+        const right = r.vel[0] * cy - r.vel[2] * sy;         // to its right
+        let a = Math.atan2(right, fwd);
+        // moving mostly backwards: face the legs forward and play the cycle in reverse
+        if (Math.abs(a) > 1.75) { a -= Math.sign(a) * Math.PI; r.backwards = true; }
+        gaitTarget = Math.max(-MAX_GAIT, Math.min(MAX_GAIT, a));
+      }
+      r.gait = (r.gait || 0) + (gaitTarget - (r.gait || 0)) * Math.min(1, dt * 10);
       if (r.alive) {
         let clip = 'idle';
-        if (r.tgt.crouching) clip = r.speed > 20 ? 'crouch_walk' : 'crouch_idle';
+        const air = !r.tgt.crouching && Math.abs(r.vel[1]) > 150;
+        if (air) clip = 'jump';
+        else if (r.tgt.crouching) clip = r.speed > 20 ? 'crouch_walk' : 'crouch_idle';
         else if (r.speed > 150) clip = 'run';
         else if (r.speed > 20) clip = 'walk';
-        this.play(r, clip);
+        this.play(r, clip, air ? 0.12 : 0.2);
       }
       // running feet are audible through the map, as in CS
       if (this.sfx && r.alive && r.speed > 150 && !r.tgt.crouching && Math.abs(r.cur.pos[1] - prev[1]) < 2) {
@@ -222,8 +271,12 @@ export class Remotes {
         }
       }
       if (r.mixer) {
-        const scale = r.clip === 'run' ? Math.max(0.6, r.speed / 250) : r.clip === 'walk' ? Math.max(0.6, r.speed / 110) : 1;
-        r.mixer.timeScale = scale;
+        // feet planted: one loop per STRIDE units travelled; backwards = reversed
+        const act = r.actions[r.clip];
+        if (act && STRIDE[r.clip]) {
+          const rate = Math.max(0.35, Math.min(2.4, r.speed * act.getClip().duration / STRIDE[r.clip]));
+          act.setEffectiveTimeScale(r.backwards ? -rate : rate);
+        }
         // the aim tilt below is added on top of the clip every frame; a bone the
         // clip does not key would keep the previous frame's tilt and slowly
         // fold the body backwards, so start each frame from the rest pose
@@ -237,6 +290,15 @@ export class Remotes {
           if (r.bones.spine) r.bones.spine.rotateX(p * 0.3);
           if (r.bones.chest) r.bones.chest.rotateX(p * 0.45);
           if (r.bones.head) r.bones.head.rotateX(p * 0.15);
+          // gait yaw (CS): the hips and legs turn toward the direction of
+          // travel, the spine and chest turn back so the upper body and gun
+          // stay on the aim
+          const gy = r.gait || 0;
+          if (gy && r.bones.hips && r.bones.spine && r.bones.chest) {
+            r.bones.hips.rotateY(-gy);
+            r.bones.spine.rotateY(gy * 0.6);
+            r.bones.chest.rotateY(gy * 0.4);
+          }
         }
       }
       r.tag.visible = r.alive && r.team === this.myTeam;

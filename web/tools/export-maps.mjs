@@ -23,6 +23,8 @@ for (const map of MAP_LIST) {
     props: map.props || [],
     water: (map.water || []).map((w) => ({ y: w.y, w: w.w, d: w.d, pos: w.pos || [0, 0] })),
     bombsites: map.bombsites || {},
+    // indoor point lights baked into the lightmap: [x, y, z, watts, 'rrggbb']
+    lights: map.lights || [],
     coverSeed: map.coverSeed,
     theme: themeFor(map.id),
   };

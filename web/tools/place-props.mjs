@@ -17,13 +17,22 @@ const KINDS = {
   de_aq_dust: ['barrels', 'sandbags', 'pallets', 'barrel', 'sandbags', 'pallets'],
   de_aq_inferno: ['planter', 'barrels', 'pallets', 'planter', 'barrel'],
   de_aq_aztec: ['planter', 'sandbags', 'barrels', 'planter', 'pallets'],
+  cs_aq_office: ['pallets', 'barrels', 'barrel', 'pallets'],
+  cs_aq_assault: ['barrels', 'pallets', 'sandbags', 'barrel', 'pallets'],
+  cs_aq_italy: ['planter', 'barrels', 'pallets', 'planter', 'barrel'],
 };
+
+// what every map must keep reachable: bombsites, or hostages + rescue zones
+function goals(map) {
+  if (map.hostages && map.hostages.length) return [...map.hostages, ...(map.rescueZones || []).map((z) => [z[0], z[1], z[2]])];
+  return Object.values(map.bombsites || {});
+}
 const SIZES = { barrel: [28, 28], barrels: [58, 30], sandbags: [112, 34], pallets: [52, 52], planter: [34, 34] };
 
 function routesOk(map, cols) {
   const nav = new NavGraph(map, cols);
   for (const team of [TEAM.T, TEAM.CT]) {
-    for (const site of Object.values(map.bombsites)) if (!nav.path(map.spawns[team][0], site)) return false;
+    for (const site of goals(map)) if (!nav.path(map.spawns[team][0], site)) return false;
     if (!nav.path(map.spawns[team][0], map.spawns[3 - team][0])) return false;
   }
   return true;
@@ -58,7 +67,7 @@ function arches(map, cols) {
 function props(map, cols, rand) {
   const nav = new NavGraph(map, cols);
   const kinds = KINDS[map.id] || KINDS.de_aq_dust;
-  const avoid = [...Object.values(map.spawns).map((s) => s[0]), ...Object.values(map.bombsites)];
+  const avoid = [...Object.values(map.spawns).map((s) => s[0]), ...goals(map)];
   const cands = [];
   for (const n of nav.main) {
     if (n.y > 1) continue;
@@ -92,8 +101,12 @@ function props(map, cols, rand) {
   return placed;
 }
 
+// maps that already have props keep them (layouts players know) unless --all
+const { PROPS: existing } = await import('../shared/props-data.js');
+const all = process.argv.includes('--all');
 const data = {};
 for (const map0 of MAP_LIST) {
+  if (!all && existing[map0.id]) { data[map0.id] = existing[map0.id]; continue; }
   const map = { ...map0, props: [] };
   let cols = buildColliders(map);
   const rand = rng(0xA11CE ^ map.coverSeed);

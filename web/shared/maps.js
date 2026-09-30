@@ -436,8 +436,9 @@ const aztec = {
   bombsites: { A: [1408, 64, -832], B: [-1088, 0, 992] },
 };
 
-// hostage maps join the rotation once their Blender builds ship
-const ALL = [dust, inferno, aztec, ...(globalThis.BAQ_HOSTAGE_MAPS ? HOSTAGE_MAPS : [])];
+// flipped on once the client renders hostages (HUD, models, rescue zones)
+const HOSTAGE_READY = false;
+const ALL = [dust, inferno, aztec, ...(HOSTAGE_READY ? HOSTAGE_MAPS : [])];
 for (const m of ALL) m.props = PROPS[m.id] || [];
 
 export const MAPS = Object.fromEntries(ALL.map((m) => [m.id, m]));
