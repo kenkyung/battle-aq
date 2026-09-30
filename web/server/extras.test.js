@@ -43,6 +43,24 @@ console.log('nightvision + shield');
   ok(c.hp < 100, 'from behind the shield does nothing');
 }
 
+console.log('skins');
+{
+  const g = new Game('de_aq_dust', { practice: true });
+  const ws = sock();
+  const p = g.addPlayer(ws, 'Model', { team: TEAM.CT });
+  ok(p.skin >= 0 && p.skin <= 3 && ws.got('welcome')[0].you.skin === p.skin, 'every player starts with a skin (0-3), sent in welcome');
+  g.onMessage(p, { t: 'skin', i: 2 });
+  ok(p.skin === 2, 'appearance choice is stored');
+  g.onMessage(p, { t: 'skin', i: 99 });
+  ok(p.skin >= 0 && p.skin <= 3, 'out-of-range = auto-select (random valid skin)');
+  g.onMessage(p, { t: 'skin', i: 3 });
+  const other = g.addPlayer(sock(), 'Viewer', { team: TEAM.CT });
+  const snap = g.snapshotFor(other);
+  ok(snap.players.find((q) => q.id === p.id).skin === 3, 'snapshots carry the skin index');
+  const bot = g.addBot(TEAM.T);
+  ok(bot.skin >= 0 && bot.skin <= 3, 'bots get a random skin');
+}
+
 console.log('swimming');
 {
   const water = [{ y: 120, w: 400, d: 400, pos: [0, 0] }];

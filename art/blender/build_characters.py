@@ -1,8 +1,8 @@
-# Builds the two player models (Terrorist, Counter-Terrorist).
+# Builds the player models: four skins per team (M19) + the hostage.
 #
-#   blender -b --factory-startup -P art/blender/build_characters.py
+#   blender -b --factory-startup -P art/blender/build_characters.py [-- phoenix gign H ...]
 #
-# -> web/public/assets/models/soldier_t.glb, soldier_ct.glb
+# -> web/public/assets/models/skin_<name>.glb, hostage.glb
 #
 # Low-poly, CS 1.6-style: ~1.5k triangles each, rigidly skinned to an 11-bone
 # rig (every part follows exactly one bone, like the GoldSrc models), textured
@@ -128,31 +128,98 @@ def glove(tag, c, fwd, m, bone='chest'):
     capsule('cuffg' + tag, (cx, cy - 2.4, cz), (cx, cy - 1.2, cz), 2.0, bone, m, segs=8)
 
 
-def build_body(team):
+# ------------------------------------------------------------------ skins (M19)
+#
+# Four looks per side, CS 1.6 style. Readability first: Terrorists wear warm /
+# earth tones and soft headgear (wraps, beanies, hoods, headbands); CTs wear
+# cool blues, greys and black with hard helmets or a gas mask and a plate
+# carrier. Both carry a bright team armband on each upper arm (orange T,
+# blue CT) that reads at any range.
+
+ARMBAND = {'T': (0.95, 0.42, 0.06), 'CT': (0.10, 0.42, 0.95)}
+
+SKINS = {
+    # --- Terrorists
+    'phoenix': dict(team='T', torso='jacket', head='wrap',
+                    top=('cloth', (0.42, 0.37, 0.27), (0.24, 0.20, 0.14)),
+                    legs=('camo', (0.62, 0.55, 0.42), (0.49, 0.41, 0.30), (0.35, 0.30, 0.22), (0.22, 0.19, 0.15)),
+                    rig=(0.39, 0.36, 0.24), skin=(0.72, 0.55, 0.42), balaclava=(0.09, 0.09, 0.09),
+                    hat=((0.58, 0.50, 0.37), (0.36, 0.30, 0.22)), boots=(0.14, 0.10, 0.08)),
+    'leet':    dict(team='T', torso='leather', head='beanie',
+                    top=('leather', (0.30, 0.16, 0.09), (0.16, 0.08, 0.05)),
+                    legs=('cloth', (0.33, 0.27, 0.20), (0.20, 0.16, 0.11)),
+                    rig=(0.22, 0.14, 0.09), skin=(0.70, 0.52, 0.40), balaclava=(0.34, 0.07, 0.05),
+                    hat=((0.14, 0.12, 0.11), (0.08, 0.07, 0.07)), boots=(0.10, 0.07, 0.05)),
+    'arctic':  dict(team='T', torso='parka', head='hood',
+                    top=('cloth', (0.84, 0.83, 0.79), (0.64, 0.63, 0.59)),
+                    legs=('camo', (0.86, 0.85, 0.82), (0.72, 0.71, 0.68), (0.54, 0.53, 0.50), (0.38, 0.37, 0.35)),
+                    rig=(0.52, 0.44, 0.32), skin=(0.78, 0.60, 0.48), balaclava=None,
+                    hat=((0.60, 0.48, 0.34), (0.40, 0.31, 0.21)), boots=(0.20, 0.15, 0.11)),
+    'guerilla': dict(team='T', torso='tee', head='headband',
+                    top=('cloth', (0.34, 0.33, 0.19), (0.21, 0.21, 0.12)),
+                    legs=('camo', (0.36, 0.31, 0.18), (0.26, 0.27, 0.14), (0.18, 0.13, 0.08), (0.08, 0.07, 0.06)),
+                    rig=(0.33, 0.26, 0.16), skin=(0.56, 0.39, 0.28), balaclava=None,
+                    hat=((0.70, 0.12, 0.08), (0.45, 0.07, 0.05)), boots=(0.16, 0.11, 0.07)),
+    # --- Counter-Terrorists
+    'seal':    dict(team='CT', torso='plate', head='goggles',
+                    top=('camo', (0.33, 0.37, 0.43), (0.23, 0.26, 0.32), (0.45, 0.48, 0.52), (0.14, 0.15, 0.18)),
+                    legs=('camo', (0.33, 0.37, 0.43), (0.23, 0.26, 0.32), (0.45, 0.48, 0.52), (0.14, 0.15, 0.18)),
+                    rig=(0.14, 0.16, 0.19), skin=(0.80, 0.62, 0.50), balaclava=None,
+                    hat=(0.15, 0.18, 0.21), boots=(0.07, 0.07, 0.08)),
+    'gsg9':    dict(team='CT', torso='plate', head='visor_up',
+                    top=('cloth', (0.27, 0.33, 0.37), (0.17, 0.21, 0.24)),
+                    legs=('cloth', (0.27, 0.33, 0.37), (0.17, 0.21, 0.24)),
+                    rig=(0.09, 0.11, 0.13), skin=(0.82, 0.64, 0.52), balaclava=None,
+                    hat=(0.22, 0.27, 0.30), boots=(0.06, 0.06, 0.07)),
+    'sas':     dict(team='CT', torso='plate', head='gasmask',
+                    top=('cloth', (0.08, 0.08, 0.10), (0.04, 0.04, 0.05)),
+                    legs=('cloth', (0.08, 0.08, 0.10), (0.04, 0.04, 0.05)),
+                    rig=(0.13, 0.14, 0.16), skin=(0.80, 0.62, 0.50), balaclava=(0.06, 0.06, 0.07),
+                    hat=(0.06, 0.06, 0.07), boots=(0.05, 0.05, 0.05)),
+    'gign':    dict(team='CT', torso='plate', head='faceshield',
+                    top=('cloth', (0.12, 0.16, 0.30), (0.07, 0.09, 0.18)),
+                    legs=('cloth', (0.12, 0.16, 0.30), (0.07, 0.09, 0.18)),
+                    rig=(0.07, 0.09, 0.16), skin=(0.80, 0.62, 0.50), balaclava=(0.05, 0.06, 0.09),
+                    hat=(0.09, 0.11, 0.20), boots=(0.05, 0.05, 0.06)),
+}
+
+
+def fabric(spec, seed, scale=None):
+    kind, *cols = spec
+    if kind == 'camo':
+        return camo(*cols, scale=scale or (0.11 if cols[0][2] > cols[0][0] else 0.09), seed=seed)
+    return cloth(*cols, seed=seed)
+
+
+def build_body(name):
     PARTS.clear()
-    t = team == 'T'
+    S = SKINS[name]
+    t = S['team'] == 'T'
     M = {}
+    leather = S['top'][0] == 'leather'
+    M['top'] = material('top', cloth(S['top'][1], S['top'][2], scale=0.25, seed=1) if leather else fabric(S['top'], 1),
+                        h_grain(1.0) if leather else h_fabric(), bump=0.3 if leather else 0.45)
+    M['legs'] = material('pants', fabric(S['legs'], 2), h_fabric(0.3))
+    M['rig'] = material('rig', webbing(S['rig']), h_molle, bump=0.7)
+    M['head'] = material('face', face(S['skin'], balaclava=S['balaclava']), h_knit if S['balaclava'] else h_grain(2.0),
+                         bump=0.25 if S['balaclava'] else 0.1)
+    M['skin'] = material('skin', face(S['skin']), h_grain(2.0), bump=0.1)
     if t:
-        M['top'] = material('jacket', cloth((0.42, 0.37, 0.27), (0.24, 0.20, 0.14), seed=1), h_fabric())
-        M['legs'] = material('pants', camo((0.62, 0.55, 0.42), (0.49, 0.41, 0.30), (0.35, 0.30, 0.22), (0.22, 0.19, 0.15), seed=2), h_fabric(0.3))
-        M['rig'] = material('rig', webbing((0.39, 0.36, 0.24)), h_molle, bump=0.7)
-        M['head'] = material('face', face((0.72, 0.55, 0.42), balaclava=(0.09, 0.09, 0.09)), h_knit, bump=0.25)
-        M['hat'] = material('wrap', cloth((0.58, 0.50, 0.37), (0.36, 0.30, 0.22), scale=0.3, seed=4), h_fabric(0.6), bump=0.6)
+        M['hat'] = material('hat', cloth(*S['hat'], scale=0.3, seed=4), h_knit if S['head'] == 'beanie' else h_fabric(0.6), bump=0.6)
         M['pad'] = M['legs']
     else:
-        pal = ((0.33, 0.37, 0.43), (0.23, 0.26, 0.32), (0.45, 0.48, 0.52), (0.14, 0.15, 0.18))
-        M['top'] = material('shirt', camo(*pal, scale=0.11, seed=5), h_fabric())
-        M['legs'] = material('pants', camo(*pal, scale=0.11, seed=6), h_fabric(0.3))
-        M['rig'] = material('vest', webbing((0.14, 0.16, 0.19)), h_molle, bump=0.7)
-        M['head'] = material('face', face((0.80, 0.62, 0.50)), h_grain(2.0), bump=0.1)
-        M['hat'] = material('helmet', plain((0.15, 0.18, 0.21), rough=0.55, grit=0.35), h_grain(0.8), bump=0.2, bevel=0.6)
+        M['hat'] = material('helmet', plain(S['hat'], rough=0.55, grit=0.35), h_grain(0.8), bump=0.2, bevel=0.6)
         M['pad'] = material('pads', plain((0.07, 0.07, 0.08), rough=0.5), h_grain(1.5), bump=0.2, bevel=0.5)
-    M['boots'] = material('boots', plain((0.14, 0.10, 0.08) if t else (0.07, 0.07, 0.08), rough=0.55), h_grain(2.5), bump=0.25)
+    M['band'] = material('armband', plain(ARMBAND[S['team']], rough=0.6, grit=0.1), h_fabric(0.5), bump=0.3)
+    M['boots'] = material('boots', plain(S['boots'], rough=0.55), h_grain(2.5), bump=0.25)
     M['sole'] = material('sole', plain((0.05, 0.05, 0.05), rough=0.9), h_tread, bump=0.8)
     M['gloves'] = material('gloves', plain((0.08, 0.08, 0.08), rough=0.65), h_grain(2.0), bump=0.3)
     M['belt'] = material('belt', plain((0.17, 0.14, 0.10), rough=0.6), h_molle, bump=0.3)
     M['metal'] = material('buckle', plain((0.5, 0.48, 0.42), 0.35), bevel=0.1)
+    M['brass'] = material('brass', plain((0.62, 0.48, 0.20), 0.3, 0.1), bevel=0.1)
     M['black'] = material('black', plain((0.04, 0.045, 0.05), 0.35, 0.1), bevel=0.2)
+    M['lens'] = material('lens', plain((0.05, 0.08, 0.1), 0.15, 0.05), bevel=0.2)
+    torso, head = S['torso'], S['head']
 
     # ---- legs: rounded thigh/shin, knee, boots with sole + toe cap + laces
     for s, x in (('L', -4.5), ('R', 4.5)):
@@ -161,7 +228,8 @@ def build_body(team):
         capsule('shin' + s, (x, 0.4, 19.5), (x, -0.3, 6.5), 3.3, 'shin.' + s, M['legs'], segs=10, r2=2.7)
         box('cargo' + s, (x + o * 4.0, 0.6, 27.5), (1.6, 5.2, 6.2), 'thigh.' + s, M['legs'], bevel=0.5)
         box('flap' + s, (x + o * 4.3, 0.6, 30.4), (1.4, 5.4, 1.4), 'thigh.' + s, M['legs'], bevel=0.3)
-        box('kneepad' + s, (x, 3.3, 19.2), (5.2, 1.8, 5.2), 'shin.' + s, M['pad'], bevel=0.7)
+        if not t or torso == 'jacket':
+            box('kneepad' + s, (x, 3.3, 19.2), (5.2, 1.8, 5.2), 'shin.' + s, M['pad'], bevel=0.7)
         box('boot' + s, (x, 1.6, 3.2), (6.0, 9.6, 4.4), 'foot.' + s, M['boots'], bevel=0.9, taper=(0.94, 0.82))
         dome('toe' + s, (x, 5.4, 1.2), 3.0, 'foot.' + s, M['boots'], scale=(1.0, 1.1, 1.0), segs=10)
         box('sole' + s, (x, 1.9, 0.6), (6.4, 11.4, 1.2), 'foot.' + s, M['sole'], bevel=0.3)
@@ -179,26 +247,49 @@ def build_body(team):
         box('pgrip', (8.9, -0.8, 34.2), (1.6, 2.6, 3.2), 'thigh.R', M['black'], bevel=0.3)
         limb('legstrap', (8.9, 0.8, 26.5), (4.5, 4.3, 26.5), 1.4, 0.4, 'thigh.R', M['belt'], bevel=0.1)
     else:
-        box('satchel', (7.3, -1.2, 36.5), (3.0, 6.2, 6.2), 'hips', M['hat'], bevel=1.0)
+        box('satchel', (7.3, -1.2, 36.5), (3.0, 6.2, 6.2), 'hips', M['hat'] if torso == 'jacket' else M['rig'], bevel=1.0)
+    if torso == 'parka':
+        # parka skirt hanging over the belt
+        box('skirt', (0, 0, 39.0), (16.4, 10.6, 6.0), 'hips', M['top'], bevel=1.4, taper=(1.0, 1.05))
 
     # ---- torso: rounded abdomen + chest, broader at the shoulders
-    capsule('abdomen', (0, 0, 42.5), (0, 0, 47.5), 6.6, 'spine', M['top'], segs=12)
-    box('torso', (0, -0.2, 54.0), (15.4, 9.4, 10.6), 'chest', M['top'], bevel=2.0, taper=(1.08, 0.96))
+    bulk = 1.1 if torso == 'parka' else 1.0
+    capsule('abdomen', (0, 0, 42.5), (0, 0, 47.5), 6.6 * bulk, 'spine', M['top'], segs=12)
+    box('torso', (0, -0.2, 54.0), (15.4 * bulk, 9.4 * bulk, 10.6), 'chest', M['top'], bevel=2.0, taper=(1.08, 0.96))
     for s, x in (('L', -8.2), ('R', 8.2)):
-        dome('delt' + s, (x, 0, 56.4), 3.4, 'chest', M['top'], scale=(1.0, 1.1, 1.0), segs=12)
-    box('collar', (0, -0.6, 59.6), (8.2, 7.0, 1.6), 'chest', M['top'], bevel=0.6)
-    if t:
-        # open jacket over a chest rig with AK mag pouches, shemagh at the neck
-        box('zipper', (0, 5.0, 53.5), (0.6, 0.4, 10.5), 'chest', M['metal'], bevel=0.1)
-        box('chestrig', (0, 4.8, 49.5), (13.4, 2.4, 6.6), 'spine', M['rig'], bevel=0.6)
+        dome('delt' + s, (x * bulk, 0, 56.4), 3.4 * bulk, 'chest', M['top'], scale=(1.0, 1.1, 1.0), segs=12)
+    box('collar', (0, -0.6, 59.6), (8.2, 7.0, 1.6 if torso != 'leather' else 3.2), 'chest', M['top'], bevel=0.6)
+    if torso in ('jacket', 'parka'):
+        # open jacket over a chest rig with AK mag pouches
+        box('zipper', (0, 5.0 * bulk, 53.5), (0.6, 0.4, 10.5), 'chest', M['metal'], bevel=0.1)
+        box('chestrig', (0, 4.8 * bulk, 49.5), (13.4, 2.4, 6.6), 'spine', M['rig'], bevel=0.6)
         for k, px in enumerate((-4.4, 0.0, 4.4)):
-            box(f'akmag{k}', (px, 6.4, 49.2), (3.4, 1.8, 5.8), 'spine', M['rig'], bevel=0.4)
-            box(f'akflap{k}', (px, 6.5, 52.4), (3.6, 2.0, 1.2), 'spine', M['rig'], bevel=0.3)
-        limb('strapL', (-5.2, 4.7, 59.2), (-4.2, 5.4, 52.2), 1.7, 0.6, 'chest', M['rig'], bevel=0.1)
-        limb('strapR', (5.2, 4.7, 59.2), (4.2, 5.4, 52.2), 1.7, 0.6, 'chest', M['rig'], bevel=0.1)
-        limb('sling', (-6.5, 4.2, 59), (6.8, 4.8, 42), 1.3, 0.5, 'chest', M['belt'], bevel=0.1)
-        capsule('shemagh', (-2.6, 0.5, 60.0), (2.6, 0.5, 60.0), 2.5, 'chest', M['hat'], segs=10)
+            box(f'akmag{k}', (px, 6.4 * bulk, 49.2), (3.4, 1.8, 5.8), 'spine', M['rig'], bevel=0.4)
+            box(f'akflap{k}', (px, 6.5 * bulk, 52.4), (3.6, 2.0, 1.2), 'spine', M['rig'], bevel=0.3)
+        limb('strapL', (-5.2, 4.7 * bulk, 59.2), (-4.2, 5.4 * bulk, 52.2), 1.7, 0.6, 'chest', M['rig'], bevel=0.1)
+        limb('strapR', (5.2, 4.7 * bulk, 59.2), (4.2, 5.4 * bulk, 52.2), 1.7, 0.6, 'chest', M['rig'], bevel=0.1)
+        limb('sling', (-6.5, 4.2 * bulk, 59), (6.8, 4.8 * bulk, 42), 1.3, 0.5, 'chest', M['belt'], bevel=0.1)
+        box('backrig', (0, -5.4 * bulk, 49.5), (12.0, 1.4, 5.0), 'spine', M['rig'], bevel=0.4)
+        if torso == 'jacket':
+            capsule('shemagh', (-2.6, 0.5, 60.0), (2.6, 0.5, 60.0), 2.5, 'chest', M['hat'], segs=10)
+    elif torso == 'leather':
+        # closed leather jacket: lapels, zipper, shoulder holster under the left arm
+        box('zipper', (0, 4.9, 52.5), (0.6, 0.4, 12.0), 'chest', M['metal'], bevel=0.1)
+        for s, x in (('L', -2.6), ('R', 2.6)):
+            limb('lapel' + s, (x * 1.6, 4.4, 59.6), (x * 0.4, 5.0, 54.0), 2.4, 0.5, 'chest', M['top'], bevel=0.2)
+        limb('hstrap', (5.0, 4.6, 58.6), (-7.2, 3.0, 50.4), 1.3, 0.4, 'chest', M['belt'], bevel=0.1)
+        box('shholster', (-7.8, 2.0, 50.4), (2.2, 5.2, 4.0), 'chest', M['belt'], bevel=0.4)
+        box('shpistol', (-7.8, 1.0, 52.4), (1.6, 2.4, 2.6), 'chest', M['black'], bevel=0.3)
+        box('hem', (0, 0, 44.0), (14.6, 9.4, 2.0), 'spine', M['top'], bevel=0.6)
+    elif torso == 'tee':
+        # olive tee, crossed ammo bandolier with brass rounds, bare forearms
         box('backrig', (0, -5.4, 49.5), (12.0, 1.4, 5.0), 'spine', M['rig'], bevel=0.4)
+        limb('bando', (-6.8, 4.6, 59.2), (6.0, 5.4, 43.5), 2.6, 0.9, 'chest', M['rig'], bevel=0.2)
+        for k in range(7):
+            f = (k + 0.5) / 7
+            px, pz = -6.8 + 12.8 * f, 59.2 - 15.7 * f
+            box(f'round{k}', (px, 6.1 + 0.8 * f, pz), (1.0, 0.9, 2.2), 'chest', M['brass'], bevel=0.2)
+        capsule('neckscarf', (-2.6, 0.5, 60.0), (2.6, 0.5, 60.0), 2.3, 'chest', M['hat'], segs=10)
     else:
         # plate carrier: front + back plates, cummerbund, mags, admin, radio
         box('plateF', (0, 5.0, 52.6), (12.6, 2.6, 12.2), 'chest', M['rig'], bevel=0.9)
@@ -208,25 +299,35 @@ def build_body(team):
             box(f'mag{k}', (px, 7.0, 48.6), (3.2, 2.0, 5.6), 'chest', M['rig'], bevel=0.35)
             box(f'magtop{k}', (px, 7.1, 51.6), (3.0, 1.4, 0.8), 'chest', M['black'], bevel=0.2)
         box('admin', (0, 6.8, 55.4), (7.0, 1.4, 4.0), 'chest', M['rig'], bevel=0.3)
-        box('patch', (0, 7.55, 56.0), (3.4, 0.2, 1.8), 'chest', mat_flag(), bevel=0.05)
+        box('patch', (0, 7.55, 56.0), (3.4, 0.2, 1.8), 'chest', M['band'], bevel=0.05)
         for s, x in (('L', -5.0), ('R', 5.0)):
             limb('shstrap' + s, (x, 4.0, 58.8), (x, -4.4, 58.8), 3.0, 1.2, 'chest', M['rig'], bevel=0.3)
         box('radio', (5.6, -7.0, 54.0), (3.0, 2.2, 5.6), 'chest', M['black'], bevel=0.4)
         cyl('antenna', (6.0, -7.0, 56.8), (6.5, -7.6, 69), 0.25, 'chest', M['black'], verts=5)
         box('hydro', (0, -7.6, 50.5), (9.0, 2.2, 11.0), 'chest', M['rig'], bevel=1.0)
+        if name == 'gign':
+            # big ballistic shoulder guards
+            for s, x in (('L', -9.2), ('R', 9.2)):
+                dome('guard' + s, (x, 0.2, 56.0), 4.0, 'chest', M['pad'], scale=(0.9, 1.2, 0.9), segs=10)
 
     # ---- arms (rigid with the chest: the rifle is held up, as in CS)
-    capsule('uarmR', (8.6, 0.3, 56.8), (9.8, 5.0, 48.8), 2.9, 'chest', M['top'], segs=10, r2=2.5)
-    capsule('farmR', (9.8, 5.0, 48.8), (4.6, 11.0, 49.3), 2.5, 'chest', M['top'], segs=10, r2=2.0)
-    capsule('uarmL', (-8.6, 0.3, 56.8), (-8.8, 7.5, 50.2), 2.9, 'chest', M['top'], segs=10, r2=2.5)
-    capsule('farmL', (-8.8, 7.5, 50.2), (-1.4, 18.0, 51.3), 2.5, 'chest', M['top'], segs=10, r2=2.0)
+    fore = M['skin'] if torso == 'tee' else M['top']
+    capsule('uarmR', (8.6, 0.3, 56.8), (9.8, 5.0, 48.8), 2.9 * bulk, 'chest', M['top'], segs=10, r2=2.5 * bulk)
+    capsule('farmR', (9.8, 5.0, 48.8), (4.6, 11.0, 49.3), 2.5 * bulk, 'chest', fore, segs=10, r2=2.0)
+    capsule('uarmL', (-8.6, 0.3, 56.8), (-8.8, 7.5, 50.2), 2.9 * bulk, 'chest', M['top'], segs=10, r2=2.5 * bulk)
+    capsule('farmL', (-8.8, 7.5, 50.2), (-1.4, 18.0, 51.3), 2.5 * bulk, 'chest', fore, segs=10, r2=2.0)
+    # team armbands, a third of the way down each upper arm
+    capsule('bandR', (8.9, 1.6, 54.6), (9.2, 2.9, 52.4), 3.15 * bulk, 'chest', M['band'], segs=10)
+    capsule('bandL', (-8.65, 2.0, 54.9), (-8.7, 3.8, 53.2), 3.15 * bulk, 'chest', M['band'], segs=10)
     if not t:
         dome('elbowR', (9.9, 4.6, 48.6), 2.4, 'chest', M['pad'], scale=(1.1, 0.8, 1.0), segs=8)
         dome('elbowL', (-9.0, 7.2, 49.9), 2.4, 'chest', M['pad'], scale=(1.1, 0.8, 1.0), segs=8)
-        box('shoulderpatch', (-10.6, 1.0, 55.0), (0.3, 2.8, 2.4), 'chest', mat_flag(), bevel=0.05)
+    elif torso == 'tee':
+        capsule('sleeveR', (8.9, 1.5, 55.0), (9.4, 3.2, 51.8), 3.1, 'chest', M['top'], segs=8)
+        capsule('sleeveL', (-8.6, 2.0, 55.0), (-8.7, 4.2, 52.6), 3.1, 'chest', M['top'], segs=8)
     else:
-        capsule('sleeveR', (6.2, 8.4, 49.2), (5.4, 9.5, 49.3), 2.35, 'chest', M['top'], segs=8)
-        capsule('sleeveL', (-4.2, 14.2, 51.0), (-3.2, 15.6, 51.1), 2.35, 'chest', M['top'], segs=8)
+        capsule('sleeveR', (6.2, 8.4, 49.2), (5.4, 9.5, 49.3), 2.35 * bulk, 'chest', M['top'], segs=8)
+        capsule('sleeveL', (-4.2, 14.2, 51.0), (-3.2, 15.6, 51.1), 2.35 * bulk, 'chest', M['top'], segs=8)
     glove('R', HAND_R, (0, 1, 0), M['gloves'])
     glove('L', HAND_L, (0, 1, 0), M['gloves'])
 
@@ -237,19 +338,60 @@ def build_body(team):
     box('nose', (0, 4.9, 66.5), (1.2, 1.3, 1.9), 'head', M['head'], bevel=0.4, taper=(0.8, 0.6))
     for s, x in (('L', -4.0), ('R', 4.0)):
         box('ear' + s, (x, 0.2, 66.8), (0.8, 1.8, 2.6), 'head', M['head'], bevel=0.3)
-    if t:
+    if head == 'wrap':
         dome('wrap', (0, 0.3, 69.4), 4.7, 'head', M['hat'], scale=(1.02, 1.12, 0.8), segs=14)
         capsule('band', (-4.2, 0.3, 69.2), (4.2, 0.3, 69.2), 1.2, 'head', M['hat'], segs=8)
         limb('tail', (0, -3.9, 68.6), (0.8, -5.6, 60.5), 3.0, 0.8, 'head', M['hat'], bevel=0.2)
+    elif head == 'beanie':
+        dome('beanie', (0, 0.2, 69.2), 4.8, 'head', M['hat'], scale=(1.0, 1.1, 1.0), segs=14)
+        capsule('cuff', (-4.3, 0.2, 69.3), (4.3, 0.2, 69.3), 1.4, 'head', M['hat'], segs=8)
+        box('shades', (0, 4.7, 70.4), (6.4, 1.0, 1.2), 'head', M['lens'], bevel=0.3)
+    elif head == 'hood':
+        # fur-trimmed parka hood around the face, snow goggles
+        dome('hood', (0, -1.2, 67.6), 5.4, 'head', M['top'], scale=(1.12, 1.05, 1.3), segs=14)
+        box('hoodback', (0, -3.6, 63.8), (10.4, 4.0, 7.0), 'head', M['top'], bevel=1.6)
+        for s, x in (('L', -4.9), ('R', 4.9)):
+            capsule('fur' + s, (x, 2.8, 62.6), (x * 0.9, 2.8, 70.8), 1.5, 'head', M['hat'], segs=8)
+        capsule('furtop', (-4.4, 2.6, 71.6), (4.4, 2.6, 71.6), 1.5, 'head', M['hat'], segs=8)
+        box('goggles', (0, 4.3, 68.0), (7.2, 0.9, 1.7), 'head',
+            material('amber', plain((0.36, 0.20, 0.05), 0.12, 0.05), bevel=0.2), bevel=0.4)
+        box('gstrap', (0, 0.3, 68.0), (9.6, 8.4, 0.6), 'head', M['black'], bevel=0.1)
+    elif head == 'headband':
+        M['hair'] = material('hair', plain((0.07, 0.05, 0.04), rough=0.9, grit=0.5), h_knit, bump=0.4)
+        dome('hair', (0, 0.0, 68.8), 4.6, 'head', M['hair'], scale=(1.0, 1.12, 0.9), segs=14)
+        box('beard', (0, 2.6, 63.8), (5.8, 3.6, 3.2), 'head', M['hair'], bevel=1.2, taper=(0.9, 0.8))
+        capsule('hband', (-4.5, 0.2, 69.4), (4.5, 0.2, 69.4), 1.1, 'head', M['hat'], segs=8)
+        limb('knot', (0, -4.4, 69.2), (0.6, -6.2, 66.0), 1.4, 0.4, 'head', M['hat'], bevel=0.2)
     else:
-        dome('helmet', (0, 0.1, 68.4), 5.4, 'head', M['hat'], scale=(1.0, 1.1, 0.98), segs=16)
-        for s, x in (('L', -5.3), ('R', 5.3)):
-            box('rail' + s, (x * 0.93, 0.4, 69.6), (0.5, 5.0, 1.0), 'head', M['black'], bevel=0.15)
-            cyl('earcup' + s, (x * 0.88, 0.2, 66.4), (x * 1.08, 0.2, 66.4), 2.1, 'head', M['black'], verts=12)
-            limb('chin' + s, (x * 0.8, 0.6, 64.8), (0, 3.2, 62.2), 0.8, 0.4, 'head', M['black'], bevel=0.05)
-        box('goggles', (0, 5.1, 70.6), (7.0, 1.4, 1.9), 'head', material('lens', plain((0.05, 0.08, 0.1), 0.15, 0.05), bevel=0.2), bevel=0.4)
-        box('gstrap', (0, 0.3, 70.4), (9.9, 10.9, 0.7), 'head', M['black'], bevel=0.1)
-        box('nvgmount', (0, 5.5, 72.2), (2.2, 1.2, 1.6), 'head', M['black'], bevel=0.3)
+        # CT: hard helmet (the SAS wear a black hood under theirs is replaced
+        # by the gas mask look)
+        if head != 'gasmask':
+            dome('helmet', (0, 0.1, 68.4), 5.4 if head != 'faceshield' else 5.8, 'head', M['hat'], scale=(1.0, 1.1, 0.98), segs=16)
+            for s, x in (('L', -5.3), ('R', 5.3)):
+                box('rail' + s, (x * 0.93, 0.4, 69.6), (0.5, 5.0, 1.0), 'head', M['black'], bevel=0.15)
+                cyl('earcup' + s, (x * 0.88, 0.2, 66.4), (x * 1.08, 0.2, 66.4), 2.1, 'head', M['black'], verts=12)
+                limb('chin' + s, (x * 0.8, 0.6, 64.8), (0, 3.2, 62.2), 0.8, 0.4, 'head', M['black'], bevel=0.05)
+        else:
+            dome('hoodcap', (0, 0.1, 68.2), 4.9, 'head', M['head'], scale=(1.0, 1.1, 1.05), segs=14)
+            capsule('maskstrap', (-4.6, 0.0, 68.6), (4.6, 0.0, 68.6), 0.6, 'head', M['black'], segs=6)
+        if head == 'goggles':
+            box('goggles', (0, 5.1, 70.6), (7.0, 1.4, 1.9), 'head', M['lens'], bevel=0.4)
+            box('gstrap', (0, 0.3, 70.4), (9.9, 10.9, 0.7), 'head', M['black'], bevel=0.1)
+            box('nvgmount', (0, 5.5, 72.2), (2.2, 1.2, 1.6), 'head', M['black'], bevel=0.3)
+        elif head == 'visor_up':
+            box('visor', (0, 4.6, 72.4), (9.0, 1.2, 3.0), 'head',
+                material('smoke', plain((0.12, 0.16, 0.18), 0.1, 0.05), bevel=0.2), bevel=0.4)
+            for s, x in (('L', -4.9), ('R', 4.9)):
+                cyl('pivot' + s, (x * 0.95, 1.6, 70.2), (x * 1.08, 1.6, 70.2), 0.9, 'head', M['black'], verts=8)
+        elif head == 'faceshield':
+            box('shield', (0, 5.5, 67.6), (8.8, 0.6, 5.6), 'head',
+                material('clear', plain((0.10, 0.15, 0.21), 0.06, 0.02), bevel=0.2), bevel=0.5, taper=(1.0, 0.85))
+            box('brim', (0, 5.0, 70.8), (10.2, 2.0, 1.2), 'head', M['hat'], bevel=0.4)
+        elif head == 'gasmask':
+            box('mask', (0, 4.6, 65.8), (6.6, 2.0, 5.6), 'head', M['black'], bevel=1.2, taper=(0.85, 0.8))
+            for s, x in (('L', -1.8), ('R', 1.8)):
+                cyl('eye' + s, (x, 5.2, 67.8), (x, 6.0, 67.8), 1.35, 'head', M['lens'], verts=12)
+            cyl('filter', (0.8, 5.4, 64.0), (2.2, 8.2, 63.0), 1.7, 'head', M['black'], verts=12)
     return M
 
 
@@ -541,7 +683,7 @@ def build(team):
     tris = sum(len(p.vertices) - 2 for p in body.data.polygons)
     ltris = sum(len(p.vertices) - 2 for p in lod.data.polygons)
     print(f'soldier_{team}: {tris} triangles (LOD {ltris})')
-    path = os.path.join(OUT, 'hostage.glb' if team == 'H' else f'soldier_{team.lower()}.glb')
+    path = os.path.join(OUT, 'hostage.glb' if team == 'H' else f'skin_{team}.glb')
     bpy.ops.object.select_all(action='DESELECT')
     arm_ob.select_set(True); body.select_set(True); lod.select_set(True)
     bpy.ops.export_scene.gltf(
@@ -553,5 +695,5 @@ def build(team):
     print('wrote', path, f'{os.path.getsize(path) / 1024:.0f} KB')
 
 
-for team in (sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else None) or ('T', 'CT', 'H'):
+for team in (sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else None) or (*SKINS, 'H'):
     build(team)

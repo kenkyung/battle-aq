@@ -300,3 +300,20 @@ export const PENETRATION = { wood: 0.7, metal: 0.5, stone: 0.0, default: 0.0 };
 
 // Team ids.
 export const TEAM = { T: 1, CT: 2 };
+
+// Player skins (M19): four per team, index 0 is the team default (also the
+// cl_minmodels model). Models: assets/models/skin_<id>.glb.
+export const SKINS = {
+  1: [
+    { id: 'phoenix', name: 'Phoenix Connexion', desc: 'Desert jacket, balaclava, head wrap' },
+    { id: 'leet', name: 'Elite Crew', desc: 'Leather jacket, red mask, beanie' },
+    { id: 'arctic', name: 'Arctic Avengers', desc: 'White parka, fur hood, snow goggles' },
+    { id: 'guerilla', name: 'Guerilla Warfare', desc: 'Olive fatigues, bandolier, headband' },
+  ],
+  2: [
+    { id: 'seal', name: 'Seal Team 6', desc: 'Urban camo, helmet, goggles' },
+    { id: 'gsg9', name: 'GSG-9', desc: 'Blue-grey, helmet with visor' },
+    { id: 'sas', name: 'SAS', desc: 'All black, gas mask' },
+    { id: 'gign', name: 'GIGN', desc: 'Navy, face shield, shoulder guards' },
+  ],
+};

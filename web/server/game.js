@@ -751,7 +751,7 @@ export class Game {
       money: this.competitive ? ECONOMY.startMoney : ECONOMY.warmupMoney,
       inv: {}, ammo: {}, weapon: 'knife', nades: {}, blindUntil: 0,
       nextFire: 0, lastFire: 0, burst: 0, reloadUntil: 0, recoil: newRecoil(), speed: 0, modes: {}, burstIdx: 0, shellAt: 0,
-      kills: 0, deaths: 0,
+      kills: 0, deaths: 0, skin: Math.floor(Math.random() * 4),
     };
     this.resetLoadout(p);
     return p;
@@ -1162,6 +1162,11 @@ export class Game {
         break;
       case 'jointeam':
         this.joinTeam(p, String(msg.team || 'auto'));
+        if (Number.isInteger(msg.skin)) p.skin = Math.max(0, Math.min(3, msg.skin));
+        break;
+      case 'skin':
+        // appearance (M19): 0-3, anything else = random (CS auto-select)
+        p.skin = Number.isInteger(msg.i) && msg.i >= 0 && msg.i <= 3 ? msg.i : Math.floor(Math.random() * 4);
         break;
       case 'suicide':
         // console "kill": -1 frag, as in CS
@@ -1851,7 +1856,7 @@ export class Game {
       // snapshot (the client keeps the last values) — bandwidth
       players: [...this.players.values()].map((p) => (this.hiddenFrom(viewer, p, t) ? { id: p.id, team: p.team, alive: true, hid: 1,
         ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined } : {}) } : {
-        id: p.id, team: p.team, pos: r1(p.pos), yaw: r3(p.yaw), pitch: r3(p.pitch),
+        id: p.id, team: p.team, pos: r1(p.pos), yaw: r3(p.yaw), pitch: r3(p.pitch), skin: p.skin || undefined,
         alive: p.alive, crouching: p.crouching || undefined, moving: p.moving || undefined, shield: p.shield ? 1 : undefined,
         weapon: p.weapon, mode: p.modes[p.weapon] || undefined, reloading: (!!p.reloadUntil || !!p.shellAt) || undefined,
         ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined } : {}),
@@ -1884,7 +1889,7 @@ export class Game {
 
   publicPlayer(p) {
     return {
-      id: p.id, name: p.name, team: p.team, pos: p.pos, yaw: p.yaw,
+      id: p.id, name: p.name, team: p.team, pos: p.pos, yaw: p.yaw, skin: p.skin,
       hp: p.hp, alive: p.alive, weapon: p.weapon, bot: !!p.bot,
       kills: p.kills, deaths: p.deaths,
     };

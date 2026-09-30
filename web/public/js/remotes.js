@@ -1,4 +1,4 @@
-// Remote players: the Blender soldier models (soldier_t / soldier_ct.glb),
+// Remote players: the Blender skins (skin_<id>.glb, four per team, M19),
 // smoothly interpolated between server snapshots. No local simulation — they
 // render where the server says they are.
 //
@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { clone as cloneSkinned } from '../vendor/addons/utils/SkeletonUtils.js';
 import { TEAM } from '../shared/constants.js';
 import { bodyBox } from '../shared/physics.js';
-import { Models, weaponModel } from './assets.js';
+import { Models, weaponModel, skinModel } from './assets.js';
 
 // Right-hand grip in model space (three.js coords; Blender (3.8, 13.4, 49.4)).
 const GRIP = new THREE.Vector3(3.8, 49.6, -13.4);
@@ -57,9 +57,21 @@ export class Remotes {
   ensure(p) {
     let r = this.players.get(p.id);
     if (r && p.team && r.team !== p.team) { this.remove(p.id); r = null; }
-    if (r) return r;
-    const team = p.team || TEAM.T;
-    const src = Models.soldiers[team];
+    // skin (M19): only full entries carry it (0 is omitted); cl_minmodels
+    // shows every player as their team's default model
+    const skinIdx = this.minModels ? 0 : p.pos ? (p.skin || 0) : r ? r.skinIdx : (p.skin || 0);
+    const team = p.team || (r && r.team) || TEAM.T;
+    const sk = skinModel(team, skinIdx);
+    if (r && r.skinId !== sk.id && sk.gltf) {
+      const keep = { cur: r.cur, tgt: r.tgt, buf: r.buf, alive: r.alive };
+      this.remove(p.id);
+      r = this.ensure({ ...p, team, skin: skinIdx, pos: p.pos || keep.cur.pos });
+      Object.assign(r, keep);
+      if (!r.alive && r.actions.death) { this.play(r, 'death', 0); r.actions.death.time = r.actions.death.getClip().duration; }
+      return r;
+    }
+    if (r) { r.skinIdx = skinIdx; return r; }
+    const src = sk.gltf;
     const group = new THREE.Group();
     let model = null, mixer = null, actions = {}, bones = {};
     const lod = { hi: null, lo: null };
@@ -92,7 +104,7 @@ export class Remotes {
     this.scene.add(group);
 
     r = {
-      id: p.id, team, name: p.name || `#${p.id}`, group, model, mixer, actions, bones, tag, lod, animAcc: 0,
+      id: p.id, team, skinId: src ? sk.id : null, skinIdx, name: p.name || `#${p.id}`, group, model, mixer, actions, bones, tag, lod, animAcc: 0,
       cur: { pos: [...p.pos], yaw: p.yaw || 0, pitch: 0 },
       tgt: { pos: [...p.pos], yaw: p.yaw || 0, pitch: 0, crouching: false },
       alive: p.alive !== false, weapon: null, gun: null, muzzle: null,

@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from '../vendor/addons/loaders/GLTFLoader.js';
+import { SKINS, TEAM } from '../shared/constants.js';
 
 const BASE = new URL('../assets/', import.meta.url);
 export const assetUrl = (p) => new URL(p, BASE).href;
@@ -37,13 +38,27 @@ export function loadTexture(path, { srgb = true, repeat = true } = {}) {
 }
 
 // Shared models, loaded once at startup.
-export const Models = { weapons: null, soldiers: {}, hostage: null };
+// Skins (M19): the two team defaults are preloaded, the other six load the
+// first time someone wears them (skinModel falls back to the default until then).
+export const Models = { weapons: null, skins: {}, hostage: null };
+const skinLoading = new Set();
+
+export function skinModel(team, idx) {
+  const list = SKINS[team] || SKINS[TEAM.T];
+  const want = list[idx] || list[0];
+  if (Models.skins[want.id]) return { id: want.id, gltf: Models.skins[want.id] };
+  if (!skinLoading.has(want.id)) {
+    skinLoading.add(want.id);
+    loadGLB(`models/skin_${want.id}.glb`).then((g) => { Models.skins[want.id] = g; }).catch(() => {});
+  }
+  return { id: list[0].id, gltf: Models.skins[list[0].id] || null };
+}
 
 export async function preloadModels(onProgress = () => {}) {
   const jobs = [
     loadGLB('models/weapons.glb').then((g) => { Models.weapons = g; }),
-    loadGLB('models/soldier_t.glb').then((g) => { Models.soldiers[1] = g; }),
-    loadGLB('models/soldier_ct.glb').then((g) => { Models.soldiers[2] = g; }),
+    loadGLB('models/skin_phoenix.glb').then((g) => { Models.skins.phoenix = g; }),
+    loadGLB('models/skin_seal.glb').then((g) => { Models.skins.seal = g; }),
     loadGLB('models/hostage.glb').then((g) => { Models.hostage = g; }),
   ];
   let done = 0;

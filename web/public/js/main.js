@@ -19,7 +19,7 @@ import { NadeView } from './nades3d.js';
 import { Sfx, surfaceOf } from './sfx.js';
 import { preloadModels, setAnisotropy } from './assets.js';
 import { getMap, MAP_LIST } from '../shared/maps.js';
-import { WEAPONS, TEAM, PLAYER, CROSSHAIR, HOSTAGE } from '../shared/constants.js';
+import { WEAPONS, TEAM, PLAYER, CROSSHAIR, HOSTAGE, SKINS } from '../shared/constants.js';
 import { inBuyZone, BUY_MENU } from '../shared/economy.js';
 import { raycast, tag } from '../shared/physics.js';
 import { tagModifier } from '../shared/ballistics.js';
@@ -428,6 +428,8 @@ async function onWelcome(welcome) {
     if (p.id !== myId) remotes.setTarget(p);
   }
   setTeam(welcome.you.team);
+  if (savedSkin(welcome.you.team) >= 0) sendSkin(welcome.you.team, savedSkin(welcome.you.team));
+  remotes.minModels = minModels;
   const me = welcome.you;
   if (me.alive) player.spawnAt(me.pos, me.yaw);
   else { player.state.pos = [...me.pos]; player.alive = false; }
@@ -758,7 +760,11 @@ net.on('match_start', () => {
   hud.hideMatchEnd();
   if (player) { player.kills = 0; player.deaths = 0; }
 });
-net.on('team', (msg) => setTeam(msg.team));
+net.on('team', (msg) => {
+  setTeam(msg.team);
+  if (skinAfterTeam) { skinAfterTeam = false; openSkinMenu(msg.team); }
+  else if (savedSkin(msg.team) >= 0) sendSkin(msg.team, savedSkin(msg.team));
+});
 net.on('halftime', () => hud.banner('HALFTIME — SWITCHING SIDES', null, 4000));
 
 net.on('round_end', (msg) => {
@@ -914,6 +920,13 @@ con.cmd('kill', 'suicide (-1 frag)', () => net.send({ t: 'suicide' }));
 con.cmd('say', 'say <text>', (a) => net.send({ t: 'chat', text: a.join(' ') }));
 con.cmd('jointeam', 'jointeam 1 | 2 | 5 (auto)', (a) => net.send({ t: 'jointeam', team: { 1: 'T', 2: 'CT' }[a[0]] || 'auto' }));
 con.cmd('chooseteam', 'open the team menu', () => { con.toggle(false); openTeamMenu(true); });
+con.cmd('chooseappearance', 'pick your player model', () => { con.toggle(false); openSkinMenu(myTeam); });
+let minModels = store.get('baq_minmodels', '0') === '1';
+con.cvar('cl_minmodels', minModels ? '1' : '0', 'show every player as their team\'s default model', (v) => {
+  minModels = v === '1' || v === 'true';
+  store.set('baq_minmodels', minModels ? '1' : '0');
+  if (remotes) remotes.minModels = minModels;
+});
 con.cmd('status', 'players, scores and latency', () => {
   con.print(`map ${map ? map.id : '?'} · ${round.rulesName || ''} · tick ${round.tickrate || '?'}`, 'dim');
   for (const r of roster.values()) con.print(`#${String(r.id).padEnd(4)}${(r.name || '').padEnd(18)}${r.team === TEAM.T ? 'T ' : 'CT'} ${String(r.k).padStart(3)} ${String(r.d).padStart(3)}  ${r.bot ? 'BOT' : (r.ping ?? '?') + ' ms'}`, 'dim');
@@ -1051,7 +1064,45 @@ function openTeamMenu(on) {
   } else if (running) input.lock();
 }
 function teamMenuOpen() { return !$('teammenu').classList.contains('hidden'); }
-for (const b of document.querySelectorAll('#teammenu .tm')) b.addEventListener('click', () => { net.send({ t: 'jointeam', team: b.dataset.team }); openTeamMenu(false); });
+function pickTeam(team) {
+  if (team === (myTeam === TEAM.CT ? 'CT' : myTeam === TEAM.T ? 'T' : '')) {
+    openTeamMenu(false);         // same side: just change the look
+    return openSkinMenu(myTeam);
+  }
+  net.send({ t: 'jointeam', team });
+  openTeamMenu(false);
+  skinAfterTeam = true;          // the appearance menu opens once the server confirms
+}
+for (const b of document.querySelectorAll('#teammenu .tm')) b.addEventListener('click', () => pickTeam(b.dataset.team));
+
+// ------------------------------------------------------------------ appearance (M19)
+
+let skinAfterTeam = false, skinMenuTeam = 0;
+const savedSkin = (team) => { const v = store.get('baq_skin_' + team, ''); return v === '' ? -1 : parseInt(v, 10); };
+function sendSkin(team, i) {
+  if (i >= 0) store.set('baq_skin_' + team, String(i));
+  net.send({ t: 'skin', i });
+}
+function openSkinMenu(team) {
+  skinMenuTeam = team || 0;
+  const on = !!skinMenuTeam && !!SKINS[team];
+  $('skinmenu').classList.toggle('hidden', !on);
+  input.menuOpen = on || teamMenuOpen();
+  if (!on) { if (running && !teamMenuOpen()) input.lock(); return; }
+  const cls = team === TEAM.CT ? 'ct' : 't', cur = savedSkin(team);
+  $('skinTitle').textContent = team === TEAM.CT ? 'COUNTER-TERRORIST APPEARANCE' : 'TERRORIST APPEARANCE';
+  $('skinOpts').innerHTML = SKINS[team].map((s, i) =>
+    `<button class="sk ${cls}${i === cur ? ' cur' : ''}" data-i="${i}"><img src="assets/ui/skins/${s.id}.jpg" alt=""><b>${i + 1}</b>${s.name}<small>${s.desc}</small></button>`).join('')
+    + `<button class="sk auto" data-i="-1"><b>5</b>AUTO-SELECT<small>a random look each time</small></button>`;
+  for (const b of $('skinOpts').querySelectorAll('.sk')) b.addEventListener('click', () => chooseSkin(parseInt(b.dataset.i, 10)));
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function chooseSkin(i) {
+  if (i < 0) store.set('baq_skin_' + skinMenuTeam, '');
+  sendSkin(skinMenuTeam, i);
+  openSkinMenu(0);
+}
+function skinMenuOpen() { return !$('skinmenu').classList.contains('hidden'); }
 net.on('team_fail', (msg) => { hud.centerMsg(msg.reason); setTimeout(() => hud.centerMsg(''), 2000); });
 
 // ------------------------------------------------------------------ MOTD
@@ -1126,7 +1177,13 @@ input.onKey = (code, e, down) => {
   if (teamMenuOpen() && down) {
     if (code === 'Escape' || code === 'Digit0') { openTeamMenu(false); return; }
     const pick = { Digit1: 'T', Digit2: 'CT', Digit5: 'auto' }[code];
-    if (pick) { net.send({ t: 'jointeam', team: pick }); openTeamMenu(false); }
+    if (pick) pickTeam(pick);
+    return;
+  }
+  if (skinMenuOpen() && down) {
+    if (code === 'Escape' || code === 'Digit0') { openSkinMenu(0); return; }
+    const i = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: -1 }[code];
+    if (i !== undefined) chooseSkin(i);
     return;
   }
   if (code === 'KeyM' && down && !input.typing) { openTeamMenu(true); return; }

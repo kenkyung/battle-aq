@@ -296,19 +296,34 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       GPU time in net_graph, installable PWA (manifest + service worker).
 - [x] `server/extras.test.js`.
 
-## M19 — Player models and team skins
-- [ ] Four skins per side, CS-style silhouettes so teams read at a glance:
-      T — Phoenix (tan jacket, balaclava), Elite (dark suit, beret),
-      Arctic (white parka, goggles), Guerilla (olive fatigues, bandana);
-      CT — SEAL (navy + helmet), GSG-9 (green, visor helmet), SAS (black
-      + gas mask), GIGN (light blue, ballistic visor).
-- [ ] Team colour language: Ts warm/earth tones, CTs cool blues/greys + the
-      helmet silhouette; brighter shoulder patches visible at range.
-- [ ] Improved base mesh: better hands, boots, vest/gear pieces, face detail.
-- [ ] Appearance menu after picking a team (CS "choose model"), random for
-      bots; skin index in snapshots; cl_minmodels option (one model per team).
+## M19 — Player models and team skins  [done]
+- [x] Four skins per side (`art/blender/build_characters.py` SKINS):
+      T — Phoenix Connexion (desert jacket, balaclava, head wrap), Elite Crew
+      (leather jacket, red mask, beanie), Arctic Avengers (white parka, fur
+      hood, snow goggles), Guerilla Warfare (olive tee, bandolier, headband,
+      beard); CT — Seal Team 6 (urban camo, goggles), GSG-9 (blue-grey, visor
+      helmet), SAS (all black, gas mask), GIGN (navy, face shield, shoulder
+      guards).
+- [x] Team colour language: Ts warm / earth tones with soft headgear, CTs cool
+      blues / black with helmets or a gas mask and a plate carrier; every
+      model wears a bright team armband on both arms (orange T, blue CT) and
+      CTs a blue chest patch.
+- [x] Per-skin gear on the shared rig: parka skirt + hood, leather lapels +
+      shoulder holster, bandolier with brass rounds + bare forearms,
+      ballistic shoulder guards, visors, gas mask with filter.
+- [x] Appearance menu after picking a team (1-4, 5 auto-select, portraits
+      rendered from the models), remembered per team; `chooseappearance`;
+      bots pick at random; the skin index rides in snapshots; the six
+      non-default skins load on first sight; `cl_minmodels 1` shows team
+      defaults only.
+- [ ] Later: per-skin first-person sleeves / gloves.
 
 ## M20 — New maps
+- [ ] fy_pool_day2: the classic pool-day fun map (house on each side, deep
+      pool in the middle to swim through, weapons lying on the ground).
+- [ ] fy_snow: snowy fy courtyard, crates and walls, guns on the floor.
+- [ ] An original fy map built for quick deathmatch fights.
+- [ ] fy rules: weapons spawn on the floor each round, short rounds, no buy.
 - [ ] de_aq_nuke-style: two stacked sites (outside + ramp, vents between),
       crouch-only vents, ladders.
 - [ ] de_aq_train-style: rail yard, trains as cover, ladders onto the cars.
