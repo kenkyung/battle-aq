@@ -228,11 +228,21 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       keeps the rifle (radio "Team, fall back!").
 - [x] `server/bots.test.js`; sims report plans / economy per round.
 
-## M15 — Map parity
-- [ ] Faithful-scale layouts of the classic maps (dust2-, nuke-, train-
-      style) with doors, breakable glass / vents, ladders, water, skyboxes.
-- [ ] Map pipeline: author maps in a simple editor format, validate routes,
-      bake in Blender (existing art/blender/build_maps.py).
+## M15 — Map parity  [done]
+- [x] Map author format: open areas (x/z extents, floor height, optional
+      roof) carved out of solid by shared/mapgen.js into merged wall,
+      raised-floor and roof boxes — classic-scale layouts in a few dozen
+      lines.
+- [x] de_aq_dust2: dust2-style flow (long A through the long doors, short A
+      up the catwalk, mid doors, roofed upper / lower tunnels to B, CT spawn
+      between the sites), lit tunnels, props, baked in Blender.
+- [x] Doors (func_door): E slides them, collision moves on server and
+      client, bots open doors on their route; reset each round.
+- [x] Breakable glass (func_breakable): bullets shatter it and carry on,
+      restored each round; cs_aq_office's lobby windows are glass now.
+- [x] tools/validate-maps.mjs in the test suite: routes to every
+      objective, spawns / hostages clear of geometry, collider budget.
+- [ ] Later: nuke / train-style layouts, vents, more ladders.
 
 ## M16 — Modes and servers
 - [ ] VIP (as_) mode, deathmatch / warmup DM, custom room settings.

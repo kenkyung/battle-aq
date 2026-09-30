@@ -46,6 +46,7 @@ export const THEMES = {
     sunDir: [0.4, 0.8, -0.45], sunColor: 'fff4e0', sunStrength: 3.4,
     skyStrength: 1.1, clouds: 0.65, skyline: 'jungle',
   },
+  de_aq_dust2: null,   // filled from de_aq_dust below
   cs_aq_office: {
     mats: {
       floor:    { tex: 'snow',         tile: 256 },
@@ -97,5 +98,7 @@ export const THEMES = {
     skyStrength: 0.95, clouds: 0.3, skyline: 'town',
   },
 };
+
+THEMES.de_aq_dust2 = THEMES.de_aq_dust;
 
 export function themeFor(mapId) { return THEMES[mapId] || THEMES.de_aq_dust; }

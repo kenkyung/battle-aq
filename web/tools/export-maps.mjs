@@ -19,7 +19,7 @@ for (const map of MAP_LIST) {
     sun: map.sun, ambient: map.ambient,
     // level geometry without props (those are modelled separately, over the
     // same footprints the server collides with)
-    boxes: buildColliders({ ...map, props: [] }).map((c) => ({ min: c.min, max: c.max, mat: c.mat })),
+    boxes: buildColliders({ ...map, props: [] }).filter((c) => !c.door && !c.glass).map((c) => ({ min: c.min, max: c.max, mat: c.mat })),   // doors / glass are live meshes
     props: map.props || [],
     water: (map.water || []).map((w) => ({ y: w.y, w: w.w, d: w.d, pos: w.pos || [0, 0] })),
     bombsites: map.bombsites || {},

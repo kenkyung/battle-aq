@@ -197,6 +197,14 @@ const RECIPES = {
       h.osc('sine', f * 1.51, f * 1.5, h.env(h.out, { at, a: 0.0003, d: 0.03, peak: pk * 0.5 }), { at, dur: 0.05 });
     }
   }],
+  glass_break: [1.0, (h) => {
+    h.noise(h.filter('highpass', 2500, 0.7, h.env(h.out, { a: 0.001, d: 0.25, peak: 1 })), { dur: 0.5 });
+    for (let i = 0; i < 14; i++) { const at = h.rand() * 0.6; const f = 3000 + h.rand() * 5000; h.osc('sine', f, f * 0.98, h.env(h.out, { at, a: 0.0005, d: 0.04 + h.rand() * 0.05, peak: 0.2 + h.rand() * 0.2 }), { at, dur: 0.12 }); }
+  }],
+  door_move: [0.7, (h) => {
+    h.noise(h.filter('lowpass', 500, 0.8, h.env(h.out, { a: 0.05, d: 0.45, peak: 0.6, hold: 0.1 })), { dur: 0.6 });
+    h.osc('sine', 70, 60, h.env(h.out, { at: 0.45, a: 0.002, d: 0.12, peak: 0.6 }), { at: 0.45, dur: 0.2 });
+  }],
   shell_shotgun: [0.5, (h) => {
     for (const at of [0, 0.12]) h.noise(h.filter('bandpass', 900, 1.5, h.env(h.out, { at, a: 0.001, d: 0.04, peak: 0.5 })), { at, dur: 0.08 });
   }],

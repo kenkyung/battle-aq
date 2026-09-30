@@ -140,7 +140,16 @@ export function buildColliders(map) {
   for (const c of map.columns) out.push(columnBox(c));
   out.push(...coverCrates(map));
   for (const p of (map.props || [])) out.push(...propColliders(p));
+  // doors (closed) and breakable glass: flagged, the game moves / removes them
+  for (const d of (map.doors || [])) out.push({ min: d.min.slice(), max: d.max.slice(), mat: d.mat || 'wood', door: d.id });
+  for (const g of (map.glass || [])) out.push({ min: g.min.slice(), max: g.max.slice(), mat: 'glass', glass: g.id });
   return out;
+}
+
+// where a door's collider sits, open or closed
+export function doorBoxAt(door, open) {
+  const o = open ? door.open : [0, 0, 0];
+  return { min: [0, 1, 2].map((i) => door.min[i] + o[i]), max: [0, 1, 2].map((i) => door.max[i] + o[i]) };
 }
 
 // Player AABB from feet position and stance.

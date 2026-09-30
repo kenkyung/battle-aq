@@ -23,7 +23,7 @@ LAN players:                 http://192.168.x.x:8080
 
 Everyone (you included) opens one of those URLs, enters a name, hits PLAY.
 Options: `node server/index.js --port 9000 --map de_aq_aztec --host 0.0.0.0`
-(maps: `de_aq_dust`, `de_aq_inferno`, `de_aq_aztec`, `cs_aq_office`, `cs_aq_assault`, `cs_aq_italy`;
+(maps: `de_aq_dust`, `de_aq_dust2`, `de_aq_inferno`, `de_aq_aztec`, `cs_aq_office`, `cs_aq_assault`, `cs_aq_italy`;
 `PORT`/`HOST`/`MAP` env vars work too).
 
 The client uses only relative URLs, so it also runs behind a reverse-proxy

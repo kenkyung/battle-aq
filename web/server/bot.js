@@ -372,6 +372,15 @@ export class BotBrain {
   think(dt, now) {
     const g = this.game, p = this.p;
     if (!p.alive) return;
+    // a closed door in the way: open it (the nav graph walks through doors)
+    if (g.map.doors && now > (this.doorCheck || 0)) {
+      this.doorCheck = now + 0.3;
+      for (const c of g.colliders) {
+        if (!c.door || g.doorOpen[c.door]) continue;
+        const q = [Math.max(c.min[0], Math.min(c.max[0], p.pos[0])), Math.max(c.min[2], Math.min(c.max[2], p.pos[2]))];
+        if (Math.hypot(q[0] - p.pos[0], q[1] - p.pos[2]) < 70) { g.useDoor(p); break; }
+      }
+    }
     decayPunch(p.recoil, dt);
     if (g.phase === 'matchend' || g.phase === 'end' && !this.target) { this.move(dt, null, now); return; }
     if (!this.bought && (g.phase === 'freeze' || g.phase === 'warmup' || (g.phase === 'round' && g.canBuy(p) === null))) this.buy();

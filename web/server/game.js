@@ -29,7 +29,7 @@ import {
 } from '../shared/economy.js';
 import { newRecoil, resetRecoil, shotSpread, spreadDir, baseDamage, armorAbsorb, tagModifier } from '../shared/ballistics.js';
 import {
-  buildColliders, playerBox, aabbOverlap, hitBox, raycast, raycastPlayers, norm, len, sub, movePlayer, tag, bodyBox, waterLevel,
+  buildColliders, doorBoxAt, playerBox, aabbOverlap, hitBox, raycast, raycastPlayers, norm, len, sub, movePlayer, tag, bodyBox, waterLevel,
 } from '../shared/physics.js';
 import { navFor } from './nav.js';
 import { radioText } from '../shared/radio.js';
@@ -93,7 +93,10 @@ export class Game {
   loadMap(mapId) {
     this.map = getMap(mapId);
     this.colliders = buildColliders(this.map);
-    this.nav = navFor(this.map, this.colliders);
+    // bots path through doors (they open them) but not through glass
+    this.nav = navFor(this.map, this.colliders.filter((c) => !c.door));
+    this.doorOpen = {};
+    this.glassBroken = new Set();
     // penetration material per palette key, from the texture the theme uses
     const mats = (themeFor(this.map.id) || {}).mats || {};
     this._matClass = {};
@@ -263,6 +266,7 @@ export class Game {
     this.plantedThisRound = false;
     this.nades = []; this.smokes = [];
     this.drops = [];              // guns on the floor are cleared each round (CS)
+    this.resetWorld();
     this.planting.clear(); this.defusing.clear();
     this.buyEndsAt = now() + this.rules.freezetime + this.rules.buytime;
     this.setPhase('freeze', this.rules.freezetime);
@@ -595,6 +599,7 @@ export class Game {
       bomb: this.bombInfo(p),
       smokes: this.smokes.map((s2) => ({ pos: s2.pos, left: s2.until - now() })),
       motd: this.motd(),
+      doors: this.doorOpen, glassBroken: [...this.glassBroken],
     });
     this.sendInv(p);
     this.broadcast({ t: 'spawn', player: this.publicPlayer(p) }, id);
@@ -783,6 +788,57 @@ export class Game {
       if (score > bestScore) { bestScore = score; best = yaw; }
     }
     return (this._spawnYaw[team] = best);
+  }
+
+  // ------------------------------------------------------------- doors + glass (M15)
+
+  // E next to a door opens / closes it (func_door); true if one was used
+  useDoor(p) {
+    const eye = [p.pos[0], p.pos[1] + 40, p.pos[2]];
+    let best = null, bd = 96;
+    for (const c of this.colliders) {
+      if (!c.door) continue;
+      const q = [0, 1, 2].map((i) => Math.max(c.min[i], Math.min(c.max[i], eye[i])));
+      const d = Math.hypot(q[0] - eye[0], q[2] - eye[2]);
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (!best) return false;
+    const t = now();
+    if (t < (this._doorAt?.[best.door] || 0)) return true;          // still moving
+    (this._doorAt ||= {})[best.door] = t + 0.6;
+    this.setDoor(best.door, !this.doorOpen[best.door]);
+    return true;
+  }
+
+  setDoor(id, open) {
+    const d = (this.map.doors || []).find((x) => x.id === id);
+    const c = this.colliders.find((x) => x.door === id);
+    if (!d || !c) return;
+    this.doorOpen[id] = open;
+    const b = doorBoxAt(d, open);
+    c.min = b.min; c.max = b.max;
+    this.broadcast({ t: 'door', id, open });
+  }
+
+  // a bullet hit a pane: it breaks for everyone until the next round
+  breakGlass(box, point) {
+    if (this.glassBroken.has(box.glass)) return;
+    this.glassBroken.add(box.glass);
+    const i = this.colliders.indexOf(box);
+    if (i >= 0) this.colliders.splice(i, 1);
+    this.broadcast({ t: 'glass', id: box.glass, point });
+  }
+
+  // new round: doors shut, glass restored (CS restores breakables)
+  resetWorld() {
+    for (const d of this.map.doors || []) if (this.doorOpen[d.id]) this.setDoor(d.id, false);
+    if (this.glassBroken.size) {
+      for (const g of this.map.glass || []) {
+        if (this.glassBroken.has(g.id)) this.colliders.push({ min: g.min.slice(), max: g.max.slice(), mat: 'glass', glass: g.id });
+      }
+      this.glassBroken.clear();
+      this.broadcast({ t: 'glass_reset' });
+    }
   }
 
   // ------------------------------------------------------------- usercmds (M11)
@@ -1011,6 +1067,8 @@ export class Game {
         this.setPlanting(p, !!msg.on);
         break;
       case 'defuse':
+        // E: a door within reach first (unless the bomb is right here)
+        if (msg.on && p.alive && !this.canDefuse(p) && this.useDoor(p)) break;
         if (msg.on && this.hostageMode) { this.useHostage(p); break; }
         this.setDefusing(p, !!msg.on);
         break;
@@ -1219,11 +1277,12 @@ export class Game {
       }
       if (w.pellets) {
         const world = raycast(origin, shotDir, this.colliders, w.range);
+        if (world && world.box.glass) { this.breakGlass(world.box, world.point); continue; }
         const ph = raycastPlayers(origin, shotDir, others, w.range, p.id);
         if (ph && (!world || ph.t < world.t)) this.addHit(total, ph.id, baseDamage(p.weapon, ph.part, ph.t, mode), ph, false);
         continue;
       }
-      const tr = traceBullet({ origin, dir: shotDir, colliders: this.colliders, targets: others, exclude: p.id, w, matOf: this.matOf });
+      const tr = traceBullet({ origin, dir: shotDir, colliders: this.colliders, targets: others, exclude: p.id, w, matOf: this.matOf, onGlass: (b, pt) => this.breakGlass(b, pt) });
       for (const h of tr.hits) this.addHit(total, h.id, h.dmg, h, h.pen);
       pens = tr.exits;
     }

@@ -33,7 +33,7 @@ function inside(p, colliders) {
 // opts: { origin, dir, colliders, targets: [{id, box}], exclude, w (weapon stats),
 //         matOf(collider) -> class, maxDist }
 // -> { hits: [{ id, part, point, dmg, dist, pen }], impacts: [point], exits: [point] }
-export function traceBullet({ origin, dir, colliders, targets, exclude, w, matOf, maxDist = 8192 }) {
+export function traceBullet({ origin, dir, colliders, targets, exclude, w, matOf, maxDist = 8192, onGlass = null }) {
   const [power, penRange] = BULLETS[w.caliber] || [0, 0];
   let left = w.pen || 0;
   let src = origin, range = maxDist, dmg = w.dmg, total = 0, pens = 0;
@@ -46,6 +46,14 @@ export function traceBullet({ origin, dir, colliders, targets, exclude, w, matOf
     const player = ph && (!wall || ph.t < wall.t);
     const hit = player ? ph : wall;
     if (!hit) break;
+    // glass shatters and the bullet carries on (no penetration used up)
+    if (!player && hit.box.glass && onGlass) {
+      onGlass(hit.box, hit.point);
+      total += hit.t;
+      range -= hit.t;
+      src = [hit.point[0] + dir[0] * 0.5, hit.point[1] + dir[1] * 0.5, hit.point[2] + dir[2] * 0.5];
+      continue;
+    }
     total += hit.t;
     dmg *= Math.pow(w.rangeMod, hit.t / 500);
     if (player) {

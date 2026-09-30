@@ -60,7 +60,7 @@ const office = {
     // building shell (concrete, 192 high), carpet floor, ceiling
     G(0, -416, 2688, 1728, 'carpet', 2, 4),
     ...wallX(-1280, -1360, 1360, [], 192, 0, 32, 'concrete'),
-    ...wallX(448, -1360, 1360, [[0, 256]], 192, 0, 32, 'concrete'),
+    ...wallX(448, -1360, 1360, [[0, 256], [-800, 192], [800, 192]], 192, 0, 32, 'concrete'),   // door + two windows
     ...wallZ(-1344, -1280, 448, [[64, 128]], 192, 0, 32, 'concrete'),
     ...wallZ(1344, -1280, 448, [[-608, 192]], 192, 0, 32, 'concrete'),
     G(0, -416, 2720, 1760, 'ceiling', 192, 16),
@@ -96,6 +96,13 @@ const office = {
     [-896, 170, 64, 1.0e6, 'fff0d0'], [896, 170, 64, 1.0e6, 'fff0d0'],
   ],
   indoorFloor: 'carpet',
+  // the lobby windows are glass (shoot them out to get in that way)
+  glass: [
+    { id: 'lobbyW', min: [-896, 2, 446], max: [-704, 190, 450] },
+    { id: 'lobbyE', min: [704, 2, 446], max: [896, 190, 450] },
+  ],
+  // a sliding door on the east office
+  doors: [{ id: 'office4', min: [944, 2, -520], max: [1072, 176, -504], open: [124, 0, 0], mat: 'wood' }],
   coverZones: [[-1600, 560, -600, 1300], [520, 560, 1600, 1300], [1420, -1400, 1740, 400]],
   coverCount: 10,
   coverSeed: 0x0FF1CE,

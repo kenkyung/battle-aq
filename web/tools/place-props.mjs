@@ -17,6 +17,7 @@ const KINDS = {
   de_aq_dust: ['barrels', 'sandbags', 'pallets', 'barrel', 'sandbags', 'pallets'],
   de_aq_inferno: ['planter', 'barrels', 'pallets', 'planter', 'barrel'],
   de_aq_aztec: ['planter', 'sandbags', 'barrels', 'planter', 'pallets'],
+  de_aq_dust2: ['barrels', 'sandbags', 'pallets', 'barrel', 'sandbags'],
   cs_aq_office: ['pallets', 'barrels', 'barrel', 'pallets'],
   cs_aq_assault: ['barrels', 'pallets', 'sandbags', 'barrel', 'pallets'],
   cs_aq_italy: ['planter', 'barrels', 'pallets', 'planter', 'barrel'],

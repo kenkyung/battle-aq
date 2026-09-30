@@ -12,6 +12,7 @@ import { Effects } from './fx.js';
 import { BombView } from './bomb3d.js';
 import { HostageView } from './hostages3d.js';
 import { DropView } from './drops3d.js';
+import { DynWorld } from './dynworld.js';
 import { GameConsole, keyCode, keyName, ACTIONS, DEFAULT_BINDS } from './console.js';
 import { NadeView } from './nades3d.js';
 import { Sfx, surfaceOf } from './sfx.js';
@@ -87,6 +88,7 @@ let fx = null;
 let bombView = null;
 let hostageView = null;
 let dropView = null;
+let dynWorld = null;
 let useHint = '';
 const hostageTally = { rescued: 0, killed: 0 };
 function hostageCount() {
@@ -219,6 +221,7 @@ async function useMap(id) {
     if (bombView) bombView.dispose();
     if (hostageView) hostageView.dispose();
     if (dropView) dropView.dispose();
+    if (dynWorld) dynWorld.dispose();
     map = getMap(id);
     if (player) player.map = map;
     world = await loadWorld(scene, map);
@@ -228,6 +231,7 @@ async function useMap(id) {
     bombView = new BombView(scene, fx);
     hostageView = new HostageView(scene, world);
     dropView = new DropView(scene, world);
+    dynWorld = new DynWorld(scene, map, world.colliders, world);
     if (map.rescueZones) hostageView.setZones(map.rescueZones);
     if (nadeView) nadeView.clear();
     nadeView = new NadeView(scene, fx, sfx, world.colliders);
@@ -353,6 +357,10 @@ async function onWelcome(welcome) {
   hud.hideMatchEnd();
   running = true;
   showMotd(welcome.motd);
+  if (dynWorld) {
+    for (const [id, open] of Object.entries(welcome.doors || {})) dynWorld.setDoor(id, open, true);
+    for (const id of welcome.glassBroken || []) dynWorld.breakGlass(id);
+  }
   input.capture = true;
   input.lock();
   // ?buy=ak47,assault buys on join (warmup lets you buy anywhere) — for testing
@@ -610,6 +618,18 @@ function applyRound(r) {
 
 net.on('round', applyRound);
 net.on('ping', (msg) => net.send({ t: 'pong', ts: msg.ts }));
+net.on('door', (msg) => {
+  const e = dynWorld && dynWorld.setDoor(msg.id, msg.open);
+  if (e) sfx.playAt('door_move', e.base, { volume: 0.8, ref: 200, max: 2500 });
+});
+net.on('glass', (msg) => {
+  const pane = dynWorld && dynWorld.breakGlass(msg.id);
+  if (!pane) return;
+  const p = msg.point || [0, 1, 2].map((i) => (pane.min[i] + pane.max[i]) / 2);
+  sfx.playAt('glass_break', p, { volume: 0.9, ref: 200, max: 3000 });
+  if (fx) for (let i = 0; i < 4; i++) fx.impact([p[0] + (Math.random() - 0.5) * 30, p[1] + (Math.random() - 0.5) * 30, p[2]], [0, 1, 0], 'metal');
+});
+net.on('glass_reset', () => { if (dynWorld) dynWorld.resetGlass(); });
 net.on('you', (msg) => { if (player) player.reconcile(msg); });
 
 // hostage events: follow / stay (to the CT who used it), rescued, hurt, killed
@@ -1080,6 +1100,15 @@ function frame(now) {
   remotes.update(dt, camera.position);
   if (bomb.state === 'planted' && bomb.localLeft !== undefined) bomb.localLeft -= dt;
   if (bombView) bombView.update(bomb, dt);
+  if (dynWorld) {
+    dynWorld.update(dt);
+    // E opens doors: say so when one is in reach
+    if (player && player.alive && dynWorld.doors.size) {
+      const d = dynWorld.nearDoor(player.state.pos);
+      const txt = d ? 'E: open / close the door' : '';
+      if (txt !== useHint && (txt || useHint.startsWith('E: open'))) { useHint = txt; hud.setHint(txt); }
+    }
+  }
   if (hostageView) {
     hostageView.update(dt);
     // CT next to a hostage: say how to take it (CS: "Press USE to...")
