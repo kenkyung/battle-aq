@@ -49,6 +49,7 @@
       <div class="team ct"><b id="scoreCT">0</b><span id="aliveCT" class="pips"></span></div>
     </div>
     <!-- CS 1.6: the round clock sits at the bottom centre -->
+    <div id="matchBar" class="hidden"></div>
     <div class="clock" id="clockbox"><div id="timer">0:00</div><div id="roundPhase">WARMUP</div></div>
     <div id="killfeed"></div>
     <div id="banner" class="hidden"></div>
@@ -89,6 +90,21 @@
     <h2 id="skinTitle">SELECT APPEARANCE</h2>
     <div class="skinopts" id="skinOpts"></div>
     <div class="dim">1-4: choose · 5: auto-select · 0 / Esc: keep current</div>
+  </div></div>
+
+  <!-- M23: knife-round side vote, map veto -->
+  <div id="sidevote" class="hidden"><div class="panel">
+    <h2>YOU WON THE KNIFE ROUND</h2>
+    <div class="dim" id="svLeft"></div>
+    <div class="teamopts two">
+      <button class="tm" id="svStay"><b>1</b>STAY<small id="svStaySide"></small></button>
+      <button class="tm" id="svSwitch"><b>2</b>SWITCH SIDES<small id="svSwitchSide"></small></button>
+    </div>
+  </div></div>
+  <div id="veto" class="hidden"><div class="panel">
+    <h2>MAP VETO</h2>
+    <div id="vetoTurn" class="dim"></div>
+    <div id="vetoMaps" class="vetomaps"></div>
   </div></div>
 
   <!-- message of the day -->
@@ -146,8 +162,8 @@
   <!-- scoreboard -->
   <div id="scoreboard" class="hidden"><div class="panel">
     <div class="sbhead" id="sbHead"></div>
-    <div class="sbteam t"><h3><span>TERRORISTS <small id="sbTn"></small></span><b id="sbT">0</b></h3><table id="sbTbody"></table></div>
-    <div class="sbteam ct"><h3><span>COUNTER-TERRORISTS <small id="sbCTn"></small></span><b id="sbCT">0</b></h3><table id="sbCTbody"></table></div>
+    <div class="sbteam t"><h3><span><i id="sbTname">TERRORISTS</i> <small id="sbTn"></small></span><b id="sbT">0</b></h3><table id="sbTbody"></table></div>
+    <div class="sbteam ct"><h3><span><i id="sbCTname">COUNTER-TERRORISTS</i> <small id="sbCTn"></small></span><b id="sbCT">0</b></h3><table id="sbCTbody"></table></div>
   </div></div>
 
   <!-- loading -->
@@ -193,6 +209,13 @@
           </div>
           <div class="row">
             <label class="check"><input id="crFF" type="checkbox" /> Friendly fire</label>
+          </div>
+          <div class="row">
+            <label class="check" title="warmup until everyone types !ready, then a knife round for sides; tactical timeouts"><input id="crReady" type="checkbox" /> Ready-up + knife</label>
+            <label class="check" title="tied at the end: MR3 overtime at $10000"><input id="crOT" type="checkbox" /> Overtime</label>
+            <label class="check" title="team captains ban maps until one is left"><input id="crVeto" type="checkbox" /> Map veto</label>
+          </div>
+          <div class="row">
             <input id="crPass" type="text" maxlength="32" placeholder="password (optional)" spellcheck="false" />
           </div>
           <button id="crGo" class="btn small primary">CREATE + JOIN</button>

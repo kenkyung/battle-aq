@@ -382,11 +382,24 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
 
 # Next phases
 
-## M23 — Competitive match flow
-- [ ] Ready-up warmup (`!ready`, start when both teams are ready), knife round
-      for sides, tactical timeouts / pause, team names.
-- [ ] Overtime: MR3 at $10000 when tied 15-15.
-- [ ] Captain map veto (ban / ban / pick) for custom rooms.
+## M23 — Competitive match flow  [done]
+- [x] Ready-up warmup (F3 / `!ready` / `!unready`): the match starts 5 s after
+      everyone is ready; public competitive rooms start anyway after 3 min so
+      an AFK player cannot block it.
+- [x] Knife round (knives only, no bomb, no buying); the winners vote
+      `!stay` / `!switch` (panel, keys 1 / 2, 15 s, default stay).
+- [x] Tactical timeouts (`!pause`, 4 per team, 30 s) and technical pauses
+      (`!tech` until the pausing team types `!unpause`), both at freeze time.
+- [x] Team names (`!teamname`), on the scoreboard and the round banners, and
+      they follow their team at halftime.
+- [x] Overtime: 15-15 -> MR3 at $10000 (first to 19, sides swap after 3),
+      repeated while it stays tied.
+- [x] Captain map veto for custom rooms (ban / ban / ... until one of dust,
+      dust2, inferno, aztec, nuke, train is left; click or 1-6; 20 s turns).
+- [x] Custom rooms: "Ready-up + knife", "Overtime", "Map veto" options.
+- [x] Bots: hunt in the knife round, run straight at a knife target, and
+      a chase now really follows the target (it used to keep walking to the
+      old goal). `server/match.test.js`.
 
 ## M24 — More maps II
 - [ ] cs_aq_militia-style: the house on the hill, sewer route, hostages upstairs.

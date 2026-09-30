@@ -16,7 +16,7 @@ export const DEFAULT_BINDS = {
   ArrowUp: '+forward', ArrowDown: '+back', ArrowLeft: '+moveleft', ArrowRight: '+moveright',
   Space: '+jump', KeyC: '+duck', ControlLeft: '+duck', ControlRight: '+duck', ShiftLeft: '+speed', ShiftRight: '+speed',
   KeyR: '+reload', KeyE: '+use', KeyG: 'drop', KeyQ: 'lastinv', KeyB: 'buymenu', Tab: '+showscores',
-  KeyY: 'messagemode', KeyZ: 'radio1', KeyX: 'radio2', KeyV: 'radio3', F1: 'autobuy', F2: 'rebuy',
+  KeyY: 'messagemode', KeyZ: 'radio1', KeyX: 'radio2', KeyV: 'radio3', F1: 'autobuy', F2: 'rebuy', F3: 'ready',
   Comma: 'buyammo1', Period: 'buyammo2', KeyO: 'buyequip', KeyM: 'chooseteam', Backquote: 'toggleconsole',
   Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', Digit4: 'slot4', Digit5: 'slot5',
   KeyN: 'nightvision', KeyK: '+voicerecord',
@@ -24,12 +24,12 @@ export const DEFAULT_BINDS = {
 export const CANON = {
   '+forward': 'KeyW', '+back': 'KeyS', '+moveleft': 'KeyA', '+moveright': 'KeyD', '+jump': 'Space', '+duck': 'KeyC',
   '+speed': 'ShiftLeft', '+reload': 'KeyR', '+use': 'KeyE', drop: 'KeyG', lastinv: 'KeyQ', buymenu: 'KeyB',
-  '+showscores': 'Tab', messagemode: 'KeyY', radio1: 'KeyZ', radio2: 'KeyX', radio3: 'KeyV', autobuy: 'F1', rebuy: 'F2',
+  '+showscores': 'Tab', messagemode: 'KeyY', radio1: 'KeyZ', radio2: 'KeyX', radio3: 'KeyV', autobuy: 'F1', rebuy: 'F2', ready: 'F3',
   buyammo1: 'Comma', buyammo2: 'Period', buyequip: 'KeyO', chooseteam: 'KeyM', toggleconsole: 'Backquote',
   slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', slot4: 'Digit4', slot5: 'Digit5',
   nightvision: 'KeyN', '+voicerecord': 'KeyK',
 };
-const UI_KEYS = ['KeyB', 'Tab', 'KeyY', 'Escape', 'Enter', 'KeyZ', 'KeyX', 'KeyV', 'F1', 'F2', 'Comma', 'Period', 'KeyO', 'KeyM', 'Backquote', 'KeyN', 'KeyK'];
+const UI_KEYS = ['F3', 'KeyB', 'Tab', 'KeyY', 'Escape', 'Enter', 'KeyZ', 'KeyX', 'KeyV', 'F1', 'F2', 'Comma', 'Period', 'KeyO', 'KeyM', 'Backquote', 'KeyN', 'KeyK'];
 
 export class Input {
   constructor() {
@@ -72,7 +72,7 @@ export class Input {
       // dialog, Ctrl+S "save page", etc. While playing, the game owns the
       // keyboard. (Ctrl+W can only be blocked in fullscreen: see lockKeys.)
       if (this.capture && (e.ctrlKey || e.metaKey || e.altKey || GAME_KEYS.has(e.code) || this.binds[e.code])) e.preventDefault();
-      if (e.code === 'Tab' || e.code === 'F1' || e.code === 'F2') e.preventDefault();   // F1 would open Chrome's help
+      if (e.code === 'Tab' || e.code === 'F1' || e.code === 'F2' || e.code === 'F3') e.preventDefault();   // F1 would open Chrome's help
       if (this.consoleOpen) return;                   // the console has the keyboard
       // digits pick a radio / buy / team menu line whatever they are bound to
       if ((this.radioOpen || this.buyOpen || this.menuOpen) && /^Digit[0-9]$/.test(e.code)) { if (this.onKey) this.onKey(e.code, e, true); return; }

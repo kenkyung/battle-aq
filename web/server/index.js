@@ -180,6 +180,11 @@ function customRoom(c) {
     winlimit, maxrounds: winlimit * 2 - 1, halftime: winlimit - 1,
     friendlyfire: c.ff === undefined ? RULES[base].friendlyfire : !!c.ff,
   };
+  // M23: ready-up + knife round, overtime (needs an even round count), map veto
+  if (c.readyup !== undefined) Object.assign(rules, { readyup: !!c.readyup, kniferound: !!c.readyup, timeouts: c.readyup ? 4 : 0 });
+  if (c.overtime !== undefined) rules.overtime = !!c.overtime;
+  if (rules.overtime ?? RULES[base].overtime) rules.maxrounds = (winlimit - 1) * 2;
+  if (c.veto) rules.veto = true;
   const g = new Game(MAPS[c.map] ? c.map : args.map, { id, fillTo: [0, 3, 4, 5].includes(+c.fill) ? +c.fill : 5, rules, botDifficulty: ['easy', 'normal', 'hard', 'expert'].includes(c.difficulty) ? c.difficulty : 'normal' });
   g.roomName = rules.name;
   g.password = c.password ? String(c.password).slice(0, 32) : '';

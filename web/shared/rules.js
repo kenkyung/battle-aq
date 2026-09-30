@@ -18,6 +18,15 @@ export const RULES = {
     updaterate: 30,       // snapshots to clients, Hz (cl_updaterate)
     afkkick: 90,          // mp_afkkick: s alive without any input in a live round (0 = off)
     timeout: 30,          // sv_timeout: s without a single message from the game
+    // M23 match flow (off in casual)
+    readyup: false,       // warmup until every player is !ready
+    kniferound: false,    // knife round, the winners pick sides
+    overtime: false,      // tied at the end: MR3 overtimes at otMoney
+    otMaxrounds: 6, otMoney: 10000,
+    timeouts: 0,          // tactical timeouts per team per match (timeoutLen s each)
+    timeoutLen: 30,
+    readyMax: 0,          // public rooms: start anyway after this many s of warmup (0 = wait)
+    veto: false,          // captains ban maps before the match (custom rooms)
   },
   competitive: {
     name: 'Competitive (MR15)',
@@ -32,6 +41,9 @@ export const RULES = {
     roundEnd: 5,
     tickrate: 66,
     updaterate: 60,
+    afkkick: 90, timeout: 30,
+    readyup: true, kniferound: true, overtime: true, otMaxrounds: 6, otMoney: 10000,
+    timeouts: 4, timeoutLen: 30, readyMax: 180, veto: false,
   },
 };
 

@@ -238,6 +238,14 @@ export class BotBrain {
   // No objective (fy_ maps): push toward the enemy's side, then roam.
   huntGoal() {
     const g = this.game, p = this.p;
+    // the last one or two left: go to the nearest (CS bots "know" by then;
+    // otherwise two survivors can wander an objective-less map for minutes)
+    const foes = [...g.players.values()].filter((q) => q.alive && q.team !== p.team);
+    if (foes.length && foes.length <= 2) {
+      const f = foes.sort((x, y) => Math.hypot(x.pos[0] - p.pos[0], x.pos[2] - p.pos[2]) - Math.hypot(y.pos[0] - p.pos[0], y.pos[2] - p.pos[2]))[0];
+      if (!this.goal || this.goal.key !== 'fyseek' || Math.hypot(this.goal.pos[0] - f.pos[0], this.goal.pos[2] - f.pos[2]) > 300) return { key: 'fyseek', pos: f.pos.slice() };
+      return this.goal;
+    }
     if (this.goal && this.goal.key.startsWith('fy') && !this.reached(this.goal.pos, 90)) return this.goal;
     if (!this.pushed) {
       this.pushed = true;
@@ -278,7 +286,7 @@ export class BotBrain {
     }
     if (g.hostageMode) return this.hostageGoal(now);
     if (g.vipMode) return this.vipGoal(now);
-    if (g.fy || !this.sites().length) return this.huntGoal();
+    if (g.fy || !this.sites().length || (g.match && g.match.knife)) return this.huntGoal();   // knife round: go find them
     const plan = g.tactics ? g.tactics.plan(p.team) : null;
     const follows = plan && this.rollFor('team', this.skill.teamwork);
     if (!this.site) {
@@ -511,10 +519,11 @@ export class BotBrain {
     return this.path[this.pathIdx];
   }
 
-  move(dt, goal, now, { face = true, strafe = 0, crouch = false, still = false } = {}) {
+  move(dt, goal, now, { face = true, strafe = 0, crouch = false, still = false, direct = null } = {}) {
     const p = this.p;
     let wish = [0, 0, 0];
-    const wp = goal && !still && this.game.phase !== 'freeze' ? this.followPath(now) : null;
+    const live = this.game.phase !== 'freeze';
+    const wp = direct && live ? direct : goal && !still && live ? this.followPath(now) : null;
     if (wp) {
       const d = [wp[0] - p.pos[0], 0, wp[2] - p.pos[2]];
       const L = Math.hypot(d[0], d[2]) || 1;
@@ -649,13 +658,21 @@ export class BotBrain {
       strafe = this.strafeDir;
     }
     const crouch = !sniper && w.auto && dist > 900 && this.difficulty !== 'easy';
-    // close in with a knife / short weapons, otherwise keep position
-    const chase = w.melee || dist > this.skill.sight * 0.8 ? { key: 'chase', pos: q.pos } : null;
+    // close in with a knife (straight at them when near), or path toward a
+    // target that is far away; the chase becomes the bot's goal so the path
+    // follows the target, not whatever the bot was heading for before
+    let chase = null, direct = null;
+    if (w.melee && dist < 450) direct = q.pos;
+    else if (w.melee || (dist > this.skill.sight * 0.8 && p.inv.primary)) {   // pistol only: go get a gun first
+      if (!this.goal || this.goal.key !== 'chase') { this.goal = { key: 'chase', pos: q.pos.slice() }; this.repathAt = 0; }
+      else if (Math.hypot(this.goal.pos[0] - q.pos[0], this.goal.pos[2] - q.pos[2]) > 150) { this.goal.pos = q.pos.slice(); this.repathAt = 0; }
+      chase = this.goal;
+    }
     // CS: moving ruins accuracy, so stop to shoot (counter-strafe) unless it
     // is a close-range brawl; strafe between bursts
     const shooting = now >= this.seenAt && (this.burstLeft > 0 || now >= this.burstPauseUntil - 0.05);
     const standStill = !w.melee && dist > 280 && shooting && this.difficulty !== 'easy';
-    this.move(dt, chase, now, { face: false, strafe: standStill ? 0 : strafe, crouch, still: standStill });
+    this.move(dt, chase, now, { face: false, strafe: standStill ? 0 : strafe, crouch, still: standStill, direct });
 
     if (now >= this.seenAt && dist > 450 && dist < 1300 && p.nades.hegrenade && Math.random() < 0.01) {
       if (this.planNade('hegrenade', q.pos, now)) return;

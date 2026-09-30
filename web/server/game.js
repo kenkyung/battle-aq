@@ -42,6 +42,7 @@ import { BotBrain, BOT_NAMES } from './bot.js';
 import { Tactics } from './tactics.js';
 import { stats } from './stats.js';
 import { randomBytes } from 'node:crypto';
+import { installMatch, newMatchState } from './match.js';
 
 // a dropped connection keeps its player (team, money, guns, score) this long
 export const RESUME_GRACE = 45;
@@ -91,6 +92,7 @@ export class Game {
     this.roundNumber = 0;
     this.halftimeRound = this.rules.halftime;
     this.matchOver = false;
+    this.match = newMatchState();          // ready-up / knife / pauses / overtime / veto (match.js)
     this.bomb = { state: 'none', pos: null, carrier: null, plantedAt: 0, explodeAt: 0 };
     this.plantedThisRound = false;
     this.lastTick = now();
@@ -280,12 +282,14 @@ export class Game {
   checkMode() {
     if (this.phase === 'matchend') return;
     const bothTeams = this.teamSize(TEAM.T) > 0 && this.teamSize(TEAM.CT) > 0;
-    if (bothTeams && !this.competitive) this.startMatch();
-    else if (!bothTeams && this.competitive) this.enterWarmup();
+    if (bothTeams && !this.competitive) this.tryStart();
+    else if (!bothTeams && this.competitive && this.phase !== 'sidevote') this.enterWarmup();
   }
 
   enterWarmup() {
     this.matchOver = false;
+    this.match.knife = false; this.match.sideVote = null; this.match.paused = null; this.match.pending = null;
+    this.match.warmupSince = now();
     this.clearBomb();
     this.setPhase('warmup', 0);
     for (const p of this.players.values()) {
@@ -296,6 +300,12 @@ export class Game {
   }
 
   startMatch() {
+    const m = this.match;
+    m.startAt = 0;
+    m.maxRound = this.rules.maxrounds; m.winTarget = this.rules.winlimit; m.ot = 0; m.otStart = false;
+    m.paused = null; m.pending = null;
+    m.timeouts = { [TEAM.T]: this.rules.timeouts || 0, [TEAM.CT]: this.rules.timeouts || 0 };
+    this.halftimeRound = this.rules.halftime;
     this.score = { [TEAM.T]: 0, [TEAM.CT]: 0 };
     this.lossStreak = { [TEAM.T]: 0, [TEAM.CT]: 0 };
     this.roundNumber = 0;
@@ -307,8 +317,9 @@ export class Game {
       this.resetLoadout(p);
       p.alive = false; // everyone respawns fresh for round 1
     }
+    if (this.dm) { this.broadcast({ t: 'match_start', map: this.map.id }); this.startDeathmatch(); return; }
+    if (this.rules.kniferound && !this.practice && !m.knifeDone) { this.startKnife(); return; }
     this.broadcast({ t: 'match_start', map: this.map.id });
-    if (this.dm) { this.startDeathmatch(); return; }
     this.startRound();
   }
 
@@ -338,14 +349,24 @@ export class Game {
     if (this.roundNumber === this.halftimeRound) {
       for (const p of this.players.values()) {
         p.team = other(p.team);
-        p.money = ECONOMY.startMoney;
+        p.money = this.match.ot ? (this.rules.otMoney || 10000) : ECONOMY.startMoney;
         p.alive = false;
         this.resetLoadout(p);
         this.send(p, { t: 'team', team: p.team });
       }
       this.score = { [TEAM.T]: this.score[TEAM.CT], [TEAM.CT]: this.score[TEAM.T] };
       this.lossStreak = { [TEAM.T]: 0, [TEAM.CT]: 0 };
+      this.match.names = { [TEAM.T]: this.match.names[TEAM.CT], [TEAM.CT]: this.match.names[TEAM.T] };
+      this.match.timeouts = { [TEAM.T]: this.match.timeouts[TEAM.CT], [TEAM.CT]: this.match.timeouts[TEAM.T] };
       this.broadcast({ t: 'halftime', scoreT: this.score[TEAM.T], scoreCT: this.score[TEAM.CT] });
+      this.broadcast({ t: 'teamnames', names: this.match.names });
+    }
+    // overtime begins: everyone gets the overtime money (same sides, guns kept)
+    if (this.match.otStart) {
+      this.match.otStart = false;
+      for (const p of this.players.values()) p.money = this.rules.otMoney || 10000;
+      this.lossStreak = { [TEAM.T]: 0, [TEAM.CT]: 0 };
+      this.broadcast({ t: 'overtime', n: this.match.ot, money: this.rules.otMoney || 10000 });
     }
     this.roundNumber++;
     this.plantedThisRound = false;
@@ -372,6 +393,7 @@ export class Game {
     if (this.vipMode) this.pickVip();
     else if (!this.hostageMode) this.giveBomb();
     this.tactics.newRound();
+    if (this.match.pending) this.startPause();
   }
 
   setPhase(phase, seconds) {
@@ -386,8 +408,10 @@ export class Game {
       timer: this.phase === 'warmup' ? 0 : Math.max(0, this.phaseEndsAt - now()),
       buyTime: this.phase === 'warmup' ? -1 : Math.max(0, this.buyEndsAt - now()),
       scoreT: this.score[TEAM.T], scoreCT: this.score[TEAM.CT],
-      round: this.roundNumber, maxRounds: this.rules.maxrounds, halftime: this.halftimeRound,
-      rules: this.rulesId, rulesName: this.rules.name, winlimit: this.rules.winlimit, friendlyfire: this.rules.friendlyfire,
+      round: this.roundNumber, maxRounds: this.match.maxRound || this.rules.maxrounds, halftime: this.halftimeRound,
+      rules: this.rulesId, rulesName: this.rules.name, winlimit: this.match.winTarget || this.rules.winlimit, friendlyfire: this.rules.friendlyfire,
+      teamNames: this.match.names, overtime: this.match.ot || undefined, knife: this.match.knife || undefined,
+      readyup: this.rules.readyup && !this.practice ? 1 : undefined, paused: this.match.paused ? 1 : undefined,
       tickrate: this.rules.tickrate, updaterate: this.rules.updaterate, c4timer: this.rules.c4timer,
       map: this.map.id, practice: this.practice, mode: this.rules.mode || (this.hostageMode ? 'hostage' : 'bomb'),
       rescueZones: this.hostageMode ? this.rescueZones() : undefined,
@@ -414,11 +438,12 @@ export class Game {
     this.checkVipEscape();
     this.tickFloorWeapons(t);
     this.checkIdle(t);
+    this.tickMatch(t, dt);
     if (this.phase === 'warmup' || t < this.phaseEndsAt) return;
     if (this.phase === 'freeze') this.setPhase('round', this.roundTime);
     // time: the bomb was never planted (CT win) / hostages not rescued (T win);
     // fy_: the side with more players alive, a tie to the CTs
-    else if (this.phase === 'round') this.endRound(this.hostageMode || this.vipMode ? TEAM.T : this.fy && this.aliveCount(TEAM.T) > this.aliveCount(TEAM.CT) ? TEAM.T : TEAM.CT, 'time');
+    else if (this.phase === 'round') this.endRound(this.match.knife ? this.knifeTimeWinner() : this.hostageMode || this.vipMode ? TEAM.T : this.fy && this.aliveCount(TEAM.T) > this.aliveCount(TEAM.CT) ? TEAM.T : TEAM.CT, 'time');
     else if (this.phase === 'planted') this.explode();
     else if (this.phase === 'end') {
       if (this.matchOver) this.startVote();
@@ -429,6 +454,7 @@ export class Game {
 
   endRound(winner, how) {
     if (!['round', 'freeze', 'planted'].includes(this.phase)) return;
+    if (this.match.knife) return this.endKnife(winner);
     const loser = other(winner);
     this.planting.clear(); this.defusing.clear();
     this.score[winner]++;
@@ -452,12 +478,25 @@ export class Game {
       }
     }
     stats.round([...this.players.values()].filter((p) => p.team === winner), [...this.players.values()].filter((p) => p.team === loser));
-    const lastRound = this.roundNumber >= this.rules.maxrounds;
-    this.matchOver = this.score[winner] >= this.rules.winlimit || lastRound;
+    const m = this.match;
+    const lastRound = this.roundNumber >= (m.maxRound || this.rules.maxrounds);
+    this.matchOver = this.score[winner] >= (m.winTarget || this.rules.winlimit) || lastRound;
+    // tied at the end: overtime, MR3 (first to 4 of 6) at $10000, as often as it takes
+    let overtime = 0;
+    if (this.matchOver && lastRound && this.rules.overtime && this.score[TEAM.T] === this.score[TEAM.CT]) {
+      const n = this.rules.otMaxrounds || 6;
+      m.ot++;
+      m.maxRound = this.roundNumber + n;
+      m.winTarget = this.score[TEAM.T] + n / 2 + 1;
+      this.halftimeRound = this.roundNumber + n / 2;
+      m.otStart = true;
+      this.matchOver = false;
+      overtime = m.ot;
+    }
     this.broadcast({
-      t: 'round_end', winner, how,
+      t: 'round_end', winner, how, name: m.names[winner],
       scoreT: this.score[TEAM.T], scoreCT: this.score[TEAM.CT],
-      matchOver: this.matchOver, halftime: this.roundNumber === this.halftimeRound,
+      matchOver: this.matchOver, halftime: this.roundNumber === this.halftimeRound, overtime: overtime || undefined,
     });
     this.setPhase('end', this.rules.roundEnd);
   }
@@ -523,6 +562,7 @@ export class Game {
 
   // rcon restart: a fresh match if both teams are here, else warmup
   startMatchIfReady() {
+    this.match.knifeDone = false;
     if (this.teamSize(TEAM.T) > 0 && this.teamSize(TEAM.CT) > 0) this.startMatch();
     else this.enterWarmup();
   }
@@ -531,10 +571,10 @@ export class Game {
     if (mapId !== this.map.id) this.loadMap(mapId);
     this.broadcast({ t: 'map', mapId: this.map.id });
     this.phase = 'warmup';
-    for (const p of this.players.values()) { p.alive = false; if (p.bot) p.bot.reset(); }
-    const both = this.teamSize(TEAM.T) > 0 && this.teamSize(TEAM.CT) > 0;
-    if (both) this.startMatch();
-    else this.enterWarmup();
+    for (const p of this.players.values()) { p.alive = false; p.ready = false; if (p.bot) p.bot.reset(); }
+    this.match.knifeDone = false; this.match.startAt = 0;
+    this.enterWarmup();
+    this.tryStart();
   }
 
   // ------------------------------------------------------------- the bomb
@@ -1277,6 +1317,12 @@ export class Game {
       case 'kickidle':
         this.kickIdle(p);
         break;
+      case 'ready': this.setReady(p, msg.on !== false); break;
+      case 'sidevote': this.voteSide(p, !!msg.switch); break;
+      case 'veto_ban': this.vetoBan(p, String(msg.map || '')); break;
+      case 'pause': this.requestPause(p, msg.kind === 'tech' ? 'tech' : 'tactical'); break;
+      case 'unpause': this.unpause(p); break;
+      case 'teamname': this.setTeamName(p, msg.name); break;
       case 'state':
         if (!p.alive || p.usesCmds) break;     // usercmd clients move by their commands
         // frozen at round start: look around, but stay on the spawn
@@ -1394,6 +1440,7 @@ export class Game {
       case 'chat': {
         const text = String(msg.text || '').trim().slice(0, 140);
         if (text) this.broadcast({ t: 'chat', id: p.id, name: p.name, team: p.team, text });
+        if (text.startsWith('!')) this.chatCommand(p, text);
         break;
       }
     }
@@ -1825,6 +1872,7 @@ export class Game {
     if (p.vip && this.vipMode) return 'the VIP cannot buy';
     if (this.phase === 'warmup' || this.phase === 'dm') return null;
     if (this.fy) return 'no buying on fy_ maps: grab a gun off the floor';
+    if (this.match.knife) return 'knife round: knives only';
     if (this.phase === 'end' || this.phase === 'matchend') return 'the round is over';
     if (now() > this.buyEndsAt) return 'buy time is over';
     if (!inBuyZone(this.map, p.team, p.pos)) return 'you are not in a buy zone';
@@ -2095,3 +2143,5 @@ export class Game {
     for (const p of this.players.values()) if (p.team === team && p.ws && p.ws.readyState === 1) p.ws.send(s);
   }
 }
+
+installMatch(Game);

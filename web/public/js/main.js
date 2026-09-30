@@ -435,6 +435,7 @@ $('roomsRefresh').addEventListener('click', refreshRooms);
 $('crGo').addEventListener('click', () => join({ create: {
   name: $('crName').value.trim() || `${$('playerName').value.trim() || 'Player'}'s room`, map: $('pMap').value, rules: $('gRules').value,
   fill: +$('oSize').value, roundtime: +$('crRound').value, winlimit: +$('crWin').value, ff: $('crFF').checked, password: $('crPass').value,
+  readyup: $('crReady').checked, overtime: $('crOT').checked, veto: $('crVeto').checked,
   difficulty: $('pDiff').value,
 } }));
 
@@ -806,6 +807,15 @@ net.on('bomb_event', (msg) => {
 });
 
 function applyRound(r) {
+  // M23 match state riding on the round info (welcome + every phase change)
+  if (typeof matchState !== 'undefined') {
+    if (r.teamNames) setTeamNames(r.teamNames);
+    matchState.ot = r.overtime || 0;
+    matchState.knife = !!r.knife;
+    if (!r.paused) matchState.pause = null;
+    setTimeout(drawMatchBar, 0);
+  }
+  round.readyup = !!r.readyup;
   const now = performance.now() / 1000;
   const prev = round.phase;
   round.phase = r.phase;
@@ -844,6 +854,110 @@ function applyRound(r) {
 }
 
 net.on('round', applyRound);
+
+// ------------------------------------------------------------------ match flow (M23)
+//
+// ready-up (F3 / !ready), knife round + side vote, pauses, overtime, team
+// names and the captains' map veto. The server runs it all (match.js); this
+// is the HUD for it.
+
+const DEFAULT_TEAM_NAMES = { [TEAM.T]: 'Terrorists', [TEAM.CT]: 'Counter-Terrorists' };
+const matchState = { ready: null, pause: null, knife: false, ot: 0, names: { ...DEFAULT_TEAM_NAMES }, sideWin: null, veto: null };
+const custom = (team) => matchState.names[team] && matchState.names[team] !== DEFAULT_TEAM_NAMES[team];
+function setTeamNames(n) {
+  matchState.names = { ...DEFAULT_TEAM_NAMES, ...n };
+  $('sbTname').textContent = custom(TEAM.T) ? `${matchState.names[TEAM.T].toUpperCase()} (T)` : 'TERRORISTS';
+  $('sbCTname').textContent = custom(TEAM.CT) ? `${matchState.names[TEAM.CT].toUpperCase()} (CT)` : 'COUNTER-TERRORISTS';
+}
+const since = (x) => (performance.now() - x.at) / 1000;
+function drawMatchBar() {
+  const m = matchState;
+  let html = '';
+  if (m.pause) {
+    const left = Math.max(0, m.pause.left - since(m.pause));
+    html = `${m.pause.kind === 'tactical' ? 'TACTICAL TIMEOUT' : 'TECHNICAL PAUSE'} — ${esc(m.pause.name || '')}`
+      + `<small>${m.pause.kind === 'tactical' ? `${Math.ceil(left)} s` : 'the pausing team types !unpause'}</small>`;
+  } else if (round.phase === 'warmup' && round.readyup && m.ready && !m.veto) {
+    const n = m.ready.ready.length, tot = n + m.ready.need.length, mine = m.ready.ready.includes(myId);
+    if (m.ready.startIn !== null && m.ready.startIn !== undefined) html = `ALL READY — MATCH STARTS IN ${Math.max(0, Math.ceil(m.ready.startIn - since(m.ready)))}`;
+    else {
+      const auto = m.ready.autoIn !== null && m.ready.autoIn !== undefined ? Math.max(0, Math.ceil(m.ready.autoIn - since(m.ready))) : null;
+      html = `WARMUP — ${n}/${tot} READY<small>${mine ? 'you are ready · F3 to unready' : 'press F3 or type !ready'}${auto !== null ? ` · starts anyway in ${auto} s` : ''}</small>`;
+    }
+  } else if (m.knife) html = 'KNIFE ROUND<small>the winners choose sides</small>';
+  else if (round.phase === 'sidevote' && m.sideWin) html = `${esc(m.sideWin.name || '').toUpperCase()} WON THE KNIFE ROUND<small>choosing sides…</small>`;
+  else if (m.ot && round.phase !== 'warmup') html = `OVERTIME ${m.ot}<small>first to ${round.winlimit || ''}</small>`;
+  $('matchBar').innerHTML = html;
+  $('matchBar').classList.toggle('hidden', !html || !running);
+  if (sideVoteOpen() && m.sideWin) $('svLeft').textContent = `${Math.max(0, Math.ceil(m.sideWin.left - since(m.sideWin)))} s to decide — the default is to stay`;
+}
+setInterval(drawMatchBar, 250);
+
+function toggleReady() {
+  if (!round.readyup || round.phase !== 'warmup') { hud.centerMsg('no ready-up right now'); setTimeout(() => hud.centerMsg(''), 1500); return; }
+  const mine = matchState.ready && matchState.ready.ready.includes(myId);
+  net.send({ t: 'ready', on: !mine });
+}
+net.on('ready', (msg) => { matchState.ready = { ...msg, at: performance.now() }; drawMatchBar(); });
+net.on('knife_round', () => { matchState.knife = true; hud.banner('KNIFE ROUND', null, 3000); drawMatchBar(); });
+net.on('knife_won', (msg) => {
+  matchState.knife = false;
+  matchState.sideWin = { ...msg, at: performance.now() };
+  hud.banner(`${(msg.name || '').toUpperCase()} WIN THE KNIFE ROUND`, msg.team, 3500);
+  if (msg.voters.includes(myId)) openSideVote(true);
+  drawMatchBar();
+});
+net.on('pause', (msg) => {
+  matchState.pause = msg.off ? null : { ...msg, at: performance.now() };
+  if (!msg.off) hud.banner(msg.kind === 'tactical' ? 'TACTICAL TIMEOUT' : 'TECHNICAL PAUSE', msg.team, 2500);
+  drawMatchBar();
+});
+net.on('overtime', (msg) => { matchState.ot = msg.n; hud.banner(`OVERTIME ${msg.n} — $${msg.money} EACH`, null, 4000); drawMatchBar(); });
+net.on('teamnames', (msg) => setTeamNames(msg.names));
+
+function sideVoteOpen() { return !$('sidevote').classList.contains('hidden'); }
+function openSideVote(on) {
+  $('sidevote').classList.toggle('hidden', !on);
+  input.menuOpen = on || teamMenuOpen();
+  if (on) {
+    const mine = myTeam === TEAM.T ? 'TERRORISTS' : 'COUNTER-TERRORISTS', theirs = myTeam === TEAM.T ? 'COUNTER-TERRORISTS' : 'TERRORISTS';
+    $('svStaySide').textContent = `stay ${mine}`;
+    $('svSwitchSide').textContent = `play as ${theirs}`;
+    if (document.pointerLockElement) document.exitPointerLock();
+  } else if (running) input.lock();
+}
+function voteSide(sw) { net.send({ t: 'sidevote', switch: sw }); openSideVote(false); }
+$('svStay').addEventListener('click', () => voteSide(false));
+$('svSwitch').addEventListener('click', () => voteSide(true));
+
+// map veto: everyone sees it; the captain whose turn it is bans (click or 1-6)
+function vetoMine() { const v = matchState.veto; return !!(v && !v.done && v.turn === myTeam && v.captains[myTeam] === myId); }
+function drawVeto() {
+  const v = matchState.veto;
+  if (!v) { $('veto').classList.add('hidden'); return; }
+  const mine = vetoMine();
+  $('veto').classList.remove('hidden');
+  $('veto').classList.toggle('myturn', mine);
+  const left = Math.max(0, Math.ceil(v.left - since(v)));
+  $('vetoTurn').textContent = v.done ? `${mapLabel(v.done)} will be played`
+    : mine ? `YOUR TURN: ban a map (click or 1-${v.pool.length}) · ${left} s`
+      : `${(v.names[v.turn] || '').toUpperCase()} captain is banning · ${left} s`;
+  $('vetoMaps').innerHTML = v.pool.map((id, i) => {
+    const ban = v.banned.find((b) => b.map === id);
+    return `<button class="vm${ban ? ' banned' : ''}${v.done === id ? ' pick' : ''}" data-map="${id}"><b>${i + 1}</b>${mapLabel(id).toUpperCase()}${ban ? `<small>banned by ${esc(v.names[ban.team] || '')}</small>` : ''}</button>`;
+  }).join('');
+  for (const b of $('vetoMaps').querySelectorAll('.vm')) b.addEventListener('click', () => { if (vetoMine()) net.send({ t: 'veto_ban', map: b.dataset.map }); });
+  input.menuOpen = mine || teamMenuOpen();
+  if (mine && document.pointerLockElement) document.exitPointerLock();
+}
+net.on('veto', (msg) => {
+  const wasMine = vetoMine();
+  matchState.veto = { ...msg, at: performance.now() };
+  drawVeto();
+  if (wasMine && !vetoMine() && running) input.lock();
+  if (msg.done) setTimeout(() => { matchState.veto = null; drawVeto(); }, 4000);
+});
+setInterval(() => { if (matchState.veto && !matchState.veto.done) drawVeto(); }, 1000);
 net.on('ping', (msg) => net.send({ t: 'pong', ts: msg.ts }));
 net.on('shieldhit', (msg) => {
   if (fx && msg.point) fx.impact(msg.point, [0, 1, 0], 'metal');
@@ -884,6 +998,9 @@ net.on('hostage', (msg) => {
   if (round.mode === 'hostage') hud.setHostages(hostageCount());
 });
 net.on('match_start', () => {
+  matchState.knife = false; matchState.sideWin = null; matchState.ready = null;
+  if (sideVoteOpen()) openSideVote(false);
+  drawMatchBar();
   hud.banner(round.practice ? 'PRACTICE MATCH' : 'MATCH START', null, 2500);
   hud.hideMatchEnd();
   if (player) { player.kills = 0; player.deaths = 0; }
@@ -903,8 +1020,8 @@ net.on('round_end', (msg) => {
     time: round.mode === 'hostage' ? 'HOSTAGES HAVE NOT BEEN RESCUED' : round.mode === 'vip' ? 'THE VIP HAS FAILED TO ESCAPE' : 'TIME RAN OUT', elim: '' }[msg.how] || '';
   keypad(false);
   setTimeout(() => sfx.radio(msg.winner === TEAM.T ? 'Terrorists win' : 'Counter-terrorists win'), msg.how === 'bomb' ? 1800 : 300);
-  const who = msg.winner === TEAM.T ? 'TERRORISTS WIN' : 'COUNTER-TERRORISTS WIN';
-  hud.banner(msg.matchOver ? (msg.winner === TEAM.T ? 'TERRORISTS WIN THE MATCH' : 'COUNTER-TERRORISTS WIN THE MATCH') : who, msg.winner, 4500);
+  const side = custom(msg.winner) ? matchState.names[msg.winner].toUpperCase() : msg.winner === TEAM.T ? 'TERRORISTS' : 'COUNTER-TERRORISTS';
+  hud.banner(msg.matchOver ? `${side} WIN THE MATCH` : msg.overtime ? `${side} WIN — OVERTIME ${msg.overtime}!` : `${side} WIN`, msg.winner, 4500);
   if (how) { hud.centerMsg(how); setTimeout(() => hud.centerMsg(''), 4000); }
   hud.hideProgress();
 });
@@ -1068,6 +1185,12 @@ con.cmd('finish', 'finish <weapon|all> <name|index> — weapon finish (e.g. fini
   setFinish(w, i);
   con.print(`${w === '*' ? 'all weapons' : w}: ${FINISHES[i].name}`);
 });
+con.cmd('ready', 'ready up (warmup)', () => net.send({ t: 'ready', on: true }));
+con.cmd('unready', 'not ready after all', () => net.send({ t: 'ready', on: false }));
+con.cmd('pause', 'call a 30 s tactical timeout (starts at the next freeze time)', () => net.send({ t: 'pause', kind: 'tactical' }));
+con.cmd('tech', 'call a technical pause (until !unpause)', () => net.send({ t: 'pause', kind: 'tech' }));
+con.cmd('unpause', 'end your team\'s pause', () => net.send({ t: 'unpause' }));
+con.cmd('teamname', 'teamname <name> — name your team', (a) => net.send({ t: 'teamname', name: a.join(' ') }));
 con.cmd('kickidle', 'kick players whose game froze or disconnected (and AFK ones)', () => kickIdle());
 con.cmd('chooseappearance', 'pick your player model', () => { con.toggle(false); openSkinMenu(myTeam); });
 let minModels = store.get('baq_minmodels', '0') === '1';
@@ -1340,6 +1463,18 @@ input.onKey = (code, e, down) => {
     if (pick) pickTeam(pick);
     return;
   }
+  if (sideVoteOpen() && down) {
+    if (code === 'Digit1') voteSide(false);
+    else if (code === 'Digit2') voteSide(true);
+    else if (code === 'Escape') openSideVote(false);
+    return;
+  }
+  if (vetoMine() && down) {
+    const i = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].indexOf(code);
+    if (i >= 0 && matchState.veto.pool[i]) net.send({ t: 'veto_ban', map: matchState.veto.pool[i] });
+    return;
+  }
+  if (code === 'F3' && down && !input.typing) { toggleReady(); return; }
   if (skinMenuOpen() && down) {
     if (code === 'Escape' || code === 'Digit0') { openSkinMenu(0); return; }
     const i = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: -1 }[code];
