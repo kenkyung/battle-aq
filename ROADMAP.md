@@ -19,15 +19,16 @@ Project, scenes, scripts, license, README, .gitignore.
 - [x] Project loadability — fixed malformed `project.godot` (the GL Compat
       renderer key was rejected by Godot 4; moved into a proper
       `[rendering]` section with the quoted form of the value).
-- [ ] MultiplayerSynchronizer config so position/rotation/HP replicate.
-- [ ] Manual smoke test: host + 1 client, walk + shoot each other.
+- [~] MultiplayerSynchronizer config — superseded: the web build replicates
+      via its own snapshot/usercmd netcode (M11).
+- [x] Host + client walk and shoot each other — `server/smoke.js`, live play.
 
 ## M2 — Weapons + economy
 - [x] Weapon archetypes via `WeaponData` Resource + `weapons_manifest.gd`
       (9 weapons: knife + glock + usp + deagle + mp5 + ak47 + m4a1 + awp +
       scout, every value from CS16_REFERENCE.md §2-§3).
-- [ ] Weapon runtime: cone sampling, recoil, hit registration wired through
-      `NetworkCodec.compute_damage` / `current_cone_deg` / `sample_shot_direction`.
+- [x] Weapon runtime (web build): spread cones, recoil patterns, lag-compensated
+      hit registration, penetration (M2 / M9 / M11).
 - [x] Buy menu (buy-time only) — web build: `shared/economy.js`, `js/hud.js`.
 - [x] Ammo + reload state — magazine + reserve, timed server-side reloads.
 - [x] Money: start $800, kill/win/loss-streak bonuses, $16000 cap.
@@ -47,21 +48,21 @@ Project, scenes, scripts, license, README, .gitignore.
 - [x] Per-map `MapData` node driving WorldEnvironment (fog, sky gradient,
       ambient) — see `scripts/world.gd::apply_map_data`.
 - [x] Map catalogue in `scripts/main.gd::MAP_CATALOGUE`.
-- [ ] Lightmap bake settings for the mobile renderer.
+- [x] Baked lighting: Blender area lights + vertex/AO bake in the web maps.
 
 ## M5 — Server build
-- [ ] Headless server export target.
-- [ ] Command-line server boot: `battle-aq-server.exe --port 24816 --map de_aq`.
+- [x] Headless server: `node web/server/index.js` (systemd unit, deploy/).
+- [x] Command-line boot: `PORT=8099 MAP=de_aq_dust node server/index.js`.
 
 ## M6 — Cross-platform exports
-- [ ] Linux/Windows desktop, web (HTML5/WebRTC transport fallback).
-- [ ] Steam SDK integration (later).
+- [x] Web (any desktop browser) + installable PWA (M18).
+- [~] Steam SDK integration — not applicable to the web build.
 
 ## Stretch
-- [ ] Voice chat (via Mumble or WebRTC).
-- [ ] Replay / demo recording.
-- [ ] Spectator camera.
-- [ ] Server-side lag compensation for fairer hit registration.
+- [x] Voice chat (WebRTC team voice, M18).
+- [x] Replay / demo recording (M18).
+- [x] Spectator camera (first person / chase / free / overview).
+- [x] Server-side lag compensation (M11).
 ## Web build — done
 - [x] Bomb mode (C4 plant/defuse, kit, drop/pick-up, blast), freeze time,
       halftime side swap, match end + map vote / rotation.
@@ -111,8 +112,7 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
 - [x] Water level: splash footsteps, no fall damage when landing in water.
 - [x] `server/movement.test.js`: speeds, jump heights, crates, duck timing,
       counter-strafe, air-strafe gain, edge friction, tagging, ladders, water.
-- [ ] Later: swimming for deep water (no deep water in the maps yet),
-      ladders on more maps (with M15 layouts).
+- [x] Swimming + drowning (M18); ladders on more maps -> M20.
 
 ## M9 — Weapon parity II (full arsenal)  [done]
 - [x] Every CS 1.6 gun: P228, Five-SeveN, Dual Berettas, M3, XM1014, TMP,
@@ -139,8 +139,8 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
 - [x] Blender models for every new gun (+ suppressed M4A1 / USP), sounds,
       crosshairs; bots buy the whole arsenal.
 - [x] `server/weapons.test.js`.
-- [ ] Later: per-weapon viewmodel animations (pump / bolt / silencer screw),
-      night vision, tactical shield.
+- [x] Viewmodel pump / bolt / silencer / shell animations, night vision,
+      tactical shield (M18).
 
 ## M10 — Round, economy and rules parity  [done]
 - [x] Money from cstrike's REWARD_* table: $300 per kill (knife too),
@@ -196,7 +196,7 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       Settings persist (config).
 - [x] Key bindings: every action rebindable (bind f +duck …); the game
       listens to actions, not keys.
-- [ ] Later: spectator overview map, VGUI buy menu art, custom HUD fonts.
+- [x] Spectator overview map, buy menu art, CS-style HUD font (M18).
 
 ## M13 — Audio parity  [done]
 - [x] Footsteps by surface from each map's textures: sand, stone, metal,
@@ -247,7 +247,7 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       middle (parapets, the main fight), long route to A, B past the bridge.
 - [x] Nav: the playable area is what is walkable from the spawn (drops are
       one-way), not the biggest flat region — no more bots heading for roofs.
-- [ ] Later: nuke / train-style layouts, vents, more ladders.
+- [ ] nuke / train-style layouts, vents, more ladders -> M20.
 
 ## M16 — Modes and servers  [done]
 - [x] Deathmatch (CSDM-style): timed, frag limit, instant respawns at the
@@ -280,5 +280,45 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       time per frame. A 5v5 on de_aq_dust2: ~26 draw calls, ~44k triangles,
       ~2.3 ms of JavaScript per frame (headless measurement; GPU time depends
       on the machine — dynamic resolution absorbs the difference).
-- [ ] Later: instanced props, texture atlases for the level, a GPU
-      timer query benchmark on real integrated hardware.
+- [x] GPU timer query in net_graph (M18).
+- [ ] Instanced props, texture atlases for the level -> M22.
+
+## M18 — Leftovers  [done]
+- [x] Viewmodel cycles: pump (shotguns), bolt (Scout / AWP), silencer screw,
+      shell-by-shell loading.
+- [x] Night vision ($1250, N toggles; green amplification + noise).
+- [x] Tactical shield (CT, $2200): blocks frontal bullets above the legs
+      unless you just fired, 0.9x speed, viewmodel + third-person plate.
+- [x] Team voice chat (WebRTC, K push-to-talk, server relays signalling).
+- [x] Swimming (PM_WaterMove) and drowning (12 s under, 10 hp/s).
+- [x] Demos: record / stop / playdemo / demo_speed / demo_pause.
+- [x] Spectator overview map, buy-menu weapon art, Teko HUD numerals,
+      GPU time in net_graph, installable PWA (manifest + service worker).
+- [x] `server/extras.test.js`.
+
+## M19 — Player models and team skins
+- [ ] Four skins per side, CS-style silhouettes so teams read at a glance:
+      T — Phoenix (tan jacket, balaclava), Elite (dark suit, beret),
+      Arctic (white parka, goggles), Guerilla (olive fatigues, bandana);
+      CT — SEAL (navy + helmet), GSG-9 (green, visor helmet), SAS (black
+      + gas mask), GIGN (light blue, ballistic visor).
+- [ ] Team colour language: Ts warm/earth tones, CTs cool blues/greys + the
+      helmet silhouette; brighter shoulder patches visible at range.
+- [ ] Improved base mesh: better hands, boots, vest/gear pieces, face detail.
+- [ ] Appearance menu after picking a team (CS "choose model"), random for
+      bots; skin index in snapshots; cl_minmodels option (one model per team).
+
+## M20 — New maps
+- [ ] de_aq_nuke-style: two stacked sites (outside + ramp, vents between),
+      crouch-only vents, ladders.
+- [ ] de_aq_train-style: rail yard, trains as cover, ladders onto the cars.
+- [ ] A water map (deep canal to swim through) for swimming/drowning.
+- [ ] Bots: nav through vents and ladders.
+
+## M21 — Weapon finishes
+- [ ] Selectable finishes per weapon (factory, desert, urban, forest, gold)
+      from the menu; shown on viewmodel, third-person and drops.
+
+## M22 — Level performance II
+- [ ] Instanced props, texture atlases for the level.
+

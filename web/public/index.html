@@ -4,6 +4,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
 <title>Battle-AQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Teko:wght@500;600&display=swap" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#0b0d0e" />
 <link rel="stylesheet" href="style.css" />
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
@@ -22,7 +28,10 @@
   <div id="flash"></div>
 
   <!-- HUD -->
+  <div id="nvgNoise" class="hidden"></div>
+  <canvas id="overview" class="hidden"></canvas>
   <div id="hud" class="hidden">
+    <div id="voiceList"></div>
     <pre id="netgraph" class="hidden"></pre>
     <canvas id="radar" width="200" height="200"></canvas>
     <div id="topbar">
@@ -188,6 +197,7 @@
         <label class="check"><input id="radioOn" type="checkbox" /> Radio voice ("bomb has been planted")</label>
         <label class="check"><input id="fsOn" type="checkbox" /> Fullscreen while playing (Ctrl combos and Esc stay in the game)</label>
         <label class="check"><input id="ngOn" type="checkbox" /> Show net_graph (fps, ping, rates)</label>
+        <label class="check"><input id="voiceOn" type="checkbox" /> Team voice chat (hold K to talk)</label>
         <label>Server (leave empty for this one)</label>
         <input id="serverAddr" type="text" spellcheck="false" placeholder="host:port" />
       </details>

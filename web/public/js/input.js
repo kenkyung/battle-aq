@@ -19,6 +19,7 @@ export const DEFAULT_BINDS = {
   KeyY: 'messagemode', KeyZ: 'radio1', KeyX: 'radio2', KeyV: 'radio3', F1: 'autobuy', F2: 'rebuy',
   Comma: 'buyammo1', Period: 'buyammo2', KeyO: 'buyequip', KeyM: 'chooseteam', Backquote: 'toggleconsole',
   Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', Digit4: 'slot4', Digit5: 'slot5',
+  KeyN: 'nightvision', KeyK: '+voicerecord',
 };
 export const CANON = {
   '+forward': 'KeyW', '+back': 'KeyS', '+moveleft': 'KeyA', '+moveright': 'KeyD', '+jump': 'Space', '+duck': 'KeyC',
@@ -26,8 +27,9 @@ export const CANON = {
   '+showscores': 'Tab', messagemode: 'KeyY', radio1: 'KeyZ', radio2: 'KeyX', radio3: 'KeyV', autobuy: 'F1', rebuy: 'F2',
   buyammo1: 'Comma', buyammo2: 'Period', buyequip: 'KeyO', chooseteam: 'KeyM', toggleconsole: 'Backquote',
   slot1: 'Digit1', slot2: 'Digit2', slot3: 'Digit3', slot4: 'Digit4', slot5: 'Digit5',
+  nightvision: 'KeyN', '+voicerecord': 'KeyK',
 };
-const UI_KEYS = ['KeyB', 'Tab', 'KeyY', 'Escape', 'Enter', 'KeyZ', 'KeyX', 'KeyV', 'F1', 'F2', 'Comma', 'Period', 'KeyO', 'KeyM', 'Backquote'];
+const UI_KEYS = ['KeyB', 'Tab', 'KeyY', 'Escape', 'Enter', 'KeyZ', 'KeyX', 'KeyV', 'F1', 'F2', 'Comma', 'Period', 'KeyO', 'KeyM', 'Backquote', 'KeyN', 'KeyK'];
 
 export class Input {
   constructor() {
@@ -96,7 +98,7 @@ export class Input {
       const h = this.held.get(code);
       if (h) h.delete(e.code);
       if (!h || !h.size) this.keys.delete(code);   // another key bound to it may still hold it
-      if (code === 'Tab' && this.onKey) this.onKey('Tab', e, false);
+      if ((code === 'Tab' || code === 'KeyK') && this.onKey) this.onKey(code, e, false);
     });
     window.addEventListener('blur', () => { this.keys.clear(); this.held.clear(); this.fireHeld = false; });
 

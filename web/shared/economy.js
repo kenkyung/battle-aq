@@ -39,6 +39,8 @@ export const EQUIPMENT = {
   assault: { name: 'Kevlar + Helmet', price: 1000 },
   ammo:    { name: 'Ammo refill',     price: ECONOMY.ammoPrice },
   kit:     { name: 'Defuse kit',      price: 200, team: 2 },
+  nvg:     { name: 'Nightvision',     price: 1250 },
+  shield:  { name: 'Tactical Shield', price: 2200, team: 2 },
   ammo1:   { name: 'Primary ammo',    price: 0 },   // one box for the primary (CS buyammo1: ",")
   ammo2:   { name: 'Secondary ammo',  price: 0 },   // one box for the pistol   (CS buyammo2: ".")
 };
@@ -65,7 +67,7 @@ export const BUY_MENU = [
   { key: 'heavy',    title: 'Machine gun', items: ['m249'] },
   { key: 'ammo1',    title: 'Prim. ammo', items: ['ammo1'], direct: true },
   { key: 'ammo2',    title: 'Sec. ammo',  items: ['ammo2'], direct: true },
-  { key: 'gear',     title: 'Equipment', items: ['kevlar', 'assault', 'flashbang', 'hegrenade', 'smokegrenade', 'kit'] },
+  { key: 'gear',     title: 'Equipment', items: ['kevlar', 'assault', 'flashbang', 'hegrenade', 'smokegrenade', 'kit', 'nvg', 'shield'] },
 ];
 
 export function itemInfo(id) {

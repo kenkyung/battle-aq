@@ -217,6 +217,16 @@ export class Remotes {
     if (alive && !r.alive) { r.cur.pos = [...p.pos]; this.resetPose(r); }
     r.alive = alive;
     if (p.weapon) this.setWeapon(r, p.weapon, p.mode || null);
+    // a shield plate carried in front of the chest
+    if (!!p.shield !== !!r.shieldOn && r.bones.chest) {
+      r.shieldOn = !!p.shield;
+      if (r.shieldOn) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(18, 30, 1.2), new THREE.MeshLambertMaterial({ color: 0x2c3136 }));
+        m.position.set(-4, -2, -14);
+        r.bones.chest.add(m);
+        r.shieldMesh = m;
+      } else if (r.shieldMesh) { r.shieldMesh.parent.remove(r.shieldMesh); r.shieldMesh = null; }
+    }
   }
 
   // A remote player fired: flash at their muzzle, tracer + impacts from it.

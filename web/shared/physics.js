@@ -335,8 +335,32 @@ function ladderMove(p, input, dt, colliders, lad) {
   p.onLadder = true;
 }
 
+// Swimming (cstrike PM_WaterMove): waist-deep or deeper, you move along the
+// whole view direction at 0.8 x speed, JUMP swims up, and with no input you
+// sink slowly; water friction bleeds speed off.
+function waterMove(p, input, dt, colliders) {
+  const speed = (input.maxSpeed || MOVE.runSpeed) * 0.8 * (input.walk ? 0.52 : 1);
+  const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw), sp = Math.sin(p.pitch || 0), cp = Math.cos(p.pitch || 0);
+  const fwd = (input.f ? 1 : 0) - (input.b ? 1 : 0), side = (input.r ? 1 : 0) - (input.l ? 1 : 0);
+  const wish = [-sy * cp * fwd + cy * side, sp * fwd + (input.jump ? 1 : 0), -cy * cp * fwd - sy * side];
+  const wl = Math.hypot(...wish);
+  let target;
+  if (wl > 0) target = wish.map((v) => (v / wl) * speed);
+  else target = [0, -60, 0];                                  // sink
+  const k = Math.min(1, dt * 5);
+  for (let i = 0; i < 3; i++) p.vel[i] += (target[i] - p.vel[i]) * k;
+  moveAxis(p, colliders, 0, p.vel[0] * dt);
+  moveAxis(p, colliders, 2, p.vel[2] * dt);
+  const hitY = moveAxis(p, colliders, 1, p.vel[1] * dt);
+  if (hitY < 0) p.vel[1] = Math.max(0, p.vel[1]);
+  p.onGround = grounded(p, colliders);
+  p.inWater = true;
+  p.landSpeed = 0;                                              // water breaks the fall
+}
+
 export function movePlayer(state, input, dt, colliders) {
   const p = state;
+  p.inWater = false;
   duck(p, input, dt, colliders);
   depenetrate(p, colliders);
   applyTagging(p, dt);
@@ -344,6 +368,7 @@ export function movePlayer(state, input, dt, colliders) {
   p.onLadder = false;
   const lad = p.offLadder > 0 ? null : ladderAt(p.pos, p.crouching, input.ladders);
   if (lad) { ladderMove(p, input, dt, colliders, lad); return p; }
+  if (input.water && input.water.length && waterLevel({ water: input.water }, p.pos, p.crouching) >= 2) { waterMove(p, input, dt, colliders); return p; }
 
   // wish direction from yaw (pitch does not move you)
   const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);

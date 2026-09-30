@@ -79,6 +79,8 @@ export class LocalPlayer {
     if (typeof m.hp === 'number' && this.alive) this.hp = m.hp;
     this.inv = m.inv;
     if (m.modes) this.modes = m.modes;
+    this.nvg = !!m.nvg;
+    if (!!m.shield !== !!this.shield) { this.shield = !!m.shield; this.vm.setShield(this.shield); }
     this.ammo = {};
     for (const [id, a] of Object.entries(m.ammo)) this.ammo[id] = { mag: a[0], reserve: a[1] };
     if (!m.reloading) this.reloadUntil = 0;
@@ -91,7 +93,7 @@ export class LocalPlayer {
     const w = WEAPONS[m.weapon];
     if (w && w.shell) {
       // a shell went in: its sound; done when full or out of shells
-      if (this.reloadUntil && m.mag > 0) this.sound('shell_insert', { volume: 0.6 });
+      if (this.reloadUntil && m.mag > 0) { this.sound('shell_insert', { volume: 0.6 }); this.vm.cycle('shell', 0.3); }
       if (m.mag >= w.mag || m.reserve <= 0) this.reloadUntil = 0;
       return;
     }
@@ -199,7 +201,7 @@ export class LocalPlayer {
     if (w.alt === 'silencer') {
       if (now < this.nextFire || this.reloading(now)) return;
       this.nextFire = now + w.silencerTime;
-      this.vm.reload(w.silencerTime);
+      this.vm.cycle('screw', w.silencerTime);
       this._reloadTimers.push(setTimeout(() => this.sound('bolt', { volume: 0.5 }), w.silencerTime * 700));
       this.net.send({ t: 'alt' });
       return;
@@ -219,7 +221,7 @@ export class LocalPlayer {
       this.reloadStart = now;
       this.reloadUntil = now + w.shell.start + w.shell.each * n;
       this.setZoom(0);
-      this.vm.reload(this.reloadUntil - now);
+      this.vm.cycle('shell', w.shell.start);       // tip the gun to the loading port
       this.net.send({ t: 'reload' });
       return;
     }
@@ -277,7 +279,9 @@ export class LocalPlayer {
         this.fx.shot(origin, d, k === 0 && Math.random() < 0.5 ? [muz.x, muz.y, muz.z] : null, this.others(), null, { tracer: k === 0, silent: k > 0 });
       }
     }
+    if (this.weapon === 'm3') setTimeout(() => { if (this.weapon === 'm3') this.vm.cycle('pump', 0.45); }, 180);
     if (w.cls === 'sniper' && !w.autoSniper) {
+      setTimeout(() => this.vm.cycle('bolt', 0.7), 250);
       this.setZoom(0); // bolt-action: the scope drops after the shot
       this._reloadTimers.push(setTimeout(() => this.sound('bolt', { volume: 0.6 }), 450));
     }
@@ -298,7 +302,8 @@ export class LocalPlayer {
       const still = this.frozen || this.planting || this.defusing;
       const keys = input.moveKeys();
       const wz = WEAPONS[this.weapon];
-      keys.maxSpeed = this.zoom > 0 && wz.zoomSpeed ? wz.zoomSpeed : wz.speed;   // scoped snipers walk slower
+      keys.maxSpeed = (this.zoom > 0 && wz.zoomSpeed ? wz.zoomSpeed : wz.speed) * (this.shield ? 0.9 : 1);   // scoped / shield: slower
+      keys.water = this.map && this.map.water;
       keys.ladders = this.map && this.map.ladders;
       // other players block you, as in CS
       const bodies = this.bodies();

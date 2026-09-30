@@ -780,6 +780,7 @@ export class Game {
     p.armor = 0; p.helmet = false; p.kit = false;
     p.nades = {};
     p.modes = {};
+    p.nvg = false; p.shield = false;
     p.reloadUntil = 0; p.burst = 0; p.shellAt = 0; p.burstIdx = 0;
   }
 
@@ -980,9 +981,18 @@ export class Game {
       const keys = {
         f: rooted ? 0 : k & 1, b: rooted ? 0 : k & 2, l: rooted ? 0 : k & 4, r: rooted ? 0 : k & 8,
         jump: rooted ? 0 : k & 16, crouch: (k & 32) || this.defusing.has(p.id), walk: k & 64,
-        maxSpeed: c.z && w.zoomSpeed ? w.zoomSpeed : w.speed, ladders: this.map.ladders,
+        maxSpeed: (c.z && w.zoomSpeed ? w.zoomSpeed : w.speed) * (p.shield ? 0.9 : 1), ladders: this.map.ladders, water: this.map.water,
       };
       movePlayer(p.move, keys, dt, solids);
+      // drowning: 12 s of air, then 10 damage a second (CS)
+      if (this.map.water && this.map.water.length && waterLevel(this.map, [p.move.pos[0], p.move.pos[1] + 12, p.move.pos[2]], p.move.crouching) >= 3) {
+        p.underwater = (p.underwater || 0) + dt;
+        if (p.underwater > 12 && Math.floor(p.underwater) !== Math.floor(p.underwater - dt)) {
+          p.hp -= 10;
+          this.broadcast({ t: 'hit', victim: p.id, attacker: p.id, part: 'chest', dmg: 10, hp: Math.max(0, p.hp), armor: p.armor, weapon: 'drown', point: p.pos, from: p.pos });
+          if (p.hp <= 0) { this.kill(p, null, 'drown', false); break; }
+        }
+      } else p.underwater = 0;
       if (p.move.landSpeed) {
         const v = p.move.landSpeed;
         p.move.landSpeed = 0;
@@ -1197,6 +1207,15 @@ export class Game {
           this.votes.set(p.id, msg.map);
           this.broadcast({ t: 'votes', tally: this.tally() });
         }
+        break;
+      // voice: relay the WebRTC handshake to a teammate; who is talking
+      case 'rtc': {
+        const q = this.players.get(Number(msg.to));
+        if (q && q.team === p.team && !q.bot && JSON.stringify(msg.data || {}).length < 16000) this.send(q, { t: 'rtc', from: p.id, data: msg.data });
+        break;
+      }
+      case 'talk':
+        this.broadcastTeam(p.team, { t: 'talk', id: p.id, on: !!msg.on });
         break;
       case 'pong':
         if (Number.isFinite(msg.ts)) p.ping = Math.max(0, Math.min(999, Math.round((now() - msg.ts) * 1000)));
@@ -1439,6 +1458,14 @@ export class Game {
     if (!victim || !victim.alive) return;
     const team = victim.team === attacker.team && victim !== attacker;
     if (team && this.competitive && !this.rules.friendlyfire) return;    // mp_friendlyfire 0
+    // tactical shield: frontal hits on the body are stopped, unless the
+    // holder has just fired (the shield comes down to shoot)
+    if (victim.shield && phit.part !== 'legs' && !w.melee && now() - (victim.lastFire || 0) > 0.3) {
+      const fx = -Math.sin(victim.yaw), fz = -Math.cos(victim.yaw);
+      const ax = attacker.pos[0] - victim.pos[0], az = attacker.pos[2] - victim.pos[2];
+      const al = Math.hypot(ax, az) || 1;
+      if ((fx * ax + fz * az) / al > 0.5) { this.broadcast({ t: 'shieldhit', victim: victim.id, point: phit.point }); return; }
+    }
     let dmg = dmgIn !== undefined ? dmgIn : baseDamage(attacker.weapon, phit.part, phit.t);
     if (team && this.competitive) dmg *= FF_DAMAGE;                     // CS: teammates take 35 %
     if (w.melee && w.backstab) {
@@ -1646,6 +1673,7 @@ export class Game {
     } else if (info.weapon) {
       const w = WEAPONS[item];
       if (p.inv[w.slot] === item) return fail('you already have one');
+      if (w.slot === 'primary' && p.shield) p.shield = false;          // a rifle replaces the shield
       if (p.money < price) return fail('not enough money');
       const old = p.inv[w.slot];
       if (old) this.dropWeapon(p, old, true);          // CS: the old gun lands on the floor
@@ -1671,6 +1699,17 @@ export class Game {
       if (p.kit) return fail('you already have a defuse kit');
       if (p.money < price) return fail('not enough money');
       p.kit = true;
+    } else if (item === 'nvg') {
+      if (p.nvg) return fail('you already have nightvision');
+      if (p.money < price) return fail('not enough money');
+      p.nvg = true;
+    } else if (item === 'shield') {
+      // the tactical shield takes the primary slot (CS: shield + pistol)
+      if (p.shield) return fail('you already have a shield');
+      if (p.money < price) return fail('not enough money');
+      if (p.inv.primary) this.dropWeapon(p, p.inv.primary, true);
+      p.shield = true;
+      if (!WEAPONS[p.weapon] || WEAPONS[p.weapon].slot !== 'secondary') p.weapon = p.inv.secondary || 'knife';
     } else if (item === 'ammo1' || item === 'ammo2') {
       // one box of the gun's calibre, as CS's buyammo1 / buyammo2
       const gun = p.inv[item === 'ammo1' ? 'primary' : 'secondary'];
@@ -1753,7 +1792,7 @@ export class Game {
     for (const [id, a] of Object.entries(p.ammo)) ammo[id] = [a.mag, a.reserve];
     return {
       money: p.money, armor: p.armor, helmet: p.helmet, kit: p.kit, c4: p.c4, hp: p.hp,
-      inv: { ...p.inv, c4: p.c4 ? 'c4' : null, grenade: this.currentNade(p) }, nades: { ...p.nades },
+      inv: { ...p.inv, c4: p.c4 ? 'c4' : null, grenade: this.currentNade(p) }, nades: { ...p.nades }, nvg: !!p.nvg, shield: !!p.shield,
       weapon: p.weapon, ammo, reloading: !!p.reloadUntil, modes: { ...p.modes },
     };
   }
@@ -1813,7 +1852,7 @@ export class Game {
       players: [...this.players.values()].map((p) => (this.hiddenFrom(viewer, p, t) ? { id: p.id, team: p.team, alive: true, hid: 1,
         ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined } : {}) } : {
         id: p.id, team: p.team, pos: r1(p.pos), yaw: r3(p.yaw), pitch: r3(p.pitch),
-        alive: p.alive, crouching: p.crouching || undefined, moving: p.moving || undefined,
+        alive: p.alive, crouching: p.crouching || undefined, moving: p.moving || undefined, shield: p.shield ? 1 : undefined,
         weapon: p.weapon, mode: p.modes[p.weapon] || undefined, reloading: (!!p.reloadUntil || !!p.shellAt) || undefined,
         ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined } : {}),
         c4: viewer.team === TEAM.T && p.c4 ? 1 : undefined, vip: this.vipMode && p.vip ? 1 : undefined,

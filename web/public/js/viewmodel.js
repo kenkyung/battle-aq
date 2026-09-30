@@ -117,6 +117,9 @@ export class Viewmodel {
     };
     attach('hand_r_' + team, `${mid}_grip`);
     if (!w.melee && !w.grenade) attach('hand_l_' + team, `${mid}_lhand`);
+    this.lhandSocket = gun.getObjectByName(`${mid}_lhand`) || null;
+    this.lhandBaseZ = this.lhandSocket ? this.lhandSocket.position.z : 0;
+    this.cyc = null;
     if (animate && !same) this.drawT = 0;
     this.reloadT = 1;
   }
@@ -134,6 +137,27 @@ export class Viewmodel {
   }
 
   reload(duration) { this.reloadT = 0; this.reloadDur = Math.max(0.3, duration); }
+
+  // tactical shield: a plate with a view slit held on the left
+  setShield(on) {
+    if (on && !this.shieldMesh) {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: 0.6, metalness: 0.4 });
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(14, 22, 0.8), mat);
+      plate.position.set(0, -3, 0);
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(8, 2.2, 0.9), new THREE.MeshStandardMaterial({ color: 0x223344, transparent: true, opacity: 0.35, roughness: 0.1 }));
+      glass.position.set(0, 5, 0.05);
+      g.add(plate, glass);
+      g.position.set(-8.5, -3.5, -15);
+      g.rotation.set(0, 0.35, 0);
+      this.shieldMesh = g;
+    }
+    if (this.shieldMesh) { if (on) this.camera.add(this.shieldMesh); else this.camera.remove(this.shieldMesh); }
+  }
+
+  // weapon-specific motions (M18): 'pump' (M3 after a shot), 'bolt'
+  // (AWP / Scout), 'screw' (silencer on / off), 'shell' (one shell loaded)
+  cycle(kind, duration) { this.cyc = { kind, t: 0, dur: Math.max(0.1, duration) }; }
   cancelReload() { this.reloadT = 1; }
 
   // muzzle position in the MAIN camera's world, for tracers
@@ -170,19 +194,37 @@ export class Viewmodel {
     const r = this.reloadT;
     const rl = r < 1 ? Math.sin(Math.min(1, r / 0.25) * Math.PI / 2) * (r > 0.75 ? 1 - (r - 0.75) / 0.25 : 1) : 0;
 
+    // weapon cycle motions
+    let cx = 0, cy = 0, cz = 0, rx = 0, ry = 0, rz = 0, hand = 0;
+    if (this.cyc) {
+      const c = this.cyc;
+      c.t = Math.min(1, c.t + dt / c.dur);
+      const u = Math.sin(c.t * Math.PI);                   // out and back
+      if (c.kind === 'pump') { hand = u * 3.2; cz = u * 0.6; rx = u * 0.05; }
+      else if (c.kind === 'bolt') { rz = -u * 0.4; cy = -u * 1.2; cz = u * 0.8; rx = u * 0.08; }
+      else if (c.kind === 'screw') {
+        // tip the gun in toward the middle, twist the can on in a few turns
+        const e = Math.min(1, Math.sin(Math.min(1, c.t * 1.25) * Math.PI) * 1.6);
+        cx = -e * 3; cy = -e * 1.5; ry = e * 0.55; rx = e * 0.2; rz = -e * 0.2 + Math.sin(c.t * 40) * 0.02 * e;
+      } else if (c.kind === 'shell') { cy = -u * 1.1; rz = u * 0.18; hand = u * 1.5; }
+      if (c.t >= 1) this.cyc = null;
+    }
+    // the support hand slides along the gun for pumps / shell loads
+    if (this.lhandSocket) this.lhandSocket.position.z = this.lhandBaseZ + hand;
+
     // knife swing arc
     this.swingT = Math.min(1, this.swingT + dt / 0.32);
     const sw = this.swingT < 1 ? Math.sin(this.swingT * Math.PI) : 0;
 
     this.rig.position.set(
-      bx + this.sway.x * 0.6 - sw * 3,
-      by - this.sway.y * 0.6 - draw * 8 - rl * 2.5,
-      this.kick + sw * -2,
+      bx + this.sway.x * 0.6 - sw * 3 + cx,
+      by - this.sway.y * 0.6 - draw * 8 - rl * 2.5 + cy,
+      this.kick + sw * -2 + cz,
     );
     this.rig.rotation.set(
-      this.kickRot - draw * 0.9 - rl * 0.35 + sw * 0.3,
-      this.sway.x * 0.03 + sw * 0.9,
-      -rl * 0.6 - sw * 0.4,
+      this.kickRot - draw * 0.9 - rl * 0.35 + sw * 0.3 + rx,
+      this.sway.x * 0.03 + sw * 0.9 + ry,
+      -rl * 0.6 - sw * 0.4 + rz,
     );
 
     // flash

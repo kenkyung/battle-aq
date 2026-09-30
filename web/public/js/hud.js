@@ -379,7 +379,7 @@ export class HUD {
 
   cursorClick() { const b = this._under(); if (b) b.click(); }
 
-  refreshBuy({ money, team, inv, armor, helmet, kit, buyLeft }) {
+  refreshBuy({ money, team, inv, armor, helmet, kit, buyLeft, nvg, shield }) {
     this.el.buyMoney.textContent = '$' + money;
     this.el.buyTimer.textContent = buyLeft < 0 ? 'warmup: buy anywhere' : `${Math.ceil(buyLeft)}s left to buy`;
     this._buyCats = BUY_MENU.map((cat) => cat.items.filter((id) => { const it = itemInfo(id); return !it.team || it.team === team; }));
@@ -390,9 +390,12 @@ export class HUD {
       let none = false;
       if (id === 'ammo1' || id === 'ammo2') { const g = inv[id === 'ammo1' ? 'primary' : 'secondary']; price = g ? ammoBox(g)[0] : 0; none = !g; }
       const own = it.weapon ? Object.values(inv).includes(id)
-        : (id === 'kevlar' ? armor >= 100 : id === 'assault' ? armor >= 100 && helmet : id === 'kit' ? !!kit : false);
+        : (id === 'kevlar' ? armor >= 100 : id === 'assault' ? armor >= 100 && helmet : id === 'kit' ? !!kit : id === 'nvg' ? !!nvg : id === 'shield' ? !!shield : false);
       const cls = ['bitem', money < price || none ? 'no' : '', own ? 'own' : ''].join(' ');
-      return `<button class="${cls}" data-item="${id}"><i class="k">${ii + 1}</i>${esc(it.name)}<span class="p">${none ? '—' : '$' + price}</span></button>`;
+      // VGUI-style: the weapon's silhouette on its button
+      const ic = KILLICONS && KILLICONS.icons[id];
+      const art = ic ? `<i class="bart" style="width:${Math.round(ic[2] * 16 / ic[3])}px;background-image:url(${assetUrl('ui/killicons.png')});background-size:${KILLICONS.size[0] * 16 / ic[3]}px ${KILLICONS.size[1] * 16 / ic[3]}px;background-position:${-ic[0] * 16 / ic[3]}px ${-ic[1] * 16 / ic[3]}px"></i>` : '';
+      return `<button class="${cls}" data-item="${id}">${art}<i class="k">${ii + 1}</i>${esc(it.name)}<span class="p">${none ? '—' : '$' + price}</span></button>`;
     }).join('')}</div>`).join('');
     for (const btn of this.el.buyCols.querySelectorAll('.bitem')) {
       btn.onclick = () => this._onBuy && this._onBuy(btn.dataset.item);

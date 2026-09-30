@@ -42,13 +42,18 @@ export class Net {
         // debug counters for automated testing
         window.__msgCount = (window.__msgCount || 0) + 1;
         window.__lastMsg = msg.t;
+        if (this.tap) this.tap(msg);          // demo recording
         const h = this.handlers.get(msg.t);
         if (h) h(msg);
       };
     });
   }
 
+  // demo playback: deliver a recorded message as if it had arrived
+  inject(msg) { const h = this.handlers.get(msg.t); if (h) h(msg); }
+
   send(obj) {
+    if (this.fake) return;               // playing a demo: nothing goes out
     if (this.ws && this.ws.readyState === 1) { const d = JSON.stringify(obj); this.bytesOut += d.length; this.ws.send(d); }
   }
 

@@ -2,7 +2,7 @@
   --t: #e0b25c; --ct: #7fb2e8; --hud: #f1ead8; --hud-dim: rgba(241,234,216,.55);
   --good: #9fe07a; --bad: #ff6a55; --panel: rgba(12,14,16,.82); --line: rgba(241,234,216,.14);
   --font: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --num: "Arial Narrow", "Roboto Condensed", "Segoe UI", sans-serif;
+  --num: "Teko", "Arial Narrow", "Roboto Condensed", "Segoe UI", sans-serif;   /* CS-like condensed HUD digits */
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0d0e; }
@@ -300,3 +300,13 @@ label.check input { accent-color: var(--t); }
 .btn.small { padding: 6px 10px; font-size: 11px; }
 table.lb { width: 100%; border-collapse: collapse; font-size: 12px; } table.lb td, table.lb th { padding: 3px 4px; text-align: left; border-bottom: 1px solid var(--line); }
 table.lb th { color: var(--hud-dim); font-weight: 600; font-size: 10px; letter-spacing: 1px; }
+
+/* nightvision grain + vignette */
+#nvgNoise { position: absolute; inset: 0; z-index: 5; pointer-events: none; mix-blend-mode: screen; opacity: .35;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.85) 100%),
+    repeating-radial-gradient(circle at 17% 32%, rgba(120,255,120,.08) 0 1px, transparent 1px 3px);
+  animation: nvg 0.12s steps(2) infinite; }
+@keyframes nvg { 50% { background-position: 0 0, 7px 3px; } }
+#voiceList { position: absolute; left: 18px; top: 210px; font-size: 12px; color: var(--hudc); display: flex; flex-direction: column; gap: 2px; text-shadow: 0 1px 2px #000; }
+.bitem .bart { float: right; height: 16px; opacity: .7; margin-top: 1px; background-repeat: no-repeat; }
+#overview { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 8; border-radius: 6px; box-shadow: 0 20px 60px rgba(0,0,0,.6); pointer-events: none; }

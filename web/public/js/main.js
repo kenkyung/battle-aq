@@ -13,6 +13,7 @@ import { BombView } from './bomb3d.js';
 import { HostageView } from './hostages3d.js';
 import { DropView } from './drops3d.js';
 import { DynWorld } from './dynworld.js';
+import { Voice } from './voice.js';
 import { GameConsole, keyCode, keyName, ACTIONS, DEFAULT_BINDS } from './console.js';
 import { NadeView } from './nades3d.js';
 import { Sfx, surfaceOf } from './sfx.js';
@@ -56,6 +57,25 @@ renderer.autoClear = false;
 renderer.info.autoReset = false;
 container.appendChild(renderer.domElement);
 setAnisotropy(Math.min(quality === 'lowest' ? 1 : quality === 'low' ? 2 : 8, renderer.capabilities.getMaxAnisotropy()));
+
+// GPU time per frame (M18), where the browser exposes timer queries
+const gpuTimer = (() => {
+  const gl = renderer.getContext();
+  const ext = gl.getExtension && gl.getExtension('EXT_disjoint_timer_query_webgl2');
+  const t = { ms: null, begin() {}, end() {} };
+  if (!ext) return t;
+  let q = null, pending = [];
+  t.begin = () => { if (!netGraph || q) return; q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); };
+  t.end = () => {
+    if (q) { gl.endQuery(ext.TIME_ELAPSED_EXT); pending.push(q); q = null; }
+    while (pending.length && gl.getQueryParameter(pending[0], gl.QUERY_RESULT_AVAILABLE)) {
+      const p = pending.shift();
+      if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) { const ms = gl.getQueryParameter(p, gl.QUERY_RESULT) / 1e6; t.ms = t.ms === null ? ms : t.ms + (ms - t.ms) * 0.1; }
+      gl.deleteQuery(p);
+    }
+  };
+  return t;
+})();
 
 // Dynamic resolution (M17): if frames take longer than the target (60 fps,
 // or fps_max), render fewer pixels; give them back when there is headroom.
@@ -379,7 +399,9 @@ async function connect(joinMsg) {
   }
 }
 
+let lastWelcome = null;
 async function onWelcome(welcome) {
+  lastWelcome = welcome;
   myId = welcome.id;
   await useMap(welcome.mapId);
   if (remotes) remotes.clear();
@@ -452,7 +474,7 @@ function updateNetGraph() {
   const me = roster.get(myId);
   const ri = { calls: netStats.calls || 0, triangles: netStats.tris || 0 };
   netStats.text = `fps ${Math.round(netStats.frames / s)}  ping ${me && me.ping !== undefined ? me.ping : '?'} ms  cpu ${netStats.cpu.toFixed(1)} ms\n`
-    + `draws ${ri.calls}  tris ${(ri.triangles / 1000).toFixed(0)}k  res ${Math.round(dyn.scale * 100)}%\n`
+    + `draws ${ri.calls}  tris ${(ri.triangles / 1000).toFixed(0)}k  res ${Math.round(dyn.scale * 100)}%${gpuTimer.ms !== null ? `  gpu ${gpuTimer.ms.toFixed(1)} ms` : ''}\n`
     + `in ${((net.bytesIn - netStats.lastIn) / s / 1024).toFixed(1)} k/s  out ${((net.bytesOut - netStats.lastOut) / s / 1024).toFixed(1)} k/s\n`
     + `updaterate ${Math.round(netStats.snaps / s)}/${round.updaterate || '?'}  tickrate ${round.tickrate || '?'}  interp ${Math.round(interp * 1000)} ms  pending ${player ? player.pending.length : 0}`;
   netStats.snaps = 0; netStats.frames = 0; netStats.t = nowMs;
@@ -578,7 +600,9 @@ net.on('respawn', (msg) => {
   hud.centerMsg('');
 });
 
+let lastInv = null;
 net.on('inv', (msg) => {
+  lastInv = msg;
   if (!player) return;
   const had = player.weapon;
   const hadC4 = player.c4;
@@ -691,6 +715,10 @@ function applyRound(r) {
 
 net.on('round', applyRound);
 net.on('ping', (msg) => net.send({ t: 'pong', ts: msg.ts }));
+net.on('shieldhit', (msg) => {
+  if (fx && msg.point) fx.impact(msg.point, [0, 1, 0], 'metal');
+  if (msg.point) sfx.playAt('step_metal_0', msg.point, { volume: 0.9, ref: 150, max: 2500, rate: 1.6 });
+});
 net.on('vip', () => { hud.centerMsg('YOU ARE THE VIP — reach the escape zone (green ring on the radar)'); sfx.radio('Protect the VIP'); setTimeout(() => hud.centerMsg(''), 4000); });
 net.on('door', (msg) => {
   const e = dynWorld && dynWorld.setDoor(msg.id, msg.open);
@@ -789,6 +817,8 @@ function updateFlash(dt) {
 }
 
 net.onClose = () => {
+  voice.closeAll();
+  toggleNightvision(false);
   running = false;
   input.capture = false;
   hud.hide();
@@ -901,6 +931,112 @@ con.cmd('rcon', 'rcon <command>: server admin (status, kick, ban, map, restart, 
 net.on('rcon_reply', (msg) => { for (const line of String(msg.text).split('\n')) con.print(line, 'dim'); if (!con.isOpen()) con.toggle(true); });
 con.cmd('version', 'build id', () => con.print(`Battle-AQ ${document.querySelector('script[type=module]')?.src.match(/v\/([^/]+)/)?.[1] || 'dev'}`));
 
+// ------------------------------------------------------------------ voice (K)
+
+const speaking = new Map();   // id -> until
+const voice = new Voice(net, {
+  myId: () => myId,
+  teammates: () => [...roster.values()].filter((r) => r.id !== myId && !r.bot && r.team === myTeam).map((r) => r.id),
+  onSpeaking: (id, on, err) => { if (err) { hud.centerMsg(err); setTimeout(() => hud.centerMsg(''), 1500); } setSpeaking(id, on); },
+});
+voice.setEnabled(store.get('baq_voice', '1') === '1');
+net.on('rtc', (msg) => voice.handle(msg));
+net.on('talk', (msg) => setSpeaking(msg.id, msg.on));
+function setSpeaking(id, on) {
+  if (on) speaking.set(id, true); else speaking.delete(id);
+  const el = document.getElementById('voiceList');
+  if (el) el.innerHTML = [...speaking.keys()].map((i) => `<div>🔊 ${esc(i === myId ? 'you' : (roster.get(i) || {}).name || '#' + i)}</div>`).join('');
+}
+setInterval(() => { if (running) voice.sync(); }, 2000);
+$('voiceOn').checked = store.get('baq_voice', '1') === '1';
+$('voiceOn').addEventListener('change', (e) => { store.set('baq_voice', e.target.checked ? '1' : '0'); voice.setEnabled(e.target.checked); });
+
+// ------------------------------------------------------------------ demos (M18)
+//
+// record <name>: every message from the server, plus our view angles, into a
+// file; playdemo: feed a file back through the same handlers (the server's
+// `you` messages carry our position), watched through our old eyes.
+
+const demo = { rec: null, playing: null, speed: 1, paused: false };
+function demoPose() {
+  const r = demo.rec;
+  const t = (performance.now() - r.t0) / 1000;
+  if (t - r.lastPose < 0.05) return;
+  r.lastPose = t;
+  r.msgs.push([+t.toFixed(3), { t: '_pose', y: +player.state.yaw.toFixed(4), p: +player.state.pitch.toFixed(4) }]);
+}
+con.cmd('record', 'record <name>: record a demo of this match', (a) => {
+  if (!running || !lastWelcome) return con.print('join a game first');
+  const name = (a[0] || 'demo').replace(/[^\w-]/g, '').slice(0, 32) || 'demo';
+  const t0 = performance.now();
+  demo.rec = { name, t0, lastPose: -1, msgs: [], header: { version: 1, name, welcome: { ...lastWelcome, round: { ...round, ...lastWelcome.round, phase: round.phase } }, inv: player && { ...lastInv }, when: new Date().toISOString() } };
+  net.tap = (m) => { if (m.t !== 'ping') demo.rec.msgs.push([+((performance.now() - t0) / 1000).toFixed(3), m]); };
+  con.print(`recording ${name}… ("stop" to save it)`);
+});
+con.cmd('stop', 'stop recording and save the demo file', () => {
+  if (!demo.rec) return con.print('not recording');
+  net.tap = null;
+  const d = demo.rec; demo.rec = null;
+  const blob = new Blob([JSON.stringify({ header: d.header, msgs: d.msgs })], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `${d.name}.dem.json`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  con.print(`saved ${d.name}.dem.json (${d.msgs.length} messages, ${d.msgs.length ? d.msgs[d.msgs.length - 1][0].toFixed(0) : 0} s)`);
+});
+con.cmd('playdemo', 'playdemo: pick a .dem.json file to watch', () => {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = async () => {
+    try { startDemo(JSON.parse(await inp.files[0].text())); } catch (e) { con.print('not a demo file: ' + e.message); }
+  };
+  inp.click();
+});
+con.cmd('demo_pause', 'pause / resume demo playback', () => { demo.paused = !demo.paused; });
+con.cmd('demo_speed', 'demo_speed <x>: playback speed (0.25 .. 4)', (a) => { demo.speed = Math.max(0.25, Math.min(4, parseFloat(a[0]) || 1)); });
+con.cmd('stopdemo', 'stop demo playback', () => endDemo());
+
+async function startDemo(d) {
+  if (!d || !d.header || !Array.isArray(d.msgs)) throw new Error('missing header');
+  if (running) { leaving = true; net.close(); await new Promise((r) => setTimeout(r, 400)); }
+  net.fake = true;
+  await onWelcome(d.header.welcome);
+  if (d.header.inv) player.applyInv(d.header.inv);
+  demo.playing = { msgs: d.msgs, i: 0, t: 0 };
+  demo.paused = false;
+  hud.banner('DEMO — ' + (d.header.name || ''), null, 3000);
+  con.toggle(false);
+}
+function demoTick(dt) {
+  const p = demo.playing;
+  if (!demo.paused) p.t += dt * demo.speed;
+  while (p.i < p.msgs.length && p.msgs[p.i][0] <= p.t) {
+    const m = p.msgs[p.i++][1];
+    if (m.t === '_pose') { player.state.yaw = m.y; player.state.pitch = m.p; continue; }
+    if (m.t === 'you') { if (m.st) { player.pending = []; Object.assign(player.state, { pos: m.st.pos.slice(), crouching: m.st.crouching, eye: m.st.eye }); } continue; }
+    net.inject(m);
+  }
+  if (p.i >= p.msgs.length) endDemo();
+}
+function endDemo() {
+  if (!demo.playing) return;
+  demo.playing = null;
+  net.fake = false;
+  net.onClose();
+  menuStatus.textContent = 'demo finished';
+}
+
+// ------------------------------------------------------------------ nightvision (N)
+
+let nvOn = false;
+function toggleNightvision(force) {
+  const want = force === undefined ? !nvOn : force;
+  if (want && !(player && player.nvg && player.alive)) { if (force === undefined) { hud.centerMsg('you have no nightvision (buy it: B, 8)'); setTimeout(() => hud.centerMsg(''), 1500); } return; }
+  nvOn = want;
+  renderer.domElement.style.filter = nvOn ? 'brightness(2.4) contrast(1.15) grayscale(1) sepia(1) hue-rotate(58deg) saturate(3.2)' : '';
+  document.getElementById('nvgNoise').classList.toggle('hidden', !nvOn);
+  sfx.play('hitmark', { volume: 0.35, rate: nvOn ? 0.6 : 0.45 });
+}
+
 // ------------------------------------------------------------------ team menu (M)
 
 function openTeamMenu(on) {
@@ -943,7 +1079,7 @@ function canBuy() {
 
 function buyContext() {
   return {
-    money: player.money, team: myTeam, inv: player.inv, armor: player.armor, helmet: player.helmet, kit: player.kit,
+    money: player.money, team: myTeam, inv: player.inv, armor: player.armor, helmet: player.helmet, kit: player.kit, nvg: player.nvg, shield: player.shield,
     buyLeft: round.buyEndsAt < 0 ? -1 : round.buyEndsAt - performance.now() / 1000,
   };
 }
@@ -994,6 +1130,8 @@ input.onKey = (code, e, down) => {
     return;
   }
   if (code === 'KeyM' && down && !input.typing) { openTeamMenu(true); return; }
+  if (code === 'KeyN' && down && !input.typing) { toggleNightvision(); return; }
+  if (code === 'KeyK') { if (!input.typing) voice.talk(down); return; }
   if (code === 'Tab') { scoresHeld = down; return; }
   if (!down) return;
   if (radioMenu && code.startsWith('Digit')) {
@@ -1057,7 +1195,7 @@ function spectateTargets() {
 // Dead / spectating, CS style: JUMP cycles first person -> chase cam ->
 // free look; FIRE picks the next player; the mouse orbits the chase cam
 // and steers free look (WASD flies).
-const SPEC_MODES = ['first', 'chase', 'free'];
+const SPEC_MODES = ['first', 'chase', 'free', 'overview'];
 const spec = { mode: 'first', yaw: 0, pitch: -0.2, jumpWas: false, pos: null };
 function updateSpectate(dt) {
   const list = spectateTargets();
@@ -1075,6 +1213,15 @@ function updateSpectate(dt) {
       const i = list.findIndex((r) => r.id === spectating);
       spectating = list[(i + 1) % list.length].id;
     } else spectating = null;
+  }
+  $('overview').classList.toggle('hidden', spec.mode !== 'overview');
+  if (spec.mode === 'overview') {
+    // the whole map from above (CS spectator overview), players as dots
+    remotes.hiddenId = null;
+    drawOverview();
+    overview(dt, 0.04);
+    hud.setSpectate('overview  ·  jump: first person');
+    return;
   }
   if (spec.mode === 'free') {
     remotes.hiddenId = null;
@@ -1113,6 +1260,30 @@ function updateSpectate(dt) {
     overview(dt, 0.08);
     hud.setSpectate(round.phase === 'warmup' ? '' : 'waiting for the next round');
   }
+}
+
+function drawOverview() {
+  const cv = $('overview');
+  const bg = hud.radarBg;
+  if (!bg) return;
+  const H = Math.min(window.innerHeight * 0.78, window.innerWidth * 0.9);
+  const W = H * bg.canvas.width / bg.canvas.height;
+  if (cv.width !== Math.round(W)) { cv.width = Math.round(W); cv.height = Math.round(H); }
+  const ctx = cv.getContext('2d');
+  const k = cv.width / bg.canvas.width;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.globalAlpha = 0.92; ctx.drawImage(bg.canvas, 0, 0, cv.width, cv.height); ctx.globalAlpha = 1;
+  const at = (p) => [(p[0] - bg.b.x0) * bg.s * k, (p[2] - bg.b.z0) * bg.s * k];
+  for (const r of remotes.players.values()) {
+    if (!r.alive || r.hidden) continue;
+    const [x, y] = at(r.cur.pos);
+    ctx.fillStyle = r.team === TEAM.CT ? '#7fb2e8' : '#e0b25c';
+    ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.sin(r.cur.yaw) * 14, y - Math.cos(r.cur.yaw) * 14); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.fillText(r.name, x + 8, y - 6);
+  }
+  if (bomb && bomb.pos) { const [x, y] = at(bomb.pos); ctx.fillStyle = bomb.state === 'planted' ? '#ff4030' : '#ffb020'; ctx.fillRect(x - 6, y - 5, 12, 10); }
 }
 
 let orbitT = 0;
@@ -1180,7 +1351,9 @@ function frame(now) {
 
   const menuOpen = hud.buyOpen() || pauseVisible() || hud.matchEndOpen();
   player.frozen = round.phase === 'freeze' || round.phase === 'matchend';
-  player.update(dt, input, { canAct: !menuOpen && input.locked && !input.typing });
+  if (demo.playing) { demoTick(dt); player.applyCamera(dt); }
+  else player.update(dt, input, { canAct: !menuOpen && input.locked && !input.typing });
+  if (demo.rec) demoPose();
   remotes.update(dt, camera);
   if (bomb.state === 'planted' && bomb.localLeft !== undefined) bomb.localLeft -= dt;
   if (bombView) bombView.update(bomb, dt);
@@ -1209,6 +1382,7 @@ function frame(now) {
   sfx.setListener(camera);
 
   if (!player.alive) updateSpectate(dt);
+  else if (spec.mode === 'overview') $('overview').classList.add('hidden');
   else { hud.setSpectate(''); remotes.hiddenId = null; }
   if (debugCam) { camera.position.set(debugCam[0], debugCam[1], debugCam[2]); camera.rotation.set(debugCam[4] || 0, debugCam[3] || 0, 0); }
   if (nadeView && nadeView.shake > 0) {
@@ -1273,8 +1447,11 @@ function frame(now) {
   lightProbe(dt);
   renderer.clear();
   netStats.cpu += ((performance.now() - cpu0) - netStats.cpu) * 0.05;     // script time per frame
+  gpuTimer.begin();
   renderer.render(scene, camera);
   vm.render(renderer);
+  gpuTimer.end();
+  if (nvOn && !player.alive) toggleNightvision(false);
   netStats.calls = renderer.info.render.calls; netStats.tris = renderer.info.render.triangles;
 }
 
@@ -1320,3 +1497,6 @@ function lightProbe(dt) {
 
 requestAnimationFrame(frame);
 boot();
+
+// installable app (PWA): the service worker lives next to index.html
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register(new URL('../sw.js', import.meta.url).href.replace(/\/v\/[0-9a-f]+\//, '/'), { scope: './' }).catch(() => {});
