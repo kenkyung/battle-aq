@@ -140,6 +140,36 @@ export const THEMES = {
     sunDir: [0.75, 0.38, 0.35], sunColor: 'ffc88e', sunStrength: 3.4,
     skyStrength: 0.9, clouds: 0.4, skyline: 'town',
   },
+  de_aq_nuke: {
+    mats: {
+      floor:     { tex: 'asphalt',         tile: 256 },
+      wall:      { tex: 'concrete',        tile: 192 },
+      concrete:  { tex: 'concrete',        tile: 192 },
+      roof:      { tex: 'corrugated',      tile: 128 },
+      metal:     { tex: 'metal_plate',     tile: 128 },
+      container: { tex: 'container_paint', tile: 128 },
+      accent:    { tex: 'metal_plate',     tile: 128 },
+      cover:     { tex: 'crate',           tile: 0 },
+      wood:      { tex: 'planks',          tile: 96 },
+    },
+    sunDir: [0.5, 0.8, -0.35], sunColor: 'fff4e4', sunStrength: 3.6,
+    skyStrength: 1.1, clouds: 0.55, skyline: 'town',
+  },
+  de_aq_train: {
+    mats: {
+      floor:     { tex: 'asphalt',         tile: 256 },
+      wall:      { tex: 'brick_red',       tile: 128 },
+      concrete:  { tex: 'concrete',        tile: 192 },
+      container: { tex: 'container_paint', tile: 128 },
+      rust:      { tex: 'corrugated',      tile: 128 },
+      metal:     { tex: 'metal_plate',     tile: 128 },
+      accent:    { tex: 'concrete',        tile: 256 },
+      cover:     { tex: 'crate',           tile: 0 },
+      wood:      { tex: 'planks',          tile: 96 },
+    },
+    sunDir: [-0.4, 0.75, 0.5], sunColor: 'fff0dc', sunStrength: 3.4,
+    skyStrength: 1.0, clouds: 0.6, skyline: 'town',
+  },
 };
 
 THEMES.de_aq_dust2 = THEMES.de_aq_dust;

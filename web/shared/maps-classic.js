@@ -179,4 +179,167 @@ export const dust = {
   bombsites: { A: [1500, S, -1650], B: [-1950, S, -1450] },
 };
 
-export const CLASSIC_MAPS = [dust2];
+
+// ------------------------------------------------------------------ de_aq_nuke
+//
+// Two bombsites stacked in one building, like nuke: A upstairs in the big
+// "silo room", B right below it. Ts come in from the south: up the outdoor
+// ramp into the lobby (-> A), or west through the long roofed "secret"
+// corridor (-> B), or round the big outside yard to the ramp room and the
+// crouch-only vent (-> B). CTs reach A over the heaven catwalk (a ramp up from
+// the yard) and B through secret or the ramp room. A hatch in A's floor
+// drops into B, with a ladder to climb back up.
+
+const NK = 512;                          // wall height
+const nkBounds = { x0: -2048, z0: -2048, x1: 2048, z1: 2048 };
+const nkAreas = [
+  [-1600, 1280, 1600, 1920],             // T spawn
+  [512, -1536, 1600, 1280],              // outside
+  [-1536, -1920, 1600, -1536],           // CT spawn
+  [-1600, 384, -1024, 1280],             // west approach
+  [-1536, -1536, -1152, 384, 0, 160],    // secret (roofed)
+  [-1152, -896, -1024, -768, 0, 160],    // secret -> B
+  [-1024, -1152, 256, -256, 0, 224],     // B (its ceiling is A's floor)
+  [96, -1152, 256, -1024],               // the hatch shaft (no ceiling)
+  [256, -768, 512, -512, 0, 160],        // ramp room: outside -> B
+  [256, -416, 512, -352, 0, 56],         // the vent: crouch only
+  [-1024, -256, 256, 384, 256, 448],     // lobby (upstairs)
+  [-640, 384, -384, 1280],               // T ramp up to the lobby
+  [256, -1152, 512, -896, 256],          // heaven catwalk (upstairs, open)
+];
+// solid above the low roofed areas, so the upper floor has walls
+const above = (x0, z0, x1, z1, y) => ({ c: [(x0 + x1) / 2, (y + NK) / 2, (z0 + z1) / 2], s: [x1 - x0, NK - y, z1 - z0], mat: 'wall' });
+
+export const nuke = {
+  id: 'de_aq_nuke',
+  name: 'de_aq_nuke',
+  bounds: nkBounds,
+  palette: {
+    floor: hex(0.36, 0.36, 0.37), wall: hex(0.62, 0.62, 0.6), concrete: hex(0.62, 0.62, 0.6),
+    roof: hex(0.55, 0.57, 0.6), metal: hex(0.45, 0.47, 0.5), cover: hex(0.45, 0.30, 0.17),
+    container: hex(0.3, 0.42, 0.55), accent: hex(0.7, 0.66, 0.4), wood: hex(0.5, 0.36, 0.22),
+  },
+  sky: { top: hex(0.46, 0.58, 0.75), horizon: hex(0.8, 0.82, 0.84) },
+  fog: { color: hex(0.76, 0.78, 0.8), density: 0.00018 },
+  ambient: 0.75, sun: 0.95,
+  boxes: [
+    G(0, 0, 4096, 4096, 'floor'),
+    ...carve({ bounds: nkBounds, areas: nkAreas, wallH: NK, roofMat: 'concrete', floorMat: 'concrete' }),
+    above(-1536, -1536, -1152, 384, 192), above(-1152, -896, -1024, -768, 192),
+    above(256, -768, 512, -512, 192), above(256, -416, 512, -352, 88),
+    above(-1024, -256, 256, 384, 480),
+    // the silo room's roof over A, and its wall to the lobby (two doors)
+    W(-384, 496, -704, 1280, 32, 896, 'roof'),
+    ...[[-1024, -696], [-504, -196], [-4, 256]].map(([x0, x1]) => W((x0 + x1) / 2, 368, -240, x1 - x0, 224, 32, 'wall')),
+    // B: floor plates, pillars holding A up, the ladder's support
+    W(-384, 1, -704, 1280, 2, 896, 'concrete'),
+    W(-700, 112, -500, 48, 224, 48, 'concrete'), W(-100, 112, -900, 48, 224, 48, 'concrete'),
+    W(176, 112, -1016, 96, 224, 16, 'metal'),
+    // A: the famous crates, railings round the hatch
+    W(-420, 256 + 32, -820, 128, 64, 64, 'cover'), W(-420, 256 + 96, -820, 64, 64, 64, 'cover'),
+    W(-760, 256 + 32, -480, 64, 64, 128, 'cover'), W(60, 256 + 20, -1088, 16, 40, 128, 'metal'),
+    // B: boxes
+    W(-560, 32, -760, 128, 64, 64, 'cover'), W(-160, 32, -420, 64, 64, 64, 'cover'), W(-900, 32, -1000, 64, 64, 64, 'cover'),
+    // outside: containers + silos' plinths, garage block
+    W(900, 64, -200, 128, 128, 320, 'container'), W(1300, 64, 400, 320, 128, 128, 'container'),
+    W(1300, 192, 400, 320, 128, 128, 'container'), W(800, 64, 800, 128, 128, 320, 'container'),
+    W(1200, 32, -800, 64, 64, 64, 'cover'), W(700, 32, 1100, 128, 64, 64, 'cover'),
+    // lobby: desk, T ramp crates
+    W(-300, 256 + 20, 100, 256, 40, 64, 'wood'), W(-512, 32, 1180, 64, 64, 64, 'cover'),
+  ],
+  ramps: [
+    RAMP(-512, 0, 1240, -512, 256, 384, 256, 'concrete'),     // T ramp up to the lobby
+    RAMP(1060, 0, -1024, 512, 256, -1024, 128, 'metal'),       // outside -> heaven catwalk
+  ],
+  columns: [
+    { pos: [1350, -350], r: 110, h: 640, mat: 'metal' }, { pos: [1350, -700], r: 110, h: 640, mat: 'metal' },
+  ],
+  water: [],
+  ladders: [{ min: [136, 0, -1040], max: [216, 264, -1024], normal: [0, -1] }],
+  lights: [
+    [-384, 200, -704, 1.6e6, 'f4f6ff'], [-700, 200, -1000, 1e6, 'f4f6ff'],
+    [-384, 450, -704, 1.8e6, 'f4f6ff'], [-384, 420, 60, 1.2e6, 'fff4e0'],
+    [-1344, 140, -500, 6e5, 'fff4e0'], [-1344, 140, 100, 6e5, 'fff4e0'], [384, 140, -640, 5e5, 'fff4e0'],
+  ],
+  indoorFloor: 'concrete',
+  coverZones: [[600, -1400, 1500, 1100]],
+  coverCount: 6,
+  coverSeed: 0x7E7E,
+  spawns: { [TEAM.T]: [...cluster(-200, 1600), ...cluster(200, 1600)], [TEAM.CT]: [...cluster(800, -1720), ...cluster(1200, -1720)] },
+  bombsites: { A: [-380, 256, -600], B: [-380, 0, -640] },
+};
+
+// ------------------------------------------------------------------ de_aq_train
+//
+// A rail yard. Bombsite A sits between parked trains in the middle of the
+// yard; you fight around, between and ON the boxcars (ladders at the car
+// ends, 176 u roofs). Ts come in from the west through ivy or the upper
+// route, or take the long roofed tunnel south to B, a siding with two more
+// cars. CTs come from the east into the yard, or down to B.
+
+const TR = 176;                          // boxcar height
+const trBounds = { x0: -2304, z0: -2304, x1: 2304, z1: 2304 };
+const trAreas = [
+  [-2240, -1120, -1700, 1280],           // T spawn
+  [-1700, -400, -900, 400],              // ivy
+  [-1700, -1120, -900, -640],            // T upper
+  [-900, -1120, 1100, 700],              // the yard (A)
+  [1100, -800, 1400, 400],               // CT -> yard
+  [1400, -1280, 2240, 800],              // CT spawn
+  [-1700, 960, 300, 1200, 0, 160],       // the tunnel to B (roofed)
+  [300, 900, 1400, 1800],                // B siding
+  [1400, 800, 1700, 1100],               // CT -> B
+  [300, 700, 500, 900],                  // yard -> B connector
+];
+// a boxcar: x centre, z centre, length (along x)
+const car = (x, z, len, mat = 'container') => W(x, TR / 2, z, len, TR, 128, mat);
+const rails = (x, z, len) => [W(x, 1, z - 40, len, 2, 8, 'metal'), W(x, 1, z + 40, len, 2, 8, 'metal')];
+
+export const train = {
+  id: 'de_aq_train',
+  name: 'de_aq_train',
+  bounds: trBounds,
+  palette: {
+    floor: hex(0.4, 0.37, 0.33), wall: hex(0.5, 0.45, 0.4), concrete: hex(0.6, 0.6, 0.58),
+    container: hex(0.3, 0.42, 0.55), rust: hex(0.55, 0.3, 0.2), metal: hex(0.4, 0.4, 0.42),
+    cover: hex(0.45, 0.30, 0.17), accent: hex(0.5, 0.48, 0.45), wood: hex(0.45, 0.33, 0.22),
+  },
+  sky: { top: hex(0.5, 0.58, 0.68), horizon: hex(0.82, 0.8, 0.76) },
+  fog: { color: hex(0.74, 0.73, 0.7), density: 0.0002 },
+  ambient: 0.75, sun: 0.95,
+  boxes: [
+    G(0, 0, 4608, 4608, 'floor'),
+    ...carve({ bounds: trBounds, areas: trAreas, wallH: 320, roofMat: 'concrete', floorMat: 'concrete' }),
+    ...rails(100, -760, 2000), ...rails(100, -420, 2000), ...rails(100, 80, 2000), ...rails(100, 420, 2000),
+    ...rails(850, 1100, 1100), ...rails(850, 1550, 1100),
+    // the yard's trains (a gap between each pair of cars)
+    car(-420, -760, 512), car(220, -760, 512, 'rust'),
+    car(-100, -420, 640, 'rust'), car(620, -420, 512),
+    car(-500, 80, 640), car(200, 80, 512, 'rust'),
+    car(-200, 420, 640, 'rust'),
+    // B siding
+    car(850, 1100, 640), car(750, 1550, 512, 'rust'),
+    // crates, a signal box
+    W(150, 32, -170, 64, 64, 64, 'cover'), W(-700, 32, -250, 128, 64, 64, 'cover'), W(800, 32, 250, 64, 64, 128, 'cover'),
+    W(1000, 32, 1330, 64, 64, 64, 'cover'), W(500, 32, 1330, 128, 64, 64, 'cover'),
+    W(-1300, 64, 0, 192, 128, 192, 'concrete'), W(1250, 32, -600, 64, 64, 64, 'cover'),
+  ],
+  ramps: [],
+  columns: [],
+  water: [],
+  // ladders on the car ends
+  ladders: [
+    { min: [-836, 0, 40], max: [-820, TR + 8, 120], normal: [-1, 0] },
+    { min: [476, 0, -800], max: [492, TR + 8, -720], normal: [1, 0] },
+    { min: [876, 0, -460], max: [892, TR + 8, -380], normal: [1, 0] },
+    { min: [1170, 0, 1060], max: [1186, TR + 8, 1140], normal: [1, 0] },
+  ],
+  lights: [[-700, 140, 1080, 6e5, 'fff0d0'], [-100, 140, 1080, 6e5, 'fff0d0']],
+  coverZones: [[-850, -1050, 1050, 650]],
+  coverCount: 6,
+  coverSeed: 0x7A11,
+  spawns: { [TEAM.T]: [...cluster(-1970, 100), ...cluster(-1970, 500)], [TEAM.CT]: [...cluster(1820, -300), ...cluster(1820, 100)] },
+  bombsites: { A: [150, 0, -170], B: [800, 0, 1330] },
+};
+
+export const CLASSIC_MAPS = [dust2, nuke, train];

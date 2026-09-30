@@ -318,7 +318,7 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       defaults only.
 - [ ] Later: per-skin first-person sleeves / gloves.
 
-## M20 — New maps
+## M20 — New maps  [done]
 - [x] fy_pool_day2: two houses (glass patio windows) facing across a back
       yard; a real pool — deep end you can drown in, slope to the shallow
       end, steps out, a diving board; an AWP at the bottom of the deep end.
@@ -334,10 +334,15 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
 - [x] Under water: blue tint + muffled sound; pool tile / pool water / grass
       textures; `server/fy.test.js`, validator checks every floor gun is
       reachable.
-- [ ] de_aq_nuke-style: two stacked sites (outside + ramp, vents between),
-      crouch-only vents, ladders.
-- [ ] de_aq_train-style: rail yard, trains as cover, ladders onto the cars.
-- [ ] Bots: nav through vents and ladders.
+- [x] de_aq_nuke: A upstairs in the silo room, B right below it; lobby
+      ramp, roofed secret corridor, ramp room, a crouch-only vent into B,
+      heaven catwalk, and a hatch in A's floor with a ladder down to B.
+- [x] de_aq_train: rail yard, A between parked boxcars, B on a siding, ladders
+      onto the car roofs, a long roofed tunnel to B.
+- [x] Bots: crouch-only nav nodes (they duck into vents), ladder links (they
+      climb up and down), no re-planning halfway up a ladder; fixed paths
+      that jumped between stacked floors and nearest-node picks over shafts.
+      `server/nuke.test.js`.
 
 ## M21 — Weapon finishes
 - [ ] Selectable finishes per weapon (factory, desert, urban, forest, gold)

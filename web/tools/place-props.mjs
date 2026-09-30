@@ -21,6 +21,8 @@ const KINDS = {
   cs_aq_office: ['pallets', 'barrels', 'barrel', 'pallets'],
   cs_aq_assault: ['barrels', 'pallets', 'sandbags', 'barrel', 'pallets'],
   cs_aq_italy: ['planter', 'barrels', 'pallets', 'planter', 'barrel'],
+  de_aq_nuke: ['barrels', 'pallets', 'barrel', 'sandbags'],
+  de_aq_train: ['barrels', 'pallets', 'barrel'],
   fy_pool_day2: [],                     // the deck is raised: ground-level spots are the pool
   fy_snow: ['barrels', 'pallets', 'barrel', 'pallets'],
   fy_aq_rooftops: ['barrels', 'pallets', 'sandbags', 'barrel'],

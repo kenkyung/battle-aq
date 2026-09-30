@@ -5,7 +5,8 @@
 // or balconies). Nodes link to their 8 neighbours when the step up is small
 // enough to walk (ramps are stacks of short steps) or it is a safe drop down.
 // Paths come from A*, then get string-pulled so bots walk straight lines
-// instead of grid zig-zags.
+// instead of grid zig-zags. Spots only a crouched body fits (vents) are
+// `crouch` nodes; ladders link the node at their foot to the one at the top.
 //
 // Built once per map and cached; ~20k nodes, well under a second.
 
@@ -49,9 +50,11 @@ export class NavGraph {
         for (const y of [...tops].sort((a, c) => a - c)) {
           // the cell centre, or the best-fitting spot nearby (corridors are
           // rarely aligned to the 32 u grid)
-          const spot = SPOTS.find(([ox, oz]) => this.standable(x + ox, y, z + oz));
+          let crouch = false;
+          let spot = SPOTS.find(([ox, oz]) => this.standable(x + ox, y, z + oz));
+          if (!spot) { spot = SPOTS.find(([ox, oz]) => this.standable(x + ox, y, z + oz, PLAYER.crouchHeight)); crouch = !!spot; }
           if (!spot) continue;
-          const node = { i: this.nodes.length, x: x + spot[0], y, z: z + spot[1], cx, cz, links: [] };
+          const node = { i: this.nodes.length, x: x + spot[0], y, z: z + spot[1], cx, cz, links: [], crouch };
           this.nodes.push(node);
           ids.push(node.i);
         }
@@ -71,11 +74,22 @@ export class NavGraph {
           if (rise > MAX_STEP || rise < -MAX_DROP) continue;
           // diagonals only when both straight neighbours are walkable (no corner cutting)
           if (dx && dz && (!this.nodeAt(n.cx + dx, n.cz, n.y) || !this.nodeAt(n.cx, n.cz + dz, n.y))) continue;
-          if (!this.standable((n.x + m.x) / 2, Math.max(n.y, m.y), (n.z + m.z) / 2)) continue;
-          const cost = Math.hypot(m.x - n.x, m.z - n.z) + Math.max(0, rise) * 2;
+          const low = n.crouch || m.crouch;
+          if (!this.standable((n.x + m.x) / 2, Math.max(n.y, m.y), (n.z + m.z) / 2, low ? PLAYER.crouchHeight : PLAYER.standHeight)) continue;
+          const cost = (Math.hypot(m.x - n.x, m.z - n.z) + Math.max(0, rise) * 2) * (low ? 2.5 : 1);
           n.links.push([j, cost]);
         }
       }
+    }
+    // ladders: foot <-> top (climbing is slow: 200 u/s)
+    for (const l of map.ladders || []) {
+      const cx = (l.min[0] + l.max[0]) / 2, cz = (l.min[2] + l.max[2]) / 2, [nx, nz] = l.normal;
+      const foot = this.nearest([cx + nx * 28, l.min[1], cz + nz * 28]);
+      const top = this.nearest([cx - nx * 40, l.max[1] - 4, cz - nz * 40]);
+      if (!foot || !top || top.y - foot.y < 48 || Math.abs(top.y - (l.max[1] - 8)) > 40) continue;
+      const cost = (top.y - foot.y) * 1.6 + 40;
+      foot.links.push([top.i, cost]); top.links.push([foot.i, cost]);
+      foot.ladder = top.ladder = true;
     }
     // the largest connected area is "the map"; islands (crate tops, wall
     // tops) are skipped when picking places to go
@@ -107,10 +121,10 @@ export class NavGraph {
     this.buildTime = Date.now() - t0;
   }
 
-  standable(x, y, z) {
+  standable(x, y, z, h = PLAYER.standHeight) {
     // exactly the body (the physics treats touching as not overlapping)
     const hw = PLAYER.halfWidth;
-    const box = { min: [x - hw, y + 1, z - hw], max: [x + hw, y + PLAYER.standHeight, z + hw] };
+    const box = { min: [x - hw, y + 1, z - hw], max: [x + hw, y + h, z + hw] };
     // anything low enough to step onto (the next stair of a ramp) is not in the way
     for (const c of this.colliders) if (c.max[1] > y + MAX_STEP && aabbOverlap(box, c)) return false;
     return true;
@@ -130,8 +144,10 @@ export class NavGraph {
   // Closest node to a world position (searching outward a few cells).
   nearest(pos) {
     const cx = Math.floor((pos[0] - this.x0) / CELL), cz = Math.floor((pos[2] - this.z0) / CELL);
-    let best = null, bestD = Infinity;
-    for (let r = 0; r <= 6 && !best; r++) {
+    let best = null, bestD = Infinity, foundAt = 99;
+    // one ring past the first hit: over a shaft or a ledge the closest node
+    // can be a floor below in this column and the floor we stand on next door
+    for (let r = 0; r <= 6 && r <= foundAt + 1; r++) {
       for (let dz = -r; dz <= r; dz++) {
         for (let dx = -r; dx <= r; dx++) {
           if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
@@ -141,7 +157,7 @@ export class NavGraph {
             const n = this.nodes[j];
             if (n.y > pos[1] + MAX_STEP + 2) continue; // not above our head
             const d = Math.hypot(n.x - pos[0], (n.y - pos[1]) * 2, n.z - pos[2]) + (n.main ? 0 : 200);
-            if (d < bestD) { bestD = d; best = n; }
+            if (d < bestD) { bestD = d; best = n; foundAt = Math.min(foundAt, r); }
           }
         }
       }
@@ -150,7 +166,20 @@ export class NavGraph {
   }
 
   randomNode(rand = Math.random) {
+    for (let k = 0; k < 8; k++) {
+      const n = this.main[Math.floor(rand() * this.main.length)];
+      if (!n.crouch) return n;             // don't send bots to camp inside a vent
+    }
     return this.main[Math.floor(rand() * this.main.length)];
+  }
+
+  // a crouch-only spot here or just ahead (dir: unit xz): duck for it
+  crouchAhead(pos, dir) {
+    for (const d of [0, 20, 40]) {
+      const n = this.nodeAt(Math.floor((pos[0] + dir[0] * d - this.x0) / CELL), Math.floor((pos[2] + dir[2] * d - this.z0) / CELL), pos[1]);
+      if (n && n.crouch) return true;
+    }
+    return false;
   }
 
   // A* from world position to world position; returns [[x,y,z], ...] or null.
@@ -227,7 +256,8 @@ export class NavGraph {
         if (off === 0) y = n.y;
       }
     }
-    return true;
+    // and it must end on b's level (stacked floors share columns)
+    return Math.abs(y - b.y) <= MAX_STEP;
   }
 
   // Line of sight between two eye positions.

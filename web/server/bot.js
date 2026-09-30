@@ -496,7 +496,9 @@ export class BotBrain {
 
   followPath(now) {
     if (!this.goal) return null;
-    if ((!this.path || now > this.repathAt) && now >= this.nextPathAt) {
+    // never re-plan halfway up a ladder: the nearest node is ambiguous there
+    // (top or bottom) and a new path can send the bot back the way it came
+    if ((!this.path || (now > this.repathAt && !this.state.onLadder)) && now >= this.nextPathAt) {
       this.nextPathAt = now + 0.8;
       const path = this.nav.path(this.p.pos, this.goal.pos);
       this.repathAt = now + 4 + Math.random() * 2;
@@ -532,13 +534,17 @@ export class BotBrain {
     const y = this.state.yaw;
     const f = -Math.sin(y) * wish[0] - Math.cos(y) * wish[2];
     const r = Math.cos(y) * wish[0] - Math.sin(y) * wish[2];
+    // vents: duck before the low ceiling (and stay down inside)
+    if (!crouch && (wish[0] || wish[2]) && this.nav.crouchAhead(p.pos, wish)) crouch = true;
     const keys = {
       f: f > 0.38, b: f < -0.38, r: r > 0.38, l: r < -0.38,
       jump: this.jump, crouch, walk: false, maxSpeed: WEAPONS[p.weapon].speed,
+      ladders: this.game.map.ladders,
     };
     this.jump = false;
     this.state.pos = p.pos;
-    this.state.crouching = crouch;
+    // (only stand up where there is headroom)
+    if (crouch || this.nav.standable(p.pos[0], p.pos[1], p.pos[2])) this.state.crouching = crouch;
     // every other player is solid for bots, teammates included (bodies never
     // shove: an overlapping pair can always step apart, see physics moveAxis)
     const bodies = [];
@@ -557,7 +563,7 @@ export class BotBrain {
     const moving = keys.f || keys.b || keys.l || keys.r;
     if (moving) {
       this.stuckT += dt;
-      if (Math.hypot(p.pos[0] - this.lastProgressPos[0], p.pos[2] - this.lastProgressPos[2]) > 24) {
+      if (Math.hypot(p.pos[0] - this.lastProgressPos[0], p.pos[2] - this.lastProgressPos[2]) > 24 || Math.abs(p.pos[1] - this.lastProgressPos[1]) > 24) {
         this.stuckT = 0; this.lastProgressPos = p.pos.slice();
       } else if (this.stuckT > 0.7 && !this.unstickUntil) {
         // sidestep toward whichever side has more room; hop only if that
