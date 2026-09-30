@@ -14,6 +14,7 @@ const { TEAM, TICK_RATE } = await import('../shared/constants.js');
 const [map = 'de_aq_dust', minutes = '8', diff = 'normal'] = process.argv.slice(2);
 const g = new Game(map, { practice: true, id: 'sim' });
 { const use = g.useHostage.bind(g); g.useHostage = (p) => { const r = use(p); if (r) events.uses = (events.uses || 0) + 1; return r; }; }
+{ const nr = g.tactics.newRound.bind(g.tactics); g.tactics.newRound = () => { nr(); for (const t of [1, 2]) { const pl = g.tactics.plan(t); if (pl) { const k = (t === 1 ? 'T:' : 'CT:') + pl.economy + (t === 1 ? '/' + pl.style : ''); events.plans = { ...(events.plans || {}), [k]: ((events.plans || {})[k] || 0) + 1 }; } } }; }
 const events = { kills: 0, headshots: 0, plants: 0, defuses: 0, explosions: 0, rounds: [], halftime: 0, matchEnd: null, byWeapon: {} };
 const orig = g.broadcast.bind(g);
 g.broadcast = (obj, ex) => {

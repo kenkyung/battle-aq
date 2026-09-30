@@ -220,6 +220,68 @@ export class NavGraph {
   }
 
   // Line of sight between two eye positions.
+  // ZBot-style spots, computed lazily once per map:
+  //   hiding: nodes seen from few places (corners, behind cover)
+  //   sniper: per target point, a low-exposure node with a long clear line
+  //           of sight to it
+  spots() {
+    if (this._spots) return this._spots;
+    const t0 = Date.now();
+    let seed = 1;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const main = this.main;
+    const probes = Array.from({ length: 48 }, () => main[Math.floor(rnd() * main.length)]);
+    const eye = (n) => [n.x, n.y + 60, n.z];
+    const step = Math.max(1, Math.floor(main.length / 900));
+    const scored = [];
+    for (let i = 0; i < main.length; i += step) {
+      const n = main[i];
+      let seen = 0;
+      for (const q of probes) if (Math.hypot(q.x - n.x, q.z - n.z) < 3000 && this.visible(eye(n), eye(q))) seen++;
+      n.exposure = seen / probes.length;
+      scored.push(n);
+    }
+    const hiding = scored.filter((n) => n.exposure <= 0.06).sort((a, b) => a.exposure - b.exposure);
+    this._spots = { hiding, scored };
+    this._sniper = new Map();
+    console.log(`[nav] spots: ${hiding.length} hiding of ${scored.length} sampled in ${Date.now() - t0} ms`);
+    return this._spots;
+  }
+
+  // a sniper's spot for watching `target`: 700..2400 u away with a clear line
+  // to it, as unexposed as possible
+  sniperSpot(target, near = 700) {
+    const key = target.map((v) => Math.round(v / 64)).join(',') + '@' + near;
+    this.spots();
+    if (this._sniper.has(key)) return this._sniper.get(key);
+    const t = [target[0], target[1] + 40, target[2]];
+    let best = null, bestScore = Infinity;
+    for (const n of this._spots.scored) {
+      const d = Math.hypot(n.x - target[0], n.z - target[2]);
+      if (d < near || d > 2400) continue;
+      if (!this.visible([n.x, n.y + 60, n.z], t)) continue;
+      const score = n.exposure * 2 + Math.abs(d - 1400) / 2000;
+      if (score < bestScore) { bestScore = score; best = n; }
+    }
+    if (!best && near > 350) best = this.sniperSpot(target, 350);    // tight maps: closer
+    this._sniper.set(key, best);
+    return best;
+  }
+
+  // a hiding spot near `pos` (within `r`), preferring ones away from `avoid`
+  hidingSpot(pos, r = 900, avoid = null) {
+    const { hiding } = this.spots();
+    let best = null, bestScore = Infinity;
+    for (const n of hiding) {
+      const d = Math.hypot(n.x - pos[0], n.z - pos[2]);
+      if (d > r) continue;
+      const away = avoid ? Math.hypot(n.x - avoid[0], n.z - avoid[2]) : 0;
+      const score = d / r - (avoid ? Math.min(1, away / 1500) : 0) + Math.random() * 0.3;
+      if (score < bestScore) { bestScore = score; best = n; }
+    }
+    return best;
+  }
+
   visible(a, b) {
     const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     const L = Math.hypot(...d);

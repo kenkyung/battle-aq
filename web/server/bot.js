@@ -18,9 +18,12 @@ import { kick, decayPunch, aimWithPunch } from '../shared/ballistics.js';
 import { smokeBlocks } from '../shared/grenades.js';
 
 export const DIFFICULTY = {
-  easy:   { comp: 0.25, reaction: 0.75, aimErr: 3.8, turn: 4.0, fov: 100, burst: [2, 3], strafe: 0.2, hsBias: 0.1, sight: 2600 },
-  normal: { comp: 0.6, reaction: 0.42, aimErr: 1.9, turn: 7.5, fov: 120, burst: [3, 5], strafe: 0.55, hsBias: 0.35, sight: 3600 },
-  hard:   { comp: 0.85, reaction: 0.22, aimErr: 0.8, turn: 12,  fov: 140, burst: [3, 6], strafe: 0.85, hsBias: 0.6, sight: 4500 },
+  // ZBot-like profiles: reaction time, aim, attention (fov / sight), how
+  // eagerly they chase contacts (aggression) and follow the team plan (teamwork)
+  easy:   { comp: 0.25, reaction: 0.75, aimErr: 3.8, turn: 4.0, fov: 100, burst: [2, 3], strafe: 0.2, hsBias: 0.1, sight: 2600, aggression: 0.3, teamwork: 0.4 },
+  normal: { comp: 0.6, reaction: 0.42, aimErr: 1.9, turn: 7.5, fov: 120, burst: [3, 5], strafe: 0.55, hsBias: 0.35, sight: 3600, aggression: 0.5, teamwork: 0.7 },
+  hard:   { comp: 0.85, reaction: 0.22, aimErr: 0.8, turn: 12,  fov: 140, burst: [3, 6], strafe: 0.85, hsBias: 0.6, sight: 4500, aggression: 0.6, teamwork: 0.85 },
+  expert: { comp: 0.95, reaction: 0.14, aimErr: 0.45, turn: 16, fov: 150, burst: [3, 7], strafe: 0.95, hsBias: 0.75, sight: 5200, aggression: 0.65, teamwork: 0.95 },
 };
 
 export const BOT_NAMES = [
@@ -64,6 +67,14 @@ export class BotBrain {
     this.perceiveT = Math.random() * 0.15;
     this.nadePlan = null;   // { kind, at, yaw, pitch }
     this.usedUtility = false;
+    this.viaDone = false; this.controlSpot = null; this.saveSpot = null;
+    this.rolls = {};
+  }
+
+  // a yes/no decision that stays the same for the same key this round
+  rollFor(key, p) {
+    if (!(key in this.rolls)) this.rolls[key] = Math.random() < p;
+    return this.rolls[key];
   }
 
   // pick a grenade, aim it, throw it once it has been drawn (0.45 s)
@@ -129,6 +140,7 @@ export class BotBrain {
       }
       this.lastSeen = best.pos.slice();
       this.lastSeenAt = now;
+      if (this.game.tactics && now - (this.reportedAt || 0) > 1) { this.reportedAt = now; this.game.tactics.report(this.p.team, best.pos, now); }
     } else {
       this.target = null;
     }
@@ -151,12 +163,22 @@ export class BotBrain {
     const money = () => p.money;
     const pistolRound = g.roundNumber === 1 || (g.roundNumber === g.halftimeRound + 1);
     const T = p.team === TEAM.T;
+    const plan = g.tactics ? g.tactics.plan(p.team) : null;
+    if (plan && plan.economy === 'eco' && !p.inv.primary && g.phase !== 'warmup') {
+      // eco: keep the money (at most a cheap pistol upgrade or a flash)
+      if (p.money >= 3000 && Math.random() < 0.5) g.handleBuy(p, T ? 'elites' : 'fiveseven');
+      if (p.money >= 1200 && Math.random() < 0.3) g.handleBuy(p, 'flashbang');
+      const best0 = p.inv.primary || p.inv.secondary;
+      if (best0) g.handleSwitch(p, best0);
+      return;
+    }
+    const force = plan && plan.economy === 'force';
     const rifle = T ? 'ak47' : 'm4a1';
     const cheapRifle = T ? 'galil' : 'famas';
     const scoped = T ? 'sg552' : 'aug';
     const autoSniper = T ? 'g3sg1' : 'sg550';
     const pick = (list) => list[Math.floor(Math.random() * list.length)];
-    const can = (id, spare = 650) => money() >= WEAPONS[id].price + spare;
+    const can = (id, spare = 650) => money() >= WEAPONS[id].price + (force ? Math.min(spare, 0) : spare);   // force buys spend it all
     if (!p.inv.primary) {
       const r = Math.random();
       if (can('awp', 1000) && r < 0.16) g.handleBuy(p, 'awp');
@@ -192,8 +214,19 @@ export class BotBrain {
   chooseGoal(now) {
     const g = this.game, p = this.p, bomb = g.bomb;
     // recent contact beats the plan
-    if (!this.target && this.lastSeen && now - this.lastSeenAt < 4) return { key: 'hunt', pos: this.lastSeen };
-    if (!this.target && this.heard && now - this.heardAt < 3 && g.phase !== 'planted') return { key: 'noise', pos: this.heard };
+    // recent contact: aggressive bots go after it, careful ones hold and watch
+    const aggr = this.skill.aggression + (this.p.hp > 60 ? 0.1 : -0.2);
+    if (!this.target && this.lastSeen && now - this.lastSeenAt < 4 && this.rollFor('hunt' + Math.floor(this.lastSeenAt), aggr)) return { key: 'hunt', pos: this.lastSeen };
+    if (!this.target && this.heard && now - this.heardAt < 3 && g.phase !== 'planted' && this.rollFor('noise' + Math.floor(this.heardAt), aggr)) return { key: 'noise', pos: this.heard };
+    // a lost cause: save the gun
+    if (g.tactics && g.tactics.shouldSave(p, now)) {
+      if (!this.saveSpot) {
+        const n = this.nav.hidingSpot(p.pos, 1200, this.lastSeen);
+        this.saveSpot = n ? [n.x, n.y, n.z] : p.pos.slice();
+        if (Math.random() < 0.5) g.radio(p, 'x', 1);   // Team, fall back!
+      }
+      return { key: 'save', pos: this.saveSpot };
+    }
 
     if (g.phase === 'warmup') {
       if (!this.goal || this.reached(this.goal.pos, 64)) {
@@ -203,9 +236,13 @@ export class BotBrain {
       return this.goal;
     }
     if (g.hostageMode) return this.hostageGoal(now);
+    const plan = g.tactics ? g.tactics.plan(p.team) : null;
+    const follows = plan && this.rollFor('team', this.skill.teamwork);
     if (!this.site) {
       const s = this.sites();
       this.site = s.length ? s[(p.id + g.roundNumber) % s.length] : null;
+      if (follows && p.team === TEAM.T && plan.site) this.site = plan.site;
+      if (follows && p.team === TEAM.CT && plan.groups[p.id]) this.site = plan.groups[p.id];
     }
     // a planted bomb about to blow: get out of the blast
     if (bomb.state === 'planted') {
@@ -218,6 +255,27 @@ export class BotBrain {
     if (p.team === TEAM.T) {
       if (bomb.state === 'dropped') return { key: 'pickup', pos: bomb.pos };
       if (bomb.state === 'planted') return this.guard(bomb.pos, 'guard', 650);
+      if (follows && plan && this.site) {
+        // split: this half goes the long way round first
+        const via = plan.groups[p.id];
+        if (plan.style === 'split' && via && !this.viaDone) {
+          if (this.reached(via, 90)) this.viaDone = true;
+          else return { key: 'via', pos: via };
+        }
+        // default: hold map control until the execute, then go
+        if (plan.style === 'default' && bomb.carrier !== p.id) {
+          if (!plan.execAt) plan.execAt = now + 30 + Math.random() * 10;
+          if (now < plan.execAt) {
+            if (!this.controlSpot) {
+              const s0 = g.spawnSpots(p.team)[0];
+              const mid = [(s0[0] + this.site[1][0]) / 2, 0, (s0[2] + this.site[1][2]) / 2];
+              const n = this.nav.hidingSpot(mid, 900) || this.nav.nearest(mid);
+              this.controlSpot = n ? [n.x, n.y, n.z] : mid;
+            }
+            return { key: 'control', pos: this.controlSpot };
+          }
+        }
+      }
       if (bomb.carrier === p.id && this.site) {
         // head for the chosen site; plant on arrival
         return { key: 'plant-' + this.site[0], pos: this.site[1] };
@@ -228,6 +286,21 @@ export class BotBrain {
       if (this.site) return this.guard(this.site[1], 'push-' + this.site[0], 300);
     } else {
       if (bomb.state === 'planted') return { key: 'defuse', pos: bomb.pos };
+      // rotate to the site the team keeps seeing enemies at (one anchor stays)
+      if (follows && g.tactics) {
+        const hot = g.tactics.hotSite(TEAM.CT, now);
+        const anchor = [...g.players.values()].filter((q) => q.bot && q.alive && q.team === TEAM.CT && q.bot.site && q.bot.site[0] === (this.site && this.site[0])).sort((a, b) => a.id - b.id)[0];
+        if (hot && this.site && hot !== this.site[0] && anchor !== p) {
+          const s = this.sites().find(([l]) => l === hot);
+          if (s) { this.site = s; if (Math.random() < 0.4) g.radio(p, 'z', 1); }  // You take the point.
+        }
+      }
+      // a scoped rifle watches its site from a sniper spot
+      const w = WEAPONS[p.inv.primary];
+      if (this.site && w && w.cls === 'sniper') {
+        const n = this.nav.sniperSpot(this.site[1]);
+        if (n) return { key: 'snipe-' + this.site[0], pos: [n.x, n.y, n.z], face: this.site[1] };
+      }
       if (this.site) return this.guard(this.site[1], 'hold-' + this.site[0], 380);
     }
     return this.goal;
@@ -459,7 +532,8 @@ export class BotBrain {
   idleLook(dt, now) {
     if (now > this.holdUntil) {
       this.holdUntil = now + rnd(1.2, 3);
-      const threat = this.game.phase === 'warmup' ? null : this.threatYaw();
+      const face = this.goal && this.goal.face;
+      const threat = this.game.phase === 'warmup' ? null : face ? Math.atan2(-(face[0] - this.p.pos[0]), -(face[2] - this.p.pos[2])) : this.threatYaw();
       this.lookYaw = threat !== null ? threat + rnd(-0.35, 0.35) : this.state.yaw + rnd(-1.2, 1.2);
       if (this.heard && now - this.heardAt < 3) this.lookYaw = Math.atan2(-(this.heard[0] - this.p.pos[0]), -(this.heard[2] - this.p.pos[2]));
     }

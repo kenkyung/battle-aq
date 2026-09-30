@@ -165,7 +165,7 @@ function practiceRoom(msg) {
 
 function fillBots(game, human, msg) {
   const total = Math.max(1, Math.min(9, parseInt(msg.bots, 10) || 5));
-  const diff = ['easy', 'normal', 'hard'].includes(msg.difficulty) ? msg.difficulty : 'normal';
+  const diff = ['easy', 'normal', 'hard', 'expert'].includes(msg.difficulty) ? msg.difficulty : 'normal';
   // split everyone as evenly as possible, the human's side filled first
   const size = { [TEAM.T]: 0, [TEAM.CT]: 0 };
   size[human.team] = 1;

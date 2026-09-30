@@ -211,11 +211,22 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
 - [x] C4: beep gap shrinking from ~1.4 s to 0.1 s, tone rising each fifth
       of the fuse, a rapid burst in the last 1.5 s.
 
-## M14 — Bot parity (CS ZBot)
-- [ ] Nav mesh with hiding / sniper / approach spots per map.
-- [ ] Difficulty profiles (reaction time, aim, attention), buy strategies
-      (eco / force / full), team plans (rush / split / rotate / save).
-- [ ] Better hostage play: escort groups, T hostage-room holds.
+## M14 — Bot parity (CS ZBot)  [done]
+- [x] Nav spots per map: hiding spots (lowest exposure from sampled
+      viewpoints) and sniper spots (long clear lines to a target).
+- [x] Difficulty profiles Easy / Normal / Hard / Expert: reaction time,
+      aim error + turn speed, attention (fov, sight), aggression (chase
+      contacts or hold), teamwork (follow the plan or freelance).
+- [x] Team economy decided at freeze time: pistol / eco (save, maybe a
+      pistol or flash) / force (spend it all) / full buy.
+- [x] T plans: rush, split (half the team through a detour, same site),
+      default (take map control from hiding spots, execute after ~35 s).
+- [x] CT: spread over the sites, scoped rifles hold sniper spots facing the
+      site, shared intel -> rotate to the site enemies keep showing up at
+      (one anchor stays), everyone to a planted bomb.
+- [x] Saving: last player alive against 3+ late in the round hides and
+      keeps the rifle (radio "Team, fall back!").
+- [x] `server/bots.test.js`; sims report plans / economy per round.
 
 ## M15 — Map parity
 - [ ] Faithful-scale layouts of the classic maps (dust2-, nuke-, train-

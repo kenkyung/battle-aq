@@ -39,6 +39,7 @@ import { traceBullet, materialClass } from '../shared/penetration.js';
 import { themeFor } from '../shared/themes.js';
 import { NADES, throwVelocity, newNade, stepNade, flashAmount } from '../shared/grenades.js';
 import { BotBrain, BOT_NAMES } from './bot.js';
+import { Tactics } from './tactics.js';
 
 let nextId = 1;
 
@@ -75,6 +76,7 @@ export class Game {
     this.hostages = [];
     this.rescuedCount = 0;
     this.loadMap(mapId);
+    this.tactics = new Tactics(this);   // bots' team plans (M14)
     this.phase = 'warmup';
     this.phaseEndsAt = 0;
     this.buyEndsAt = 0;
@@ -276,6 +278,7 @@ export class Game {
     }
     this.resetHostages();
     if (!this.hostageMode) this.giveBomb();
+    this.tactics.newRound();
   }
 
   setPhase(phase, seconds) {
