@@ -61,8 +61,11 @@ captured and shows its own cursor.
 - **Online** rooms are per map and fill up with bots to 5v5 (or 4v4 / 3v3 /
   none — menu setting); a joining player takes a bot's place.
 - **Movement** is CS 1.6's (pm_shared): accelerate 5, air-accelerate 10 with
-  the 30 u/s air wish cap, 45 u jumps with landing fatigue, fall damage, 18 u
-  steps; players block each other.
+  the 30 u/s air wish cap, exact 45 u jumps (63 u duck-jumps) with landing
+  fatigue, fall damage, 18 u steps on the ground only, edge friction, the
+  0.4 s duck, slowdown when shot, ladders; players block each other.
+- **Quick buy** (CS binds): F1 autobuy, F2 rebuy last round, `,` / `.` ammo
+  boxes for primary / pistol, O equipment menu.
 - **Grenades**: HE (100 dmg / 350 u, walls stop it), flashbang (blinds by
   distance and facing), smoke (18 s, blocks bots' sight). Max 1 / 2 / 1.
 - **Warmup** while one team is empty: respawn on death, $16000, buy anywhere.

@@ -223,14 +223,118 @@ export function depenetrate(p, colliders) {
   }
 }
 
+// Ducking as cstrike's PM_Duck. On the ground the view lowers over
+// TIME_TO_DUCK (0.4 s, spline) and only then does the hull shrink: no instant
+// crouch-peek. In the air the hull shrinks at once around its centre, so the
+// feet come up 18 u (the duck-jump). Standing up is instant if there is room
+// (in the air the feet drop 18 u back). Speed is cut to 0.333 while the duck
+// key is held or the hull is ducked.
+function duck(p, input, dt, colliders) {
+  const lift = MOVE.duckLift;
+  if (input.crouch) {
+    if (!p.crouching) {
+      if (!p.inDuck) { p.inDuck = true; p.duckT = 0; }
+      p.duckT += dt;
+      if (!p.onGround || p.duckT >= MOVE.timeToDuck) {
+        p.inDuck = false;
+        p.crouching = true;
+        if (!p.onGround) p.pos[1] += lift;
+      }
+    }
+  } else {
+    p.inDuck = false; p.duckT = 0;
+    if (p.crouching) {
+      const to = p.onGround ? p.pos : [p.pos[0], p.pos[1] - lift, p.pos[2]];
+      const stand = playerBox(to, false);
+      if (!colliders.some((c) => !c.body && aabbOverlap(stand, c))) { p.crouching = false; p.pos = to.slice(); }
+    }
+  }
+  // view offset (feet -> eye): VEC_VIEW standing, VEC_DUCK_VIEW ducked, the
+  // PM_SplineFraction blend between them while going down
+  if (p.crouching) p.eye = PLAYER.crouchEye;
+  else if (p.inDuck) {
+    const t = Math.min(1, p.duckT / MOVE.timeToDuck);
+    const f = t * t * (3 - 2 * t);
+    p.eye = PLAYER.standEye + (PLAYER.crouchEye - PLAYER.standEye) * f;
+  } else p.eye = PLAYER.standEye;
+}
+
+// Being shot slows you (cstrike m_flVelocityModifier): set to 0.5 / 0.65 by a
+// hit, it recovers by 0.01 every 10 ms and scales the velocity each step.
+export function tag(state, modifier) { state.velMod = Math.min(state.velMod || 1, modifier); }
+function applyTagging(p, dt) {
+  if (!p.velMod || p.velMod >= 1) return;
+  p.tagAcc = (p.tagAcc || 0) + dt;
+  while (p.tagAcc >= 0.01 && p.velMod < 1) {
+    p.tagAcc -= 0.01;
+    p.velMod = Math.min(1, p.velMod + 0.01);
+    p.vel[0] *= p.velMod; p.vel[2] *= p.velMod;
+  }
+  if (p.velMod >= 1) p.tagAcc = 0;
+}
+
+// Is there ground under a point 16 u ahead along the velocity (PM_Friction's
+// edge test: trace 34 u down from the feet)?
+function groundAhead(p, colliders) {
+  const sp = Math.hypot(p.vel[0], p.vel[2]);
+  if (sp < 1) return true;
+  const x = p.pos[0] + (p.vel[0] / sp) * 16, z = p.pos[2] + (p.vel[2] / sp) * 16;
+  const probe = { min: [x - 1, p.pos[1] - 34, z - 1], max: [x + 1, p.pos[1] + 0.5, z + 1] };
+  return colliders.some((c) => !c.body && aabbOverlap(probe, c));
+}
+
+// Ladders (cstrike PM_LadderMove). A ladder is a non-solid volume against a
+// wall: { min, max, normal: [nx, nz] } with the normal pointing out toward
+// the climber. On it there is no gravity; the wish velocity comes from the
+// full view direction (pitch included) at 200 u/s, and whatever of it goes
+// INTO the ladder is turned into climbing (so looking level and pressing
+// forward climbs, looking well down climbs down). Jump pushes off at 270.
+export function ladderAt(pos, crouching, ladders) {
+  if (!ladders || !ladders.length) return null;
+  const box = playerBox(pos, crouching);
+  return ladders.find((l) => aabbOverlap(box, l)) || null;
+}
+
+function ladderMove(p, input, dt, colliders, lad) {
+  const n = [lad.normal[0], 0, lad.normal[1]];
+  if (input.jump && !p.jumpHeld) {
+    p.vel = [n[0] * MOVE.ladderJump, 0, n[2] * MOVE.ladderJump];
+    p.offLadder = 0.25;                      // don't re-grab it straight away
+    p.jumpHeld = true;
+    p.onGround = false;
+    return;
+  }
+  p.jumpHeld = !!input.jump;
+  let speed = MOVE.climbSpeed;
+  if (p.crouching || input.crouch) speed *= MOVE.crouchSpeedMul;
+  const fwd = (input.f ? speed : 0) - (input.b ? speed : 0);
+  const side = (input.r ? speed : 0) - (input.l ? speed : 0);
+  const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw), sp = Math.sin(p.pitch || 0), cp = Math.cos(p.pitch || 0);
+  const vpn = [-sy * cp, sp, -cy * cp];
+  const right = [cy, 0, -sy];
+  const v = [vpn[0] * fwd + right[0] * side, vpn[1] * fwd, vpn[2] * fwd + right[2] * side];
+  const into = v[0] * n[0] + v[2] * n[2];           // < 0: pushing into the ladder
+  const lat = [v[0] - n[0] * into, v[1], v[2] - n[2] * into];
+  if (p.onGround && into > 0) p.vel = [lat[0] + n[0] * speed, lat[1], lat[2] + n[2] * speed];   // step off at the bottom
+  else p.vel = [lat[0], lat[1] - into, lat[2]];
+  // topping out: nudge over the ledge behind the ladder
+  if (p.vel[1] > 0 && p.pos[1] > lad.max[1] - 24) { p.vel[0] -= n[0] * 120; p.vel[2] -= n[2] * 120; }
+  moveAxis(p, colliders, 0, p.vel[0] * dt);
+  moveAxis(p, colliders, 2, p.vel[2] * dt);
+  const hitY = moveAxis(p, colliders, 1, p.vel[1] * dt);
+  p.onGround = hitY < 0 || grounded(p, colliders);
+  p.onLadder = true;
+}
+
 export function movePlayer(state, input, dt, colliders) {
   const p = state;
-  // standing up needs headroom (otherwise the head goes into the ceiling)
-  if (!input.crouch && p.crouching) {
-    const stand = playerBox(p.pos, false);
-    p.crouching = colliders.some((c) => aabbOverlap(stand, c));
-  } else p.crouching = !!input.crouch;
+  duck(p, input, dt, colliders);
   depenetrate(p, colliders);
+  applyTagging(p, dt);
+  p.offLadder = Math.max(0, (p.offLadder || 0) - dt);
+  p.onLadder = false;
+  const lad = p.offLadder > 0 ? null : ladderAt(p.pos, p.crouching, input.ladders);
+  if (lad) { ladderMove(p, input, dt, colliders, lad); return p; }
 
   // wish direction from yaw (pitch does not move you)
   const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
@@ -250,14 +354,15 @@ export function movePlayer(state, input, dt, colliders) {
   const run = input.maxSpeed || MOVE.runSpeed;
   let maxspeed = run;
   if (input.walk) maxspeed = run * (MOVE.walkSpeed / MOVE.runSpeed);
-  if (p.crouching) maxspeed = run * MOVE.crouchSpeedMul;
+  if (p.crouching || input.crouch) maxspeed *= MOVE.crouchSpeedMul;
 
   // friction (ground only)
   if (p.onGround) {
     const speed = len2(p.vel);
     if (speed > 0) {
       const control = Math.max(speed, MOVE.stopSpeed);
-      const drop = control * MOVE.friction * dt;
+      const fric = MOVE.friction * (groundAhead(p, colliders) ? 1 : MOVE.edgeFriction);
+      const drop = control * fric * dt;
       const newspeed = Math.max(0, speed - drop);
       const f = newspeed / speed;
       p.vel[0] *= f; p.vel[2] *= f;
@@ -295,8 +400,10 @@ export function movePlayer(state, input, dt, colliders) {
   }
   p.jumpHeld = !!input.jump && !input.autoHop;
 
-  // gravity
-  if (!p.onGround) p.vel[1] -= MOVE.gravity * dt;
+  // gravity, half before and half after the move (PM_AddCorrectGravity /
+  // PM_FixupGravityVelocity): the arc is exact, a jump peaks at 45 u
+  const airborne = !p.onGround;
+  if (airborne) p.vel[1] -= MOVE.gravity * dt * 0.5;
 
   // integrate with axis-separated collide-and-slide
   moveAxis(p, colliders, 0, p.vel[0] * dt);
@@ -313,6 +420,7 @@ export function movePlayer(state, input, dt, colliders) {
     // verify we're still grounded (walking off an edge)
     if (!grounded(p, colliders)) p.onGround = false;
   }
+  if (airborne && !p.onGround) p.vel[1] -= MOVE.gravity * dt * 0.5;
 
   return p;
 }
@@ -368,9 +476,11 @@ function moveAxis(p, colliders, axis, delta) {
       }
       continue;
     }
-    // horizontal: try auto step-up onto a low obstacle first
+    // horizontal: try auto step-up onto a low obstacle first — on the ground
+    // only (PM_StepMove is part of PM_WalkMove; in the air you cannot step,
+    // so a standing jump reaches 45 u and a duck-jump 63 u, as in CS)
     const rel = c.max[1] - p.pos[1];
-    if (rel > 0 && rel <= PLAYER.stepHeight) {
+    if (p.onGround && rel > 0 && rel <= PLAYER.stepHeight) {
       const savedPos = [p.pos[0], p.pos[1], p.pos[2]];
       p.pos[1] = c.max[1] + 0.01;
       if (!colliders.some((o) => o !== c && aabbOverlap(playerBox(p.pos, p.crouching), o))) {
@@ -477,4 +587,17 @@ function rayBoxExit(origin, dir, b) {
     tmax = Math.min(tmax, Math.max(t1, t2));
   }
   return tmax;
+}
+
+// Water depth at a position (CS waterlevel): 0 dry, 1 feet in water, 2 waist,
+// 3 head under. Sheets are { y, w, d, pos: [x, z] }.
+export function waterLevel(map, pos, crouching = false) {
+  for (const w of (map && map.water) || []) {
+    const [cx, cz] = w.pos || [0, 0];
+    if (Math.abs(pos[0] - cx) > w.w / 2 || Math.abs(pos[2] - cz) > w.d / 2) continue;
+    if (pos[1] >= w.y) continue;
+    const h = crouching ? PLAYER.crouchHeight : PLAYER.standHeight;
+    return pos[1] + h * 0.9 < w.y ? 3 : pos[1] + h * 0.5 < w.y ? 2 : 1;
+  }
+  return 0;
 }

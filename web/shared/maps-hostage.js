@@ -146,7 +146,9 @@ const assault = {
     ...crate(-640, -300), ...crate(640, -760, 2), ...crate(0, 0), ...crate(-512, 128),
     // catwalk along the east wall, stairs at its south end
     G(1120, -640, 256, 1216, 'metal', 192, 16),
-    W(984, 216, -700, 16, 48, 1096, 'metal'),
+    // rail along the open edge, with a gap where the ladder comes up
+    W(984, 216, -1188, 16, 48, 120, 'metal'),
+    W(984, 216, -600, 16, 48, 896, 'metal'),
     // posts under the catwalk's open edge
     ...[-1200, -900, -600, -300].map((z) => W(1008, 88, z, 16, 176, 16, 'metal')),
     // the hall's own office box / tool cages
@@ -180,6 +182,8 @@ const assault = {
   bombsites: {},
   hostages: [[-900, 2, -1180], [-640, 2, -1180], [-900, 2, -900], [-700, 2, -880]],
   rescueZones: [[0, 0, 1440, 340]],
+  // ladder up the catwalk's west face (the gap in its rail)
+  ladders: [{ min: [976, 0, -1124], max: [992, 196, -1084], normal: [-1, 0] }],
 };
 
 // ------------------------------------------------------------------ cs_aq_italy

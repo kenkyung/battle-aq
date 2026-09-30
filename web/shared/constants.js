@@ -12,8 +12,11 @@ export const PLAYER = {
   standHeight: 72,    // standing height
   crouchHeight: 36,   // crouched height (movement hull)
   crouchHitHeight: 52, // crouched HIT box: the model's head is higher than the hull
-  standEye: 64,       // eye offset from feet, standing
-  crouchEye: 34,      // eye offset from feet, crouched
+  // view offsets as cstrike's pm_shared: origin at the hull centre, VEC_VIEW
+  // 17 above it standing (36 + 17), VEC_DUCK_VIEW 12 above the duck hull's
+  // centre (18 + 12)
+  standEye: 53,       // eye offset from feet, standing
+  crouchEye: 30,      // eye offset from feet, crouched
   stepHeight: 18,     // auto step-up (CS 1.6 sv_stepsize 18)
   maxHp: 100,
 };
@@ -33,6 +36,11 @@ export const MOVE = {
   jumpFatigue: 1.315,     // s after landing during which a jump is slowed (anti bunny-hop)
   fallSafe: 580,          // fall speed above which you take damage
   fallFatal: 1024,        // fall speed that kills
+  timeToDuck: 0.4,        // TIME_TO_DUCK: on the ground the hull only shrinks after this
+  duckLift: 18,           // hull half-height difference: ducking in the air lifts the feet by it
+  edgeFriction: 2,        // sv_edgefriction: friction x2 when the ground ends 16 u ahead
+  climbSpeed: 200,        // MAX_CLIMB_SPEED on ladders
+  ladderJump: 270,        // push off a ladder when jumping from it
 };
 
 // Weapons: CS 1.6 values (HLSDK / CS 1.6 weapon code, cstrike 1.6).

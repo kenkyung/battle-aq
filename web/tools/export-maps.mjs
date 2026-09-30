@@ -25,6 +25,7 @@ for (const map of MAP_LIST) {
     bombsites: map.bombsites || {},
     // indoor point lights baked into the lightmap: [x, y, z, watts, 'rrggbb']
     lights: map.lights || [],
+    ladders: map.ladders || [],
     coverSeed: map.coverSeed,
     theme: themeFor(map.id),
   };

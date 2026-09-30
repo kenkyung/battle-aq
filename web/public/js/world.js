@@ -155,7 +155,8 @@ export async function loadWorld(scene, map) {
       if (!o.isMesh) return;
       o.matrixAutoUpdate = false;
       o.updateMatrix();
-      const inSkyline = isUnder(o, 'skyline');
+      // skyline + thin fixtures (ladders) are lit live, the level is baked
+      const inSkyline = isUnder(o, 'skyline') || isUnder(o, 'fixtures');
       const name = (o.material.name || '').replace(/\.\d+$/, '');
       const water = name === 'water';
       const mat = inSkyline

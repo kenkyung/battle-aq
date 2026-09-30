@@ -150,3 +150,12 @@ export function hitPart(yRel, height) {
 // than this far (u) from the player's vertical axis misses them.
 export const HEAD_RADIUS = 7.5;
 export const RUN_SPEED = (weaponId) => (WEAPONS[weaponId] ? WEAPONS[weaponId].speed : PLAYER.runSpeed || 250);
+
+// Being hit slows you (cstrike TakeDamage -> m_flVelocityModifier): a "large
+// flinch" (rifle / sniper / machine-gun round to the upper body of a standing
+// player) leaves 65 % speed, anything else 50 %. Falling does not tag.
+const LARGE_FLINCH = new Set(['ak47', 'm4a1', 'scout', 'awp', 'm249']);
+export function tagModifier(weaponId, part, ducking) {
+  if (weaponId === 'fall') return 1;
+  return LARGE_FLINCH.has(weaponId) && part !== 'legs' && !ducking ? 0.65 : 0.5;
+}

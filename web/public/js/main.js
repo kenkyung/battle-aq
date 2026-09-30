@@ -17,7 +17,8 @@ import { preloadModels, setAnisotropy } from './assets.js';
 import { getMap, MAP_LIST } from '../shared/maps.js';
 import { WEAPONS, TEAM, PLAYER, CROSSHAIR, HOSTAGE } from '../shared/constants.js';
 import { inBuyZone, BUY_MENU } from '../shared/economy.js';
-import { raycast } from '../shared/physics.js';
+import { raycast, tag } from '../shared/physics.js';
+import { tagModifier } from '../shared/ballistics.js';
 import { RADIO } from '../shared/radio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -213,6 +214,7 @@ async function useMap(id) {
     if (bombView) bombView.dispose();
     if (hostageView) hostageView.dispose();
     map = getMap(id);
+    if (player) player.map = map;
     world = await loadWorld(scene, map);
     fx = new Effects(scene, map, world.colliders);
     fx.sfx = sfx;
@@ -312,6 +314,7 @@ async function onWelcome(welcome) {
   remotes.sfx = sfx;
   remotes.surfaceAt = surfaceAt;
   player = new LocalPlayer(camera, world.colliders, net, vm, fx);
+  player.map = map;
   player.hostageMode = round.mode === 'hostage';
   player.others = () => remotes.targets().concat(hostageView ? hostageView.targets() : []);
   player.bodies = () => remotes.bodies();
@@ -410,6 +413,7 @@ net.on('hit', (msg) => {
     hud.damageFrom(-ang);
     if (!(msg.part === 'head' && msg.helmet)) sfx.play(msg.weapon === 'knife' ? 'knife_hit' : 'hit_flesh', { volume: 0.9 });
     player.flinch(Math.min(4, 0.6 + msg.dmg / 25)); // CS view punch on damage
+    if (msg.attacker !== myId) tag(player.state, tagModifier(msg.weapon, msg.part, player.state.crouching));
   }
 });
 

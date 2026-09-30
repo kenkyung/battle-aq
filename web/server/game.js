@@ -27,9 +27,9 @@ import {
 import {
   ECONOMY, itemInfo, lossBonus, inBuyZone, buyZoneCenter, ammoBox, AUTOBUY,
 } from '../shared/economy.js';
-import { newRecoil, resetRecoil, shotSpread, spreadDir, baseDamage, armorAbsorb } from '../shared/ballistics.js';
+import { newRecoil, resetRecoil, shotSpread, spreadDir, baseDamage, armorAbsorb, tagModifier } from '../shared/ballistics.js';
 import {
-  buildColliders, playerBox, aabbOverlap, hitBox, raycast, raycastPlayers, norm, len, sub, movePlayer,
+  buildColliders, playerBox, aabbOverlap, hitBox, raycast, raycastPlayers, norm, len, sub, movePlayer, tag,
 } from '../shared/physics.js';
 import { navFor } from './nav.js';
 import { radioText } from '../shared/radio.js';
@@ -41,6 +41,14 @@ let nextId = 1;
 
 const now = () => Date.now() / 1000;
 const other = (team) => (team === TEAM.T ? TEAM.CT : TEAM.T);
+
+// eye height above the feet: the client's reported view offset (mid-duck
+// blend), else from the hull; bots carry it in their physics state
+function eyeOf(p) {
+  if (p.bot && p.bot.state && Number.isFinite(p.bot.state.eye)) return p.bot.state.eye;
+  if (Number.isFinite(p.eye)) return p.crouching ? PLAYER.crouchEye : p.eye;
+  return p.crouching ? PLAYER.crouchEye : PLAYER.standEye;
+}
 
 export class Game {
   constructor(mapId = 'de_aq_dust', { practice = false, id = 'public', fillTo = 0, botDifficulty = 'normal' } = {}) {
@@ -720,7 +728,6 @@ export class Game {
     let bad = d > 320 * elapsed + 48 || pos[1] > from[1] + 80 + 300 * elapsed;
     if (!bad) {
       // sweep a slightly slimmer, step-height-raised hull along the path
-      const steps = Math.max(1, Math.ceil(Math.hypot(d, pos[1] - from[1]) / 8));
       const h = crouching ? PLAYER.crouchHeight : PLAYER.standHeight;
       const hw = PLAYER.halfWidth - 1;
       const hull = (x, y, z) => {
@@ -731,12 +738,19 @@ export class Game {
       // solids the step starts in are ignored, so stepping out is always allowed
       const start = hull(from[0], from[1], from[2]);
       const solids = this.colliders.filter((c) => !aabbOverlap(start, c));
-      for (let i = 1; i <= steps && !bad; i++) {
-        const f = i / steps;
-        const x = from[0] + (pos[0] - from[0]) * f, y = from[1] + (pos[1] - from[1]) * f, z = from[2] + (pos[2] - from[2]) * f;
-        const box = hull(x, y, z);
-        for (const c of solids) if (aabbOverlap(box, c)) { bad = true; break; }
-      }
+      const clear = (a, b) => {
+        const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / 8));
+        for (let i = 1; i <= n; i++) {
+          const f = i / n;
+          const box = hull(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f);
+          for (const c of solids) if (aabbOverlap(box, c)) return false;
+        }
+        return true;
+      };
+      // straight, or as an L (up then over: a (duck-)jump onto a ledge; over
+      // then down: walking off one) — any clear route is a legal step
+      const up = [from[0], pos[1], from[2]], over = [pos[0], from[1], pos[2]];
+      bad = !(clear(from, pos) || (clear(from, up) && clear(up, pos)) || (clear(from, over) && clear(over, pos)));
     }
     if (!bad) {
       // walking into another player (overlaps deeper than lag can explain)
@@ -767,6 +781,8 @@ export class Game {
         if (this.phase !== 'freeze' && Array.isArray(msg.pos) && msg.pos.length === 3 && msg.pos.every(Number.isFinite)) this.acceptMove(p, msg.pos, !!msg.crouching);
         if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
         if (Number.isFinite(msg.pitch)) p.pitch = msg.pitch;
+        // view height mid-duck (0.4 s blend): shots leave from where the player sees
+        p.eye = Number.isFinite(msg.eye) ? Math.max(PLAYER.crouchEye, Math.min(PLAYER.standEye, msg.eye)) : undefined;
         p.crouching = !!msg.crouching;
         p.moving = !!msg.moving;
         p.speed = Number.isFinite(msg.speed) ? Math.min(400, msg.speed) : (p.moving ? 200 : 0);
@@ -850,7 +866,7 @@ export class Game {
     const kind = p.weapon;
     const v = Array.isArray(msg.vel) && msg.vel.every(Number.isFinite) ? msg.vel.map((x) => Math.max(-400, Math.min(400, x))) : [0, 0, 0];
     const { vel, fwd } = throwVelocity(p.yaw, p.pitch, v);
-    const eye = [p.pos[0], p.pos[1] + (p.crouching ? PLAYER.crouchEye : PLAYER.standEye), p.pos[2]];
+    const eye = [p.pos[0], p.pos[1] + eyeOf(p), p.pos[2]];
     // start 16 u in front of the eye, unless that is inside a wall
     let origin = [eye[0] + fwd[0] * 16, eye[1] + fwd[1] * 16, eye[2] + fwd[2] * 16];
     if (raycast(eye, fwd, this.colliders, 18)) origin = eye;
@@ -911,7 +927,7 @@ export class Game {
         this.broadcast({ t: 'hit', victim: q.id, attacker: n.owner, part: 'chest', dmg: hpDmg, hp: Math.max(0, q.hp), armor: q.armor, helmet: !!q.helmet, weapon: 'hegrenade', point: chest, from: pos });
         if (q.hp <= 0) this.kill(q, owner && owner !== q ? owner : null, 'hegrenade', false);
       } else if (n.kind === 'flashbang') {
-        const eye = [q.pos[0], q.pos[1] + (q.crouching ? PLAYER.crouchEye : PLAYER.standEye), q.pos[2]];
+        const eye = [q.pos[0], q.pos[1] + eyeOf(q), q.pos[2]];
         if (!visible(eye)) continue;
         const f = flashAmount(eye, q.yaw, q.pitch, pos);
         if (f.amount <= 0.02) continue;
@@ -959,7 +975,7 @@ export class Game {
     const dir = norm(Array.isArray(msg.dir) && msg.dir.every(Number.isFinite) ? msg.dir : [0, 0, -1]);
     const shotDir = spreadDir(dir, spread);
     // trust the client's eye origin only if it is where we think the player is
-    const eye = [p.pos[0], p.pos[1] + (p.crouching ? PLAYER.crouchEye : PLAYER.standEye), p.pos[2]];
+    const eye = [p.pos[0], p.pos[1] + eyeOf(p), p.pos[2]];
     let origin = Array.isArray(msg.origin) && msg.origin.every(Number.isFinite) ? msg.origin : eye;
     if (len(sub(origin, eye)) > 96) origin = eye;
 
@@ -1028,6 +1044,7 @@ export class Game {
     victim.armor = Math.max(0, victim.armor - armorDmg);
     victim.hp -= hpDmg;
     if (victim.bot) victim.bot.onHurt(attacker, now());
+    if (victim.bot) tag(victim.bot.state, tagModifier(attacker.weapon, phit.part, victim.crouching));
 
     this.broadcast({
       t: 'hit', victim: victim.id, attacker: attacker.id,

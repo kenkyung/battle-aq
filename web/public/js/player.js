@@ -6,7 +6,7 @@
 // corrected by the server's `ammo`/`inv` messages; the inventory, money and
 // armour are the server's, mirrored from `inv`.
 
-import { movePlayer } from '../shared/physics.js';
+import { movePlayer, waterLevel } from '../shared/physics.js';
 import { PLAYER, WEAPONS, DRAW_TIME, SLOTS } from '../shared/constants.js';
 import { newRecoil, resetRecoil, shotSpread, spreadDir, kick, decayPunch, aimWithPunch } from '../shared/ballistics.js';
 
@@ -95,7 +95,8 @@ export class LocalPlayer {
 
   // ------------------------------------------------------------ helpers
 
-  eyeHeight() { return this.state.crouching ? PLAYER.crouchEye : PLAYER.standEye; }
+  // view offset from the feet: set by the physics' duck (0.4 s spline down, instant up)
+  eyeHeight() { return this.state.eye || (this.state.crouching ? PLAYER.crouchEye : PLAYER.standEye); }
   speed() { return Math.hypot(this.state.vel[0], this.state.vel[2]); }
   isMoving() { return this.speed() > 12; }
   reloading(now = performance.now() / 1000) { return this.reloadUntil > now; }
@@ -219,6 +220,7 @@ export class LocalPlayer {
       const still = this.frozen || this.planting || this.defusing;
       const keys = input.moveKeys();
       keys.maxSpeed = WEAPONS[this.weapon].speed;
+      keys.ladders = this.map && this.map.ladders;
       // other players block you, as in CS
       const bodies = this.bodies();
       const solids = bodies.length ? this.colliders.concat(bodies) : this.colliders;
@@ -278,13 +280,20 @@ export class LocalPlayer {
     // footsteps: audible when running (CS: walking and crouching are silent)
     if (this.alive) {
       const sp = this.speed();
+      const wet = this.map ? waterLevel(this.map, this.state.pos, this.state.crouching) : 0;
       if (this.state.onGround && sp > 150 && !this.state.crouching) {
         this._stepDist += sp * dt;
-        if (this._stepDist > 88) { this._stepDist = 0; this.sound('step', { surface: this.surfaceAt(this.state.pos), volume: 0.28 }); }
+        if (this._stepDist > 88) { this._stepDist = 0; this.sound('step', { surface: wet ? 'water' : this.surfaceAt(this.state.pos), volume: wet ? 0.4 : 0.28 }); }
+      }
+      // ladder rungs clank as you climb (CS: every ~0.4 s of climbing)
+      if (this.state.onLadder && Math.abs(this.state.vel[1]) > 30) {
+        this._ladderT = (this._ladderT || 0) - dt;
+        if (this._ladderT <= 0) { this._ladderT = 0.4; this.sound('step', { surface: 'metal', volume: 0.35 }); }
       }
       if (!this.state.onGround) this._fallSpeed = Math.max(this._fallSpeed, -this.state.vel[1]);
       if (this.state.onGround && !this._wasGround && this._fallSpeed > 320) this.sound('land', { volume: Math.min(1, this._fallSpeed / 600) });
-      if (this.state.landSpeed) { if (this.state.landSpeed > 580) this.net.send({ t: 'fall', speed: this.state.landSpeed }); this.state.landSpeed = 0; }
+      // landing in water takes no fall damage (PM_CheckFalling: waterlevel > 0)
+      if (this.state.landSpeed) { if (this.state.landSpeed > 580 && !wet) this.net.send({ t: 'fall', speed: this.state.landSpeed }); this.state.landSpeed = 0; }
       if (this.state.onGround) this._fallSpeed = 0;
       this._wasGround = this.state.onGround;
     }
@@ -292,15 +301,16 @@ export class LocalPlayer {
     // punch recovers toward zero (CS 1.6 decay)
     decayPunch(this.recoil, dt);
 
-    // smooth eye height when (un)crouching
-    this._eyeSmooth += (this.eyeHeight() - this._eyeSmooth) * Math.min(1, dt * 14);
+    // the duck already blends the view down over 0.4 s; standing up is
+    // instant in CS, only step-ups are smoothed a touch
+    this._eyeSmooth = this.eyeHeight();
     this.applyCamera(dt);
 
     this._sendTimer -= dt;
     if (this.alive && this._sendTimer <= 0) {
       this._sendTimer = 0.04; // 25 Hz
       this.net.send({
-        t: 'state', pos: this.state.pos, yaw: this.state.yaw, pitch: this.state.pitch,
+        t: 'state', pos: this.state.pos, yaw: this.state.yaw, pitch: this.state.pitch, eye: this.eyeHeight(),
         crouching: this.state.crouching, moving: this.isMoving(), speed: Math.round(this.speed()),
       });
     }

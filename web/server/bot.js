@@ -98,7 +98,7 @@ export class BotBrain {
   // ------------------------------------------------------------ perception
 
   eye(p = this.p) {
-    return [p.pos[0], p.pos[1] + (p.crouching ? PLAYER.crouchEye : PLAYER.standEye), p.pos[2]];
+    return [p.pos[0], p.pos[1] + (this.state.eye || (p.crouching ? PLAYER.crouchEye : PLAYER.standEye)), p.pos[2]];
   }
 
   perceive(now) {

@@ -91,18 +91,28 @@ iterations. Each phase is one deployable batch with tests; numbers come from
 the HLSDK / cstrike sources and CS16_REFERENCE.md, never from memory alone.
 Every phase ends with: tests + sims green, deploy, a short play-test note.
 
-## M8 — Movement parity II
-- [ ] Ducking as in pm_shared: 0.4 s duck transition, view height 28 -> 12
-      offset, duck-jump (hull shrink in the air = +18 u clearance), no
-      instant crouch-peek.
-- [ ] Velocity modifier on being hit (CS "tagging": slowed to ~50 % and
-      recovering over ~0.5 s), landing slow-down after long falls.
-- [ ] Edge friction (x2 near drops), stepsize 18 on every surface, ramps
-      that slide above 45 degrees.
-- [ ] Ladders (climb speed 200, jump-off), with ladder volumes in the map data.
-- [ ] Water: swim, wade speed, fall damage absorbed.
-- [ ] A movement test bench: strafe-jump / bhop / counter-strafe traces
-      compared against recorded CS 1.6 numbers.
+## M8 — Movement parity II  [done]
+- [x] Quick-buy binds: F1 autobuy (CS default list), F2 rebuy, `,` / `.`
+      ammo boxes at calibre prices, O equipment menu.
+- [x] Ducking as cstrike PM_Duck: 0.4 s spline view blend with the hull
+      still standing (no instant crouch-peek), instant duck in the air that
+      lifts the feet 18 u (duck-jump), instant stand-up if there is room,
+      x0.333 while the key is held. View offsets VEC_VIEW 17 / VEC_DUCK_VIEW
+      12 (eye 53 / 30 above the feet); the server shoots from the reported
+      mid-duck eye.
+- [x] Exact jump arc (half gravity before and after the move): 45 u jump,
+      63 u duck-jump; no stepping up while airborne (PM_StepMove is ground
+      only), so 64 u crates are out of reach as in CS.
+- [x] Being shot slows you (m_flVelocityModifier 0.5 / 0.65 large flinch,
+      +0.01 per 10 ms), for players and bots.
+- [x] Edge friction x2 when the ground ends 16 u ahead.
+- [x] Ladders (PM_LadderMove: 200 u/s, look-down to descend, strafe along,
+      jump-off 270), first one on cs_aq_assault's catwalk.
+- [x] Water level: splash footsteps, no fall damage when landing in water.
+- [x] `server/movement.test.js`: speeds, jump heights, crates, duck timing,
+      counter-strafe, air-strafe gain, edge friction, tagging, ladders, water.
+- [ ] Later: swimming for deep water (no deep water in the maps yet),
+      ladders on more maps (with M15 layouts).
 
 ## M9 — Weapon parity II (full arsenal)
 - [ ] Every CS 1.6 weapon: P228, Five-SeveN, Dual Elites, Galil, FAMAS

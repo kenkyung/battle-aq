@@ -132,6 +132,11 @@ function step(kind) {
       h.osc('sine', 140, 70, h.env(h.out, { a: 0.001, d: 0.06, peak: 0.8 }), { dur: 0.15 });
       h.noise(h.filter('bandpass', 2400, 1.5, h.env(h.out, { a: 0.0005, d: 0.025, peak: 0.7 })), { dur: 0.08 });
       h.noise(h.filter('lowpass', 900, 0.7, h.env(h.out, { at: 0.02, a: 0.002, d: 0.05, peak: 0.3 })), { at: 0.02, dur: 0.1 });
+    } else if (kind === 'water') {
+      // splash: a wet burst plus a couple of droplet blips
+      h.noise(h.filter('bandpass', 1400, 0.8, h.env(h.out, { a: 0.003, d: 0.16, peak: 0.9 })), { dur: 0.3 });
+      h.noise(h.filter('lowpass', 500, 0.7, h.env(h.out, { a: 0.004, d: 0.1, peak: 0.6 })), { dur: 0.2 });
+      for (let i = 0; i < 3; i++) { const at = 0.04 + h.rand() * 0.12; const f = 900 + h.rand() * 1400; h.osc('sine', f, f * 1.8, h.env(h.out, { at, a: 0.002, d: 0.03, peak: 0.25 }), { at, dur: 0.05 }); }
     } else if (kind === 'metal') {
       const bus = h.env(h.out, { a: 0.0005, d: 0.25, peak: 0.8 });
       for (const f of [420, 1130, 2290, 3720]) h.osc('sine', f, f * 0.995, h.env(bus, { a: 0.0005, d: 0.08 + 60 / f, peak: 0.5 }), { dur: 0.35 });
@@ -256,7 +261,7 @@ const RECIPES = {
     for (let i = 0; i < 14; i++) { const at = h.rand() * 7.5; const f = 1800 + h.rand() * 2600; h.osc('sine', f, f * (0.7 + h.rand() * 0.8), h.env(h.out, { at, a: 0.01, d: 0.12, peak: 0.3 }), { at, dur: 0.2 }); }
   }],
 };
-for (const kind of ['sand', 'stone', 'metal', 'wood']) {
+for (const kind of ['sand', 'stone', 'metal', 'wood', 'water']) {
   for (let v = 0; v < 4; v++) RECIPES[`step_${kind}_${v}`] = [0.3, step(kind), 900 + v];
 }
 

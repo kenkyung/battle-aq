@@ -259,6 +259,33 @@ def build_map(path, quick=False):
                         pts = [P(a0, y0), P(a1, y0), P(a1, y0 + hh), P(a0, y0 + hh)]
                     world.quad(pts, [(0, 0), (1, 0), (1, 1), (0, 1)], 'door_wood' if door else 'window_shutter')
 
+    # ladders: two rails and a rung every 16 u against the wall side of the
+    # volume. Too thin for lightmap texels, so they go in a separate
+    # `fixtures` node that the client lights live.
+    fixtures = Builder()
+    for lad in data.get('ladders', []):
+        mn, mx = lad['min'], lad['max']
+        nx, nz = lad['normal']
+        tid = mat_for('metal')
+        if abs(nx) > abs(nz):
+            x = mx[0] if nx < 0 else mn[0]      # against the wall, away from the climber
+            x0, x1 = (x - 3, x) if nx < 0 else (x, x + 3)
+            for zr in (mn[2] + 2, mx[2] - 4):
+                fixtures.box([x0 - 1, mn[1], zr], [x1, mx[1] + 12, zr + 2.5], tid, 64, bottom=True)
+            y = mn[1] + 12
+            while y < mx[1]:
+                fixtures.box([x0, y, mn[2] + 2], [x1 - 1, y + 1.6, mx[2] - 2], tid, 64, bottom=True)
+                y += 16
+        else:
+            z = mx[2] if nz < 0 else mn[2]
+            z0, z1 = (z - 3, z) if nz < 0 else (z, z + 3)
+            for xr in (mn[0] + 2, mx[0] - 4):
+                fixtures.box([xr, mn[1], z0 - 1], [xr + 2.5, mx[1] + 12, z1], tid, 64, bottom=True)
+            y = mn[1] + 12
+            while y < mx[1]:
+                fixtures.box([mn[0] + 2, y, z0], [mx[0] - 2, y + 1.6, z1 - 1], tid, 64, bottom=True)
+                y += 16
+
     # water sheets (lightmapped like everything else)
     for wtr in data['water']:
         tid = mat_for('water')
@@ -347,7 +374,8 @@ def build_map(path, quick=False):
             m.node_tree.nodes.remove(n)
     ob.data.uv_layers.active = ob.data.uv_layers['UVMap']
     ob.data.uv_layers['UVMap'].active_render = True
-    export_glb(os.path.join(OUT, mid + '.glb'), [ob, sky])
+    extra = [fixtures.object('fixtures', materials)] if fixtures.faces else []
+    export_glb(os.path.join(OUT, mid + '.glb'), [ob, sky] + extra)
 
 
 def world_uv(ob, tile):
