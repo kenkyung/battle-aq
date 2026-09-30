@@ -414,7 +414,7 @@ export class HUD {
       const list = rows.filter((r) => r.team === team).sort((a, b) => b.k - a.k || a.d - b.d);
       return '<tr class="head"><td class="n">NAME</td><td class="s"></td><td class="k">SCORE</td><td class="d">DEATHS</td><td class="l">LATENCY</td></tr>'
         + list.map((r) => `<tr class="${r.alive ? '' : 'dead'} ${r.id === myId ? 'me' : ''}"><td class="n">${esc(r.name)}</td>`
-          + `<td class="s ${r.c4 ? 'bomb' : ''}">${!r.alive ? 'DEAD' : r.vip ? 'VIP' : r.c4 ? 'BOMB' : ''}</td>`
+          + `<td class="s ${r.c4 ? 'bomb' : ''}">${r.afk ? 'AFK' : !r.alive ? 'DEAD' : r.vip ? 'VIP' : r.c4 ? 'BOMB' : ''}</td>`
           + `<td class="k">${r.k}</td><td class="d">${r.d}</td><td class="l">${r.bot ? 'BOT' : r.ping ?? ''}</td></tr>`).join('');
     };
     this.el.sbTbody.innerHTML = render(TEAM.T);

@@ -221,6 +221,8 @@ wss.on('connection', (ws, req) => {
   if (isBanned(ip)) { ws.send(JSON.stringify({ t: 'error', text: 'you are banned from this server' })); ws.close(); return; }
   const limit = rateLimiter();
   let rconFails = 0;
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', (raw) => {
     const r = limit();
@@ -290,6 +292,17 @@ wss.on('connection', (ws, req) => {
 
   ws.on('error', () => {});
 });
+
+// Heartbeat: a protocol ping every 10 s; a connection that did not answer the
+// last one is dead (sleeping laptop, dropped Wi-Fi, half-open TCP) and is
+// terminated, which removes its player instead of leaving a ghost behind.
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (!ws.isAlive) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch {}
+  }
+}, 10000).unref();
 
 // ------------------------------------------------------------------ loops
 

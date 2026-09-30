@@ -551,13 +551,13 @@ net.on('state', (msg) => {
     if (p.hid) {
       // out of sight and far (server PVS): keep the roster entry, hide the model
       Object.assign(r, { team: p.team, alive: true });
-      if (p.k !== undefined) Object.assign(r, { k: p.k, d: p.d, ping: p.ping, bot: p.bot });
+      if (p.k !== undefined) Object.assign(r, { k: p.k, d: p.d, ping: p.ping, bot: p.bot, afk: p.afk });
       roster.set(p.id, r);
       if (remotes.players.has(p.id)) remotes.hide(p.id);
       continue;
     }
     Object.assign(r, { team: p.team, alive: p.alive, pos: p.pos, c4: p.c4, vip: p.vip });
-    if (p.k !== undefined) Object.assign(r, { k: p.k, d: p.d, ping: p.ping, bot: p.bot });   // only in full snapshots
+    if (p.k !== undefined) Object.assign(r, { k: p.k, d: p.d, ping: p.ping, bot: p.bot, afk: p.afk });   // only in full snapshots
     if (r.k === undefined) { r.k = 0; r.d = 0; }
     roster.set(p.id, r);
     if (p.id === myId) continue;
@@ -975,6 +975,7 @@ con.cmd('finish', 'finish <weapon|all> <name|index> — weapon finish (e.g. fini
   setFinish(w, i);
   con.print(`${w === '*' ? 'all weapons' : w}: ${FINISHES[i].name}`);
 });
+con.cmd('kickidle', 'kick players whose game froze or disconnected (and AFK ones)', () => kickIdle());
 con.cmd('chooseappearance', 'pick your player model', () => { con.toggle(false); openSkinMenu(myTeam); });
 let minModels = store.get('baq_minmodels', '0') === '1';
 con.cvar('cl_minmodels', minModels ? '1' : '0', 'show every player as their team\'s default model', (v) => {
@@ -1165,6 +1166,10 @@ function chooseSkin(i) {
   openSkinMenu(0);
 }
 function skinMenuOpen() { return !$('skinmenu').classList.contains('hidden'); }
+// ghosts / frozen players: the server decides who really is (M: team menu, console kickidle)
+function kickIdle() { net.send({ t: 'kickidle' }); }
+$('kickIdle').addEventListener('click', () => { kickIdle(); openTeamMenu(false); });
+net.on('notice', (msg) => { hud.centerMsg(msg.text); setTimeout(() => hud.centerMsg(''), 3000); con.print(msg.text); });
 net.on('team_fail', (msg) => { hud.centerMsg(msg.reason); setTimeout(() => hud.centerMsg(''), 2000); });
 
 // ------------------------------------------------------------------ MOTD

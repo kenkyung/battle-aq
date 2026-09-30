@@ -407,6 +407,7 @@ export class Game {
     this.updateHostages(dt, t);
     this.checkVipEscape();
     this.tickFloorWeapons(t);
+    this.checkIdle(t);
     if (this.phase === 'warmup' || t < this.phaseEndsAt) return;
     if (this.phase === 'freeze') this.setPhase('round', this.roundTime);
     // time: the bomb was never planted (CT win) / hostages not rescued (T win);
@@ -795,11 +796,61 @@ export class Game {
       money: this.competitive ? ECONOMY.startMoney : ECONOMY.warmupMoney,
       inv: {}, ammo: {}, weapon: 'knife', nades: {}, blindUntil: 0,
       nextFire: 0, lastFire: 0, burst: 0, reloadUntil: 0, recoil: newRecoil(), speed: 0, modes: {}, burstIdx: 0, shellAt: 0,
-      kills: 0, deaths: 0, skin: Math.floor(Math.random() * 4),
+      kills: 0, deaths: 0, skin: Math.floor(Math.random() * 4), lastMsgAt: now(), lastCmdAt: now(),
+      heard: !!(ws && typeof ws.ping === 'function'),   // idle checks: real WebSockets only (test sockets are plain objects)
       fin: {}, finPref: {},                // weapon finishes: per gun in hand / the player's picks
     };
     this.resetLoadout(p);
     return p;
+  }
+
+  // ------------------------------------------------------------- ghosts / AFK
+  //
+  // A ghost: the game stopped talking to us (closed laptop, dropped Wi-Fi,
+  // crashed tab) but the socket never closed. A frozen player: connected,
+  // alive in a live round, but no input (tabbed out, walked away).
+
+  get liveRound() { return ['round', 'freeze', 'planted', 'dm'].includes(this.phase); }
+
+  unresponsive(p, t = now()) { return !p.bot && !!p.heard && t - (p.lastMsgAt || t) > 8; }
+  frozen(p, t = now()) { return !p.bot && !!p.heard && p.alive && this.liveRound && t - (p.lastCmdAt || t) > 15; }
+
+  kickPlayer(p, reason) {
+    if (!this.players.has(p.id)) return;
+    try { this.send(p, { t: 'error', text: reason }); } catch {}
+    this.broadcast({ t: 'chat', id: 0, name: '*', team: 0, text: `${p.name} was kicked (${reason})` }, p.id);
+    this.removePlayer(p.id);
+    if (p.ws) { try { p.ws.close(); } catch {} setTimeout(() => { try { p.ws.terminate && p.ws.terminate(); } catch {} }, 2000); }
+  }
+
+  // anyone may ask; only players the server sees as ghosts / frozen go
+  kickIdle(by) {
+    const t = now();
+    if (t - (by.kickIdleAt || 0) < 5) return this.send(by, { t: 'notice', text: 'wait a moment before trying again' });
+    by.kickIdleAt = t;
+    const gone = [];
+    for (const q of [...this.players.values()]) {
+      if (q === by || q.bot) continue;
+      if (this.unresponsive(q, t)) { this.kickPlayer(q, 'not responding'); gone.push(q.name); }
+      else if (this.frozen(q, t)) { this.kickPlayer(q, 'AFK / frozen'); gone.push(q.name); }
+    }
+    this.send(by, { t: 'notice', text: gone.length ? `kicked: ${gone.join(', ')}` : 'nobody is frozen or disconnected' });
+  }
+
+  checkIdle(t) {
+    if (t < (this._idleCheck || 0)) return;
+    this._idleCheck = t + 1;
+    for (const p of [...this.players.values()]) {
+      if (p.bot || !p.heard) continue;
+      if (this.rules.timeout && t - (p.lastMsgAt || t) > this.rules.timeout) { this.kickPlayer(p, 'timed out'); continue; }
+      if (this.practice || !this.rules.afkkick || !this.frozen(p, t)) continue;
+      const idle = t - p.lastCmdAt;
+      if (idle > this.rules.afkkick) this.kickPlayer(p, 'AFK');
+      else if (idle > this.rules.afkkick - 20 && !p.afkWarned) {
+        p.afkWarned = true;
+        this.send(p, { t: 'notice', text: 'you will be kicked for being AFK in 20 s — move!' });
+      }
+    }
   }
 
   removePlayer(id, fromBalance = false) {
@@ -1167,7 +1218,13 @@ export class Game {
   // ------------------------------------------------------------- messages
 
   onMessage(p, msg) {
+    const t0 = now();
+    p.lastMsgAt = t0;
+    if (msg.t === 'cmd' || msg.t === 'state') { p.lastCmdAt = t0; p.afkWarned = false; }
     switch (msg.t) {
+      case 'kickidle':
+        this.kickIdle(p);
+        break;
       case 'state':
         if (!p.alive || p.usesCmds) break;     // usercmd clients move by their commands
         // frozen at round start: look around, but stay on the spawn
@@ -1925,11 +1982,11 @@ export class Game {
       // false flags are left out; score / deaths / ping only in every 15th
       // snapshot (the client keeps the last values) — bandwidth
       players: [...this.players.values()].map((p) => (this.hiddenFrom(viewer, p, t) ? { id: p.id, team: p.team, alive: true, hid: 1,
-        ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined } : {}) } : {
+        ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined, afk: this.frozen(p, t) || this.unresponsive(p, t) ? 1 : undefined } : {}) } : {
         id: p.id, team: p.team, pos: r1(p.pos), yaw: r3(p.yaw), pitch: r3(p.pitch), skin: p.skin || undefined,
         alive: p.alive, crouching: p.crouching || undefined, moving: p.moving || undefined, shield: p.shield ? 1 : undefined,
         weapon: p.weapon, mode: p.modes[p.weapon] || undefined, fin: this.finOf(p, p.weapon) || undefined, reloading: (!!p.reloadUntil || !!p.shellAt) || undefined,
-        ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined } : {}),
+        ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined, afk: this.frozen(p, t) || this.unresponsive(p, t) ? 1 : undefined } : {}),
         c4: viewer.team === TEAM.T && p.c4 ? 1 : undefined, vip: this.vipMode && p.vip ? 1 : undefined,
         planting: this.planting.has(p.id) || undefined, defusing: this.defusing.has(p.id) || undefined,
       })),

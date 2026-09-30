@@ -16,6 +16,8 @@ export const RULES = {
     roundEnd: 5,          // s between rounds
     tickrate: 33,         // server simulation, Hz
     updaterate: 30,       // snapshots to clients, Hz (cl_updaterate)
+    afkkick: 90,          // mp_afkkick: s alive without any input in a live round (0 = off)
+    timeout: 30,          // sv_timeout: s without a single message from the game
   },
   competitive: {
     name: 'Competitive (MR15)',

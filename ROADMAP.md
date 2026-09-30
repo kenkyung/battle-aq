@@ -265,6 +265,12 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       cap, bad-rcon lockout, PVS-lite (distant unseen silent enemies are sent
       without positions, so wallhacks see nothing at range).
 - [x] `server/modes.test.js`, `server/servers.test.js`.
+- [x] Ghost / frozen players: WebSocket heartbeat terminates dead
+      connections (10 s), sv_timeout 30 s without a message, mp_afkkick 90 s
+      alive with no input in a live round (warned at 70 s; not in practice);
+      anyone can press "Kick frozen / ghost players" (M menu, `kickidle`) —
+      the server only removes players it sees as unresponsive (8 s) or frozen
+      (15 s); AFK shows on the scoreboard; rcon kickidle / mp_afkkick / sv_timeout.
 
 ## M17 — Performance  [done]
 - [x] Character LOD: a decimated body (~35 %, ~1.8k tris) baked into each

@@ -38,6 +38,7 @@ const CVARS = {
   mp_roundtime: ['roundtime', 60], mp_freezetime: ['freezetime', 1], mp_buytime: ['buytime', 60], mp_c4timer: ['c4timer', 1],
   mp_winlimit: ['winlimit', 1], mp_maxrounds: ['maxrounds', 1], mp_friendlyfire: ['friendlyfire', 'bool'],
   mp_timelimit: ['timelimit', 60], mp_fraglimit: ['fraglimit', 1],
+  mp_afkkick: ['afkkick', 1], sv_timeout: ['timeout', 1],
 };
 
 // run one rcon command on `game` for `player`; returns the reply text
@@ -83,6 +84,7 @@ export function rcon(game, player, line, { ip } = {}) {
       game.checkMode();
       return 'bot added';
     }
+    case 'kickidle': { game.kickIdle(player); return 'kicked every ghost / frozen player'; }
     case 'bot_kick': { for (const p of [...game.players.values()]) if (p.bot) game.removePlayer(p.id, true); return 'bots kicked'; }
     case 'say': game.broadcast({ t: 'chat', id: 0, name: 'Console', team: 0, text: args.join(' ').slice(0, 140) }); return 'ok';
     default:
@@ -96,6 +98,6 @@ export function rcon(game, player, line, { ip } = {}) {
         game.broadcast({ t: 'chat', id: 0, name: 'Console', team: 0, text: `${cmd} set to ${args[0]}` });
         return `${cmd} = ${args[0]}`;
       }
-      return 'rcon: status kick ban unban listbans map restart bot_add [t|ct] [difficulty] bot_kick say mp_roundtime mp_freezetime mp_buytime mp_c4timer mp_winlimit mp_maxrounds mp_friendlyfire mp_timelimit mp_fraglimit';
+      return 'rcon: status kick ban unban listbans map restart bot_add [t|ct] [difficulty] bot_kick say mp_roundtime mp_freezetime mp_buytime mp_c4timer mp_winlimit mp_maxrounds mp_friendlyfire mp_timelimit mp_fraglimit mp_afkkick sv_timeout kickidle';
   }
 }

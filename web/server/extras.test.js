@@ -82,6 +82,41 @@ console.log('weapon finishes');
   ok(b.inv.primary === 'ak47' && g.finOf(b, 'ak47') === 8, 'whoever picks it up gets the gold AK');
 }
 
+console.log('ghosts and frozen players');
+{
+  const g = new Game('de_aq_dust', { rules: 'casual' });
+  g.rules = { ...g.rules, roundtime: 999 };
+  const live = () => { const s = sock(); s.ping = () => {}; s.close = () => { s.closed = true; }; return s; };
+  const wa = live(), wb = live(), wc = live();
+  const a = g.addPlayer(wa, 'Active', { team: TEAM.T });
+  const b = g.addPlayer(wb, 'Frozen', { team: TEAM.CT });
+  const c = g.addPlayer(wc, 'Ghost', { team: TEAM.CT });
+  g.checkMode();
+  advance(g, ROUND.freezeTime + 0.5);
+  let seq = 0;
+  const tick = (sec, who) => { for (let i = 0; i < sec * 30; i++) { fake += 1000 / 30; for (const [p, cmd] of who) g.onMessage(p, cmd ? { t: 'cmd', c: [{ s: ++seq, dt: 1 / 30, k: 0, y: 0, p: 0 }] } : { t: 'pong', ts: 0 }); g.update(); } };
+  g.onMessage(b, { t: 'cmd', c: [] }); g.onMessage(c, { t: 'cmd', c: [] });
+  tick(10, [[a, true], [b, false]]);               // b only answers pings, c is silent
+  g.onMessage(a, { t: 'kickidle' });
+  ok(!g.players.has(c.id) && g.players.has(b.id) && wc.closed, 'kickidle: the silent ghost goes, the AFK player not yet (10 s)');
+  tick(8, [[a, true], [b, false]]);
+  g.onMessage(a, { t: 'kickidle' });
+  ok(!g.players.has(b.id) && g.players.has(a.id), 'after 15 s without input the frozen player goes too');
+  ok(wa.got('notice').at(-1).text.includes('Frozen'), 'the asker is told who was kicked');
+  const d = g.addPlayer(live(), 'Late', { team: TEAM.CT });
+  g.onMessage(d, { t: 'pong', ts: 0 });
+  tick(32, [[a, true]]);
+  ok(!g.players.has(d.id), 'sv_timeout: 30 s of silence kicks automatically');
+  const e = g.addPlayer(live(), 'Afk', { team: TEAM.CT });
+  g.respawn(e, true);
+  g.onMessage(e, { t: 'cmd', c: [] });
+  const ew = e.ws;
+  tick(75, [[a, true], [e, false]]);
+  ok(g.players.has(e.id) && ew.got('notice').some((m) => /AFK/.test(m.text)), 'mp_afkkick: warned 20 s before');
+  tick(20, [[a, true], [e, false]]);
+  ok(!g.players.has(e.id), 'and kicked after 90 s without input');
+}
+
 console.log('swimming');
 {
   const water = [{ y: 120, w: 400, d: 400, pos: [0, 0] }];
