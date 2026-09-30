@@ -10,6 +10,7 @@ export class Net {
     this.connected = false;
     this.bytesIn = 0;    // for net_graph
     this.bytesOut = 0;
+    this.lastMsgAt = performance.now();   // connection-problem warning
   }
 
   on(type, fn) { this.handlers.set(type, fn); }
@@ -26,6 +27,7 @@ export class Net {
       // server only sends it after receiving `join`.)
       this.ws.onopen = () => {
         this.connected = true;
+        this.lastMsgAt = performance.now();
         if (!settled) { settled = true; resolve(); }
         if (this.onOpen) this.onOpen();
       };
@@ -38,6 +40,7 @@ export class Net {
       this.ws.onmessage = (ev) => {
         let msg;
         this.bytesIn += ev.data.length;
+        this.lastMsgAt = performance.now();
         try { msg = JSON.parse(ev.data); } catch { return; }
         // debug counters for automated testing
         window.__msgCount = (window.__msgCount || 0) + 1;

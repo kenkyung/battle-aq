@@ -279,6 +279,18 @@ export class Remotes {
     let i = b.length - 1;
     while (i > 0 && b[i].ts > rt) i--;
     const a = b[i], c = b[Math.min(b.length - 1, i + 1)];
+    // past the newest snapshot (a late packet): keep them moving along their
+    // last velocity for up to 120 ms instead of freezing, then hold
+    if (rt > c.ts && b.length >= 2 && a === c) {
+      const p0 = b[b.length - 2], span = c.ts - p0.ts;
+      const v = span > 0 ? [0, 1, 2].map((j) => (c.pos[j] - p0.pos[j]) / span) : [0, 0, 0];
+      const fast = Math.hypot(v[0], v[2]) > 400;                  // a respawn / teleport, not movement
+      const dx = fast ? 0 : Math.min(0.12, rt - c.ts);
+      r.cur.pos = [0, 1, 2].map((j) => c.pos[j] + v[j] * dx);
+      r.cur.yaw = c.yaw; r.cur.pitch = c.pitch; r.icrouch = c.crouching;
+      r.ivel = fast || rt - c.ts > 0.12 ? [0, 0, 0] : v;
+      return;
+    }
     if (a === c || rt <= a.ts || c.ts <= a.ts) {
       const e = rt <= a.ts ? a : c;
       r.cur.pos = e.pos.slice(); r.cur.yaw = e.yaw; r.cur.pitch = e.pitch; r.icrouch = e.crouching;

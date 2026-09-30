@@ -337,3 +337,16 @@ table.lb th { color: var(--hud-dim); font-weight: 600; font-size: 10px; letter-s
   background: radial-gradient(ellipse at 50% 40%, rgba(40,140,170,.28), rgba(10,60,90,.62));
   backdrop-filter: blur(1.5px) saturate(.8); }
 #kickIdle { margin-top: 8px; }
+
+/* latency / disconnects */
+#connWarn { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); z-index: 40; pointer-events: none;
+  padding: 5px 12px; border-radius: 4px; background: rgba(160,20,20,.75); color: #fff; font: 800 12px var(--font); letter-spacing: 2px; }
+#connWarn b { font-family: var(--num); margin-left: 6px; }
+#lagIcon { position: absolute; top: 14px; right: 250px; z-index: 30; pointer-events: none; padding: 2px 7px; border-radius: 3px;
+  background: rgba(0,0,0,.45); color: #ffb028; font: 700 11px var(--num); }
+#reconnect { position: absolute; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
+#reconnect .panel { text-align: center; min-width: 360px; }
+#reconnectText { font: 700 15px var(--font); color: var(--hudc); margin: 10px 0 6px; }
+#reconnect .dim { font-size: 11px; color: var(--hud-dim); margin-bottom: 12px; }
+.spinner { width: 34px; height: 34px; margin: 4px auto; border-radius: 50%; border: 3px solid rgba(255,255,255,.15); border-top-color: var(--hudc); animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

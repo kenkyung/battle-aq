@@ -177,6 +177,16 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       interp, pending commands) — Settings.
 - [x] `server/netcode.test.js`.
 
+- [x] Latency / disconnect hardening: a dropped connection keeps the player
+      45 s (resume token; money, guns, score kept; shown as DC, no body left
+      standing) and the client reconnects by itself behind a "reconnecting"
+      overlay; 1 s of queued commands honoured after a lag spike (was 0.3 s:
+      rubber-banding); backed-up clients skip snapshots instead of queueing
+      stale ones; cl_interp adapts to measured jitter (50-250 ms); remotes
+      extrapolate 120 ms through a late packet; "CONNECTION PROBLEM" warning
+      after 1 s of silence and a LAG badge (ping > 150 ms / jitter > 30 ms).
+      `server/netcode2.test.js`.
+
 ## M12 — HUD and UX parity  [done]
 - [x] CS 1.6 HUD layout and colours: orange digits, health / armour
       bottom-left, round clock bottom-centre, money + ammo bottom-right.

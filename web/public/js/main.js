@@ -285,6 +285,21 @@ function drawFinishes() {
 $('finWeapon').addEventListener('change', drawFinishes);
 $('finBox').addEventListener('toggle', () => { if ($('finBox').open) drawFinishes(); });
 
+// "Connection problem" (nothing from the server for a second, like CS's
+// warning) and a lag badge when latency or jitter is high
+let connWarnOn = false, lagOn = false;
+function connIndicators() {
+  const quiet = running && !reconnecting && !net.fake ? (performance.now() - net.lastMsgAt) / 1000 : 0;
+  const warn = quiet > 1;
+  if (warn !== connWarnOn) { connWarnOn = warn; $('connWarn').classList.toggle('hidden', !warn); }
+  if (warn) $('connWarnT').textContent = quiet.toFixed(1) + ' s';
+  const me = roster.get(myId);
+  const ping = me && me.ping || 0;
+  const lag = running && !net.fake && (ping > 150 || jitter > 0.03);
+  if (lag !== lagOn) { lagOn = lag; $('lagIcon').classList.toggle('hidden', !lag); }
+  if (lag) $('lagIcon').textContent = `LAG ${ping} ms · jitter ${Math.round(jitter * 1000)} ms`;
+}
+
 let snowFx = null, uwOn = false;
 // weather + under-water tint, every frame before the scene renders
 function envFx(dt) {
@@ -423,14 +438,62 @@ $('crGo').addEventListener('click', () => join({ create: {
   difficulty: $('pDiff').value,
 } }));
 
+let lastJoin = null, resumeInfo = null, kicked = false, reconnecting = null;
+function serverWsUrl() {
+  const addr = $('serverAddr').value.trim();
+  return addr
+    ? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${addr}/ws`
+    : new URL('ws', location.href).href.replace(/^http/, 'ws');
+}
+// leaving on purpose: tell the server so it does not hold a resume slot
+function leave() { leaving = true; net.send({ t: 'bye' }); net.close(); }
+window.addEventListener('pagehide', () => { if (running) net.send({ t: 'bye' }); });
+
+// ------------------------------------------------------------------ reconnect
+//
+// A dropped connection is not the end: the server holds our player for 45 s
+// (team, money, guns, score). Retry every couple of seconds with the resume
+// token; the game stays on screen behind a "reconnecting" notice.
+const RESUME_WINDOW = 45;
+function startReconnect() {
+  const t0 = performance.now();
+  let attempt = 0;
+  reconnecting = { t0 };
+  $('reconnect').classList.remove('hidden');
+  input.capture = false;
+  if (document.pointerLockElement) document.exitPointerLock();
+  const tick = async () => {
+    if (!reconnecting) return;
+    const left = RESUME_WINDOW - (performance.now() - t0) / 1000;
+    if (left <= 0) { giveUp(); return; }
+    attempt++;
+    $('reconnectText').textContent = `Connection lost — reconnecting (attempt ${attempt}, ${Math.ceil(left)} s left)…`;
+    try {
+      await net.connect(serverWsUrl());
+      net.send({ ...lastJoin, resume: resumeInfo.token, room: resumeInfo.room });
+      // the welcome ends it (onWelcome); if it never comes the socket closes and we retry
+      reconnecting.timer = setTimeout(() => { if (reconnecting) { net.close(); } }, 6000);
+    } catch {
+      reconnecting.timer = setTimeout(tick, Math.min(4000, 800 + attempt * 600));
+    }
+  };
+  reconnecting.retry = tick;
+  tick();
+}
+function giveUp() {
+  reconnecting = null;
+  $('reconnect').classList.add('hidden');
+  teardown('lost connection to the server');
+}
+$('reconnectLeave').addEventListener('click', () => { if (reconnecting) { clearTimeout(reconnecting.timer); reconnecting = null; $('reconnect').classList.add('hidden'); leaving = true; net.close(); teardown(''); } });
+
 async function connect(joinMsg) {
   playBtn.disabled = true;
   leaving = false;
+  kicked = false;
+  lastJoin = joinMsg;
   menuStatus.textContent = 'connecting…';
-  const addr = $('serverAddr').value.trim();
-  const url = addr
-    ? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${addr}/ws`
-    : new URL('ws', location.href).href.replace(/^http/, 'ws');
+  const url = serverWsUrl();
   net.on('welcome', onWelcome);
   try {
     await net.connect(url);
@@ -445,6 +508,15 @@ async function connect(joinMsg) {
 let lastWelcome = null;
 async function onWelcome(welcome) {
   lastWelcome = welcome;
+  if (welcome.token && !net.fake) resumeInfo = { token: welcome.token, room: welcome.room };
+  if (reconnecting) {
+    clearTimeout(reconnecting.timer);
+    reconnecting = null;
+    $('reconnect').classList.add('hidden');
+    input.capture = true;
+    input.lock();
+    hud.centerMsg('reconnected'); setTimeout(() => hud.centerMsg(''), 1500);
+  }
   myId = welcome.id;
   await useMap(welcome.mapId);
   if (remotes) remotes.clear();
@@ -524,7 +596,7 @@ function updateNetGraph() {
   netStats.text = `fps ${Math.round(netStats.frames / s)}  ping ${me && me.ping !== undefined ? me.ping : '?'} ms  cpu ${netStats.cpu.toFixed(1)} ms\n`
     + `draws ${ri.calls}  tris ${(ri.triangles / 1000).toFixed(0)}k  res ${Math.round(dyn.scale * 100)}%${gpuTimer.ms !== null ? `  gpu ${gpuTimer.ms.toFixed(1)} ms` : ''}\n`
     + `in ${((net.bytesIn - netStats.lastIn) / s / 1024).toFixed(1)} k/s  out ${((net.bytesOut - netStats.lastOut) / s / 1024).toFixed(1)} k/s\n`
-    + `updaterate ${Math.round(netStats.snaps / s)}/${round.updaterate || '?'}  tickrate ${round.tickrate || '?'}  interp ${Math.round(interp * 1000)} ms  pending ${player ? player.pending.length : 0}`;
+    + `updaterate ${Math.round(netStats.snaps / s)}/${round.updaterate || '?'}  tickrate ${round.tickrate || '?'}  interp ${Math.round(interp * 1000)} ms  jitter ${Math.round(jitter * 1000)} ms  pending ${player ? player.pending.length : 0}`;
   netStats.snaps = 0; netStats.frames = 0; netStats.t = nowMs;
   netStats.lastIn = net.bytesIn; netStats.lastOut = net.bytesOut;
   const el = document.getElementById('netgraph');
@@ -534,7 +606,8 @@ function updateNetGraph() {
 // server clock: the snapshot timeline, offset from ours by the smallest
 // observed delay (a max filter that slowly forgets, so drift is followed)
 let clockOffset = null;
-let interp = 0.1;                                    // cl_interp
+let interp = 0.1;                                    // cl_interp (adaptive)
+let jitter = 0, lastSnapAt = 0;                      // snapshot arrival jitter (s)
 const serverNow = () => performance.now() / 1000 + (clockOffset || 0);
 const viewTime = () => serverNow() - interp;
 net.on('state', (msg) => {
@@ -543,6 +616,14 @@ net.on('state', (msg) => {
     const sample = msg.ts - performance.now() / 1000;
     clockOffset = clockOffset === null ? sample : Math.max(sample, clockOffset - 0.002);
     netStats.snaps++;
+    // adaptive interpolation: the buffer must cover the gaps the network
+    // actually has — grow quickly when snapshots arrive unevenly, shrink
+    // slowly back toward two update intervals when it calms down
+    const nowS = performance.now() / 1000, rate = round.updaterate || 30;
+    if (lastSnapAt) jitter += (Math.min(0.5, Math.abs(nowS - lastSnapAt - 1 / rate)) - jitter) * 0.08;
+    lastSnapAt = nowS;
+    const target = Math.max(0.05, Math.min(0.25, 2 / rate + 0.015 + jitter * 2.5));
+    interp += (target - interp) * (target > interp ? 0.25 : 0.015);
   }
   const seen = new Set();
   for (const p of msg.players) {
@@ -550,13 +631,13 @@ net.on('state', (msg) => {
     const r = roster.get(p.id) || { id: p.id, name: `#${p.id}` };
     if (p.hid) {
       // out of sight and far (server PVS): keep the roster entry, hide the model
-      Object.assign(r, { team: p.team, alive: true });
+      Object.assign(r, { team: p.team, alive: p.alive !== false, dc: p.dc });
       if (p.k !== undefined) Object.assign(r, { k: p.k, d: p.d, ping: p.ping, bot: p.bot, afk: p.afk });
       roster.set(p.id, r);
       if (remotes.players.has(p.id)) remotes.hide(p.id);
       continue;
     }
-    Object.assign(r, { team: p.team, alive: p.alive, pos: p.pos, c4: p.c4, vip: p.vip });
+    Object.assign(r, { team: p.team, alive: p.alive, pos: p.pos, c4: p.c4, vip: p.vip, dc: undefined });
     if (p.k !== undefined) Object.assign(r, { k: p.k, d: p.d, ping: p.ping, bot: p.bot, afk: p.afk });   // only in full snapshots
     if (r.k === undefined) { r.k = 0; r.d = 0; }
     roster.set(p.id, r);
@@ -677,7 +758,7 @@ net.on('pmode', (msg) => { const r = remotes && remotes.players.get(msg.id); if 
 net.on('pickup', (msg) => { sfx.play('deploy', { volume: 0.6 }); hud.addChat('*', 0, `picked up: ${WEAPONS[msg.weapon].name}`); });
 net.on('reload', () => {});
 net.on('buy_fail', (msg) => { hud.buyFail(msg.reason); if (!hud.buyOpen()) { hud.centerMsg(msg.reason); setTimeout(() => hud.centerMsg(''), 1800); } });
-net.on('error', (msg) => { menuStatus.textContent = msg.text; });
+net.on('error', (msg) => { menuStatus.textContent = msg.text; kicked = true; });   // kicked / banned / full: no reconnect
 
 let keyTimer = null;
 function keypad(on, time = 3, alt = false) {
@@ -738,8 +819,9 @@ function applyRound(r) {
   round.c4timer = r.c4timer;
   round.maxRounds = r.maxRounds;
   round.friendlyfire = !!r.friendlyfire;
-  // cl_interp: two update intervals plus a little slack (0.05 .. 0.1 s)
-  if (r.updaterate) interp = Math.max(0.05, Math.min(0.1, 2 / r.updaterate + 0.015));
+  // cl_interp starts at two update intervals plus slack; it then adapts to
+  // the measured jitter (see the 'state' handler)
+  if (r.updaterate && !round.updaterate) interp = Math.max(0.05, Math.min(0.1, 2 / r.updaterate + 0.015));
   round.tickrate = r.tickrate; round.updaterate = r.updaterate;
   if (r.phase === 'freeze' || r.phase === 'warmup') { hostageTally.rescued = 0; hostageTally.killed = 0; }
   if (player) player.hostageMode = round.mode === 'hostage';
@@ -870,6 +952,16 @@ function updateFlash(dt) {
 }
 
 net.onClose = () => {
+  if (reconnecting) {                        // an attempt failed: try again shortly
+    clearTimeout(reconnecting.timer);
+    reconnecting.timer = setTimeout(reconnecting.retry, 1500);
+    return;
+  }
+  if (running && !leaving && !kicked && resumeInfo && !net.fake) { startReconnect(); return; }
+  teardown(leaving ? '' : 'disconnected from server');
+};
+
+function teardown(status) {
   voice.closeAll();
   toggleNightvision(false);
   running = false;
@@ -881,10 +973,11 @@ net.onClose = () => {
   if (document.pointerLockElement) document.exitPointerLock();
   menu.classList.remove('hidden');
   playBtn.disabled = false;
-  menuStatus.textContent = leaving ? '' : 'disconnected from server';
+  menuStatus.textContent = status;
+  resumeInfo = null;
   if (remotes) remotes.clear();
   bomb = { state: 'none' };
-};
+}
 
 // ------------------------------------------------------------------ pause (Esc)
 
@@ -911,7 +1004,7 @@ input.onLockChange = (locked) => {
 };
 $('resumeBtn').addEventListener('click', () => { showPause(false); input.lock(); });
 $('fullscreenBtn').addEventListener('click', async () => { try { await input.toggleFullscreen(); } catch { /* denied */ } input.lock(); });
-$('leaveBtn').addEventListener('click', () => { leaving = true; showPause(false); net.close(); });
+$('leaveBtn').addEventListener('click', () => { showPause(false); leave(); });
 document.addEventListener('fullscreenchange', () => {
   $('fullscreenBtn').textContent = document.fullscreenElement ? 'EXIT FULLSCREEN' : 'FULLSCREEN';
 });
@@ -987,9 +1080,9 @@ con.cmd('status', 'players, scores and latency', () => {
   con.print(`map ${map ? map.id : '?'} · ${round.rulesName || ''} · tick ${round.tickrate || '?'}`, 'dim');
   for (const r of roster.values()) con.print(`#${String(r.id).padEnd(4)}${(r.name || '').padEnd(18)}${r.team === TEAM.T ? 'T ' : 'CT'} ${String(r.k).padStart(3)} ${String(r.d).padStart(3)}  ${r.bot ? 'BOT' : (r.ping ?? '?') + ' ms'}`, 'dim');
 });
-con.cmd('disconnect', 'leave the server', () => { if (running) { leaving = true; net.close(); } });
+con.cmd('disconnect', 'leave the server', () => { if (running) leave(); });
 con.cmd('retry', 'reconnect', () => location.reload());
-con.cmd('quit', 'leave the server', () => { if (running) { leaving = true; net.close(); } });
+con.cmd('quit', 'leave the server', () => { if (running) leave(); });
 for (const c of ['autobuy', 'rebuy']) con.cmd(c, c, () => net.send({ t: c }));
 con.cmd('buyammo1', 'one box of primary ammo', () => net.send({ t: 'buy', item: 'ammo1' }));
 con.cmd('buyammo2', 'one box of pistol ammo', () => net.send({ t: 'buy', item: 'ammo2' }));
@@ -1066,7 +1159,7 @@ con.cmd('stopdemo', 'stop demo playback', () => endDemo());
 
 async function startDemo(d) {
   if (!d || !d.header || !Array.isArray(d.msgs)) throw new Error('missing header');
-  if (running) { leaving = true; net.close(); await new Promise((r) => setTimeout(r, 400)); }
+  if (running) { leave(); await new Promise((r) => setTimeout(r, 400)); }
   net.fake = true;
   await onWelcome(d.header.welcome);
   if (d.header.inv) player.applyInv(d.header.inv);
@@ -1090,8 +1183,7 @@ function endDemo() {
   if (!demo.playing) return;
   demo.playing = null;
   net.fake = false;
-  net.onClose();
-  menuStatus.textContent = 'demo finished';
+  teardown('demo finished');
 }
 
 // ------------------------------------------------------------------ nightvision (N)
@@ -1573,6 +1665,7 @@ function frame(now) {
   renderer.clear();
   netStats.cpu += ((performance.now() - cpu0) - netStats.cpu) * 0.05;     // script time per frame
   envFx(dt);
+  connIndicators();
   gpuTimer.begin();
   renderer.render(scene, camera);
   vm.render(renderer);

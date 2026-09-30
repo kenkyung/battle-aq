@@ -30,6 +30,15 @@
   <!-- HUD -->
   <div id="nvgNoise" class="hidden"></div>
   <div id="underwater" class="hidden"></div>
+  <!-- latency / disconnects -->
+  <div id="connWarn" class="hidden">CONNECTION PROBLEM <b id="connWarnT"></b></div>
+  <div id="lagIcon" class="hidden" title="high latency or jitter"></div>
+  <div id="reconnect" class="hidden"><div class="panel">
+    <div class="spinner"></div>
+    <div id="reconnectText">Connection lost — reconnecting…</div>
+    <div class="dim">your team, money, weapons and score are kept for 45 s</div>
+    <button id="reconnectLeave" class="btn small">BACK TO MENU</button>
+  </div></div>
   <canvas id="overview" class="hidden"></canvas>
   <div id="hud" class="hidden">
     <div id="voiceList"></div>

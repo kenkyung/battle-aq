@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { WebSocketServer } from 'ws';
-import { Game } from './game.js';
+import { Game, RESUME_GRACE } from './game.js';
 import { MAPS } from '../shared/maps.js';
 import { TICK_RATE, SNAPSHOT_RATE, TEAM } from '../shared/constants.js';
 import { RULES } from '../shared/rules.js';
@@ -238,6 +238,19 @@ wss.on('connection', (ws, req) => {
 
     if (!player) {
       if (msg.t !== 'join') return;
+      // coming back after a dropped connection: same player, same everything
+      if (msg.resume && msg.room) {
+        const g = rooms.get(String(msg.room));
+        const p = g && g.findResumable(String(msg.resume));
+        if (p) {
+          clearTimeout(p.graceTimer);
+          game = g;
+          player = g.resume(p, ws);
+          player.ip = ip;
+          log(`resume #${player.id} "${player.name}" ${game.id}`);
+          return;
+        }
+      }
       const team = msg.team === 'CT' ? TEAM.CT : msg.team === 'T' ? TEAM.T : 0;
       if (msg.mode === 'practice') {
         const practices = [...rooms.values()].filter((g) => g.practice).length;
@@ -263,6 +276,7 @@ wss.on('connection', (ws, req) => {
       log(`join  #${player.id} "${player.name}" ${game.id} map=${game.map.id} team=${player.team} (${game.humans.length} here)`);
       return;
     }
+    if (msg.t === 'bye') { ws.bye = true; return; }       // leaving on purpose: no resume slot
     if (msg.t === 'rcon') {
       let text;
       if (!RCON) text = 'rcon is disabled on this server (set RCON_PASSWORD)';
@@ -278,20 +292,34 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     if (!player) return;
-    game.removePlayer(player.id);
-    if (game.practice) {
-      if (!game.humans.length) rooms.delete(game.id);
-      log(`practice ${game.id} closed`);
-    } else {
-      log(`left  #${player.id} "${player.name}" ${game.id} (${game.humans.length} here)`);
-      // empty public rooms go away, except one on the default map
-      const keep = !game.custom && [...rooms.values()].filter((g) => !g.practice && g.map.id === args.map).length <= 1 && game.map.id === args.map;
-      if (!game.humans.length && !keep) rooms.delete(game.id);
+    if (player.ws && player.ws !== ws) return;         // this player already resumed on a new socket
+    // dropped (not a goodbye, not a kick): hold the slot for a reconnect
+    if (!ws.bye && game.players.has(player.id) && !player.dc) {
+      game.detach(player);
+      log(`drop  #${player.id} "${player.name}" ${game.id} (holding ${RESUME_GRACE} s)`);
+      const p = player, g = game;
+      p.graceTimer = setTimeout(() => { if (p.dc && g.players.has(p.id)) gone(g, p); }, RESUME_GRACE * 1000);
+      return;
     }
+    gone(game, player);
   });
 
   ws.on('error', () => {});
 });
+
+// a player is gone for good: out of the room, and empty rooms close
+function gone(game, player) {
+  game.removePlayer(player.id);
+  if (game.practice) {
+    if (!game.humans.length) rooms.delete(game.id);
+    log(`practice ${game.id} closed`);
+  } else {
+    log(`left  #${player.id} "${player.name}" ${game.id} (${game.humans.length} here)`);
+    // empty public rooms go away, except one on the default map
+    const keep = !game.custom && [...rooms.values()].filter((g) => !g.practice && g.map.id === args.map).length <= 1 && game.map.id === args.map;
+    if (!game.humans.length && !keep) rooms.delete(game.id);
+  }
+}
 
 // Heartbeat: a protocol ping every 10 s; a connection that did not answer the
 // last one is dead (sleeping laptop, dropped Wi-Fi, half-open TCP) and is

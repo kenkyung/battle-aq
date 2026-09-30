@@ -41,6 +41,10 @@ import { NADES, throwVelocity, newNade, stepNade, flashAmount } from '../shared/
 import { BotBrain, BOT_NAMES } from './bot.js';
 import { Tactics } from './tactics.js';
 import { stats } from './stats.js';
+import { randomBytes } from 'node:crypto';
+
+// a dropped connection keeps its player (team, money, guns, score) this long
+export const RESUME_GRACE = 45;
 
 let nextId = 1;
 
@@ -359,7 +363,9 @@ export class Game {
     }
     // Survivors keep their weapons and armour; the dead start over.
     for (const p of this.players.values()) {
-      if (!p.alive) this.resetLoadout(p);
+      if (!p.alive && !p.keepLoadout) this.resetLoadout(p);
+      if (p.dc) continue;                   // disconnected: sits out until it is back
+      p.keepLoadout = false;
       this.respawn(p, true);
     }
     this.resetHostages();
@@ -689,9 +695,18 @@ export class Game {
     if (canSpawn) this.respawn(p, true, false);
     else p.pos = [...this.spawnSpots(p.team)[0]];
 
+    p.token = randomBytes(12).toString('hex');       // lets this player resume after a drop
+    this.sendWelcome(p);
+    this.broadcast({ t: 'spawn', player: this.publicPlayer(p) }, id);
+    this.balanceBots();
+    this.checkMode();
+    return p;
+  }
+
+  sendWelcome(p) {
     this.send(p, {
       t: 'welcome',
-      id,
+      id: p.id, token: p.token, room: this.id,
       mapId: this.map.id,
       you: this.publicPlayer(p),
       players: [...this.players.values()].map((q) => this.publicPlayer(q)),
@@ -702,10 +717,43 @@ export class Game {
       doors: this.doorOpen, glassBroken: [...this.glassBroken],
     });
     this.sendInv(p);
-    this.broadcast({ t: 'spawn', player: this.publicPlayer(p) }, id);
-    this.balanceBots();
-    this.checkMode();
+  }
+
+  // ------------------------------------------------------------- dropped connections
+  //
+  // The socket died without a goodbye: keep the player for RESUME_GRACE s so a
+  // reconnect (same token) picks up where it left off. Meanwhile it is out of
+  // the round (no frozen body to shoot, the bomb drops) but keeps its guns.
+  detach(p) {
+    if (!this.players.has(p.id) || p.dc) return;
+    p.ws = null;
+    p.dc = now();
+    if (p.alive) {
+      if (p.c4) this.dropBomb(p);
+      this.planting.delete(p.id); this.defusing.delete(p.id);
+      p.alive = false;
+      p.keepLoadout = true;                 // it did not die: keep what it had
+    }
+    this.broadcast({ t: 'chat', id: 0, name: '*', team: 0, text: `${p.name} lost connection — waiting ${RESUME_GRACE} s for them to come back` });
+    this.checkWinCondition();
+  }
+
+  resume(p, ws) {
+    p.ws = ws;
+    p.dc = null;
+    p.lastMsgAt = p.lastCmdAt = now();
+    p.heard = !!(ws && typeof ws.ping === 'function');
+    p.lastSeq = 0; p.move = null;          // a fresh client: its command numbers start over
+    if (this.phase === 'warmup' || this.phase === 'dm') this.respawn(p, true);
+    this.sendWelcome(p);
+    this.broadcast({ t: 'chat', id: 0, name: '*', team: 0, text: `${p.name} reconnected` });
     return p;
+  }
+
+  findResumable(token) {
+    if (!token) return null;
+    for (const p of this.players.values()) if (p.dc && p.token === token) return p;
+    return null;
   }
 
   humanCount(team) {
@@ -830,7 +878,7 @@ export class Game {
     by.kickIdleAt = t;
     const gone = [];
     for (const q of [...this.players.values()]) {
-      if (q === by || q.bot) continue;
+      if (q === by || q.bot || q.dc) continue;
       if (this.unresponsive(q, t)) { this.kickPlayer(q, 'not responding'); gone.push(q.name); }
       else if (this.frozen(q, t)) { this.kickPlayer(q, 'AFK / frozen'); gone.push(q.name); }
     }
@@ -841,7 +889,7 @@ export class Game {
     if (t < (this._idleCheck || 0)) return;
     this._idleCheck = t + 1;
     for (const p of [...this.players.values()]) {
-      if (p.bot || !p.heard) continue;
+      if (p.bot || !p.heard || p.dc) continue;
       if (this.rules.timeout && t - (p.lastMsgAt || t) > this.rules.timeout) { this.kickPlayer(p, 'timed out'); continue; }
       if (this.practice || !this.rules.afkkick || !this.frozen(p, t)) continue;
       const idle = t - p.lastCmdAt;
@@ -899,6 +947,7 @@ export class Game {
   }
 
   respawn(p, instant = false, notify = true) {
+    if (p.dc) return;                       // disconnected: back when it reconnects
     if (this.dm && this.phase === 'dm') {
       const spot = this.dmSpot(p) || this.spawnSpots(p.team)[0];
       p.pos = spot.slice(); this.resetMove(p);
@@ -1058,7 +1107,10 @@ export class Game {
     const t = now();
     if (!p.move) this.resetMove(p);
     p.usesCmds = true;
-    p.cmdBudget = Math.min(0.3, (p.cmdBudget ?? 0.2) + (t - (p.cmdClock || t)));
+    // real time banked for movement: a lag spike delivers a burst of queued
+    // commands, and up to 1 s of them is still honoured (no rubber band);
+    // faster than real time on average is never possible (speedhacks)
+    p.cmdBudget = Math.min(1.0, (p.cmdBudget ?? 0.2) + (t - (p.cmdClock || t)));
     p.cmdClock = t;
     const others = [];
     for (const q of this.players.values()) if (q !== p && q.alive) others.push(bodyBox(q.pos, q.crouching));
@@ -1981,7 +2033,7 @@ export class Game {
       hostages: this.hostageMode ? this.hostages.map((h) => ({ id: h.id, pos: r1(h.pos), yaw: r3(h.yaw), alive: h.alive, rescued: h.rescued, leader: h.leader, moving: !!h.moving })) : undefined,
       // false flags are left out; score / deaths / ping only in every 15th
       // snapshot (the client keeps the last values) — bandwidth
-      players: [...this.players.values()].map((p) => (this.hiddenFrom(viewer, p, t) ? { id: p.id, team: p.team, alive: true, hid: 1,
+      players: [...this.players.values()].map((p) => (p.dc || this.hiddenFrom(viewer, p, t) ? { id: p.id, team: p.team, alive: !p.dc, hid: 1, dc: p.dc ? 1 : undefined,
         ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined, afk: this.frozen(p, t) || this.unresponsive(p, t) ? 1 : undefined } : {}) } : {
         id: p.id, team: p.team, pos: r1(p.pos), yaw: r3(p.yaw), pitch: r3(p.pitch), skin: p.skin || undefined,
         alive: p.alive, crouching: p.crouching || undefined, moving: p.moving || undefined, shield: p.shield ? 1 : undefined,
@@ -2006,6 +2058,10 @@ export class Game {
     const full = this._snapN % 15 === 1;
     for (const p of this.players.values()) {
       if (!p.ws || p.ws.readyState !== 1) continue;
+      // a client whose connection is backed up: skip (every snapshot is
+      // absolute, so the next one that fits brings it fully up to date)
+      // instead of queueing seconds of stale state in front of it
+      if (p.ws.bufferedAmount > 48 * 1024) { p.choked = (p.choked || 0) + 1; continue; }
       // per viewer while PVS culling can differ, else shared per team
       const key = this.competitive && p.alive ? 'p' + p.id : 't' + p.team;
       if (!byTeam[key]) byTeam[key] = JSON.stringify(this.snapshotFor(p, full));
