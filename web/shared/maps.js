@@ -18,7 +18,7 @@
 import { TEAM } from './constants.js';
 import { PROPS } from './props-data.js';
 import { HOSTAGE_MAPS } from './maps-hostage.js';
-import { CLASSIC_MAPS } from './maps-classic.js';
+import { CLASSIC_MAPS, dust as dustClassic } from './maps-classic.js';
 
 const hex = (r, g, b) =>
   (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
@@ -439,7 +439,8 @@ const aztec = {
 
 // flipped on once the client renders hostages (HUD, models, rescue zones)
 const HOSTAGE_READY = true;
-const ALL = [dust, inferno, aztec, ...CLASSIC_MAPS, ...(HOSTAGE_READY ? HOSTAGE_MAPS : [])];
+// de_aq_dust is the original-layout rebuild (underpass + bridge) from maps-classic.js
+const ALL = [dustClassic, inferno, aztec, ...CLASSIC_MAPS, ...(HOSTAGE_READY ? HOSTAGE_MAPS : [])];
 for (const m of ALL) m.props = PROPS[m.id] || [];
 
 export const MAPS = Object.fromEntries(ALL.map((m) => [m.id, m]));

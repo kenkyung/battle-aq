@@ -242,6 +242,11 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       restored each round; cs_aq_office's lobby windows are glass now.
 - [x] tools/validate-maps.mjs in the test suite: routes to every
       objective, spawns / hostages clear of geometry, collider budget.
+- [x] de_aq_dust rebuilt on the original's layout: streets at 128, the
+      sunken underpass running T -> CT with the bridge crossing over its
+      middle (parapets, the main fight), long route to A, B past the bridge.
+- [x] Nav: the playable area is what is walkable from the spawn (drops are
+      one-way), not the biggest flat region — no more bots heading for roofs.
 - [ ] Later: nuke / train-style layouts, vents, more ladders.
 
 ## M16 — Modes and servers  [done]

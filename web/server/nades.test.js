@@ -26,8 +26,8 @@ ok(w1.last('inv').inv.grenade && w1.last('inv').nades.smokegrenade === 1, 'inven
 advance(g, ROUND.freezeTime + 0.2);
 
 console.log('HE');
-// open ground in the middle of the map, two players 150 u apart
-t.pos = [0, 0, -400]; t.yaw = 0; t.pitch = -0.6; c.pos = [0, 0, -560]; c.armor = 0;
+// open ground in the T spawn (street level 128), two players 160 u apart
+t.pos = [0, 128, 2050]; t.yaw = 0; t.pitch = -0.6; c.pos = [0, 128, 1890]; c.armor = 0;
 g.onMessage(t, { t: 'weapon', id: 'hegrenade' });
 advance(g, 0.8);
 g.onMessage(t, { t: 'throw', vel: [0, 0, 0] });
@@ -40,14 +40,14 @@ ok(c.hp < hpBefore, `nearby enemy is hurt (${hpBefore} -> ${c.hp})`);
 
 console.log('flash');
 g.onMessage(t, { t: 'weapon', id: 'flashbang' }); advance(g, 0.8);
-t.pos = [0, 0, -400]; t.yaw = 0; t.pitch = -0.6;   // flash lands just in front of the thrower
-c.pos = [0, 0, -250]; c.yaw = Math.PI; c.pitch = 0; // CT behind the thrower, looking away (+z)
+t.pos = [0, 128, 2050]; t.yaw = 0; t.pitch = -0.6;   // flash lands just in front of the thrower
+c.pos = [0, 128, 2200]; c.yaw = Math.PI; c.pitch = 0; // CT behind the thrower, looking away (+z)
 g.onMessage(t, { t: 'throw', vel: [0, 0, 0] });
 advance(g, 1.7);
 const fl = w2.last('flashed');
 ok(fl && fl.amount > 0, 'CT near the flash is blinded');
 g.onMessage(t, { t: 'weapon', id: 'flashbang' }); advance(g, 0.8);
-t.pos = [0, 0, -400]; t.yaw = 0; t.pitch = -0.6;
+t.pos = [0, 128, 2050]; t.yaw = 0; t.pitch = -0.6;
 c.yaw = 0; // now looking toward the flash (-z)
 w2.msgs.length = 0;
 g.onMessage(t, { t: 'throw', vel: [0, 0, 0] });

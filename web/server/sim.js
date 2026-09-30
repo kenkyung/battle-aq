@@ -78,7 +78,7 @@ for (let i = 0; i < steps; i++) {
       const prev = stuck.get(p.id);
       const moved = prev ? Math.hypot(p.pos[0] - prev[0], p.pos[2] - prev[2]) : 999;
       stuck.set(p.id, p.pos.slice());
-      if (moved < 30) events.stuckSamples = (events.stuckSamples || 0) + 1;
+      if (moved < 30) { events.stuckSamples = (events.stuckSamples || 0) + 1; if (process.env.STUCKLOG) console.log('STUCK', p.name, p.pos.map(Math.round).join(','), p.bot && p.bot.goal && p.bot.goal.key, p.bot && p.bot.target ? 'fighting' : ''); }
     }
   }
 }

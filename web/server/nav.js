@@ -91,7 +91,18 @@ export class NavGraph {
       while (stack.length) { const i = stack.pop(); size++; for (const j of adj[i]) if (comp[j] < 0) { comp[j] = c; stack.push(j); } }
       if (size > bestSize) { bestSize = size; best = c; }
     }
-    this.main = this.nodes.filter((n) => comp[n.i] === best);
+    // the playable area is the one the spawns are in (block tops can be
+    // bigger flat areas than the map itself); the largest one otherwise
+    // (links are one-way where they drop, so: everything you can WALK to from
+    // the spawn, following links forward)
+    const spawn = map.spawns && (map.spawns[1] || map.spawns[2]) && (map.spawns[1] || map.spawns[2])[0];
+    const sn = spawn ? this.nearest(spawn) : null;
+    if (sn && Math.abs(sn.y - spawn[1]) < 40) {
+      const seen = new Uint8Array(this.nodes.length);
+      const stack = [sn.i]; seen[sn.i] = 1;
+      while (stack.length) { const i = stack.pop(); for (const [j] of this.nodes[i].links) if (!seen[j]) { seen[j] = 1; stack.push(j); } }
+      this.main = this.nodes.filter((n) => seen[n.i]);
+    } else this.main = this.nodes.filter((n) => comp[n.i] === best);
     for (const n of this.main) n.main = true;
     this.buildTime = Date.now() - t0;
   }

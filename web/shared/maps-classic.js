@@ -92,4 +92,91 @@ export const dust2 = {
   bombsites: { A: [1100, 64, -1900], B: [-1800, 0, -1500] },
 };
 
+// ------------------------------------------------------------------ de_aq_dust
+//
+// The original dust's flow. The streets are at 128; the UNDERPASS is a sunken
+// trench (floor 0) running north from the T side to the CT courtyard, and
+// halfway along it runs under THE BRIDGE — a deck at street level that
+// crosses the trench east-west. CTs hold the bridge and the courtyard, Ts
+// push through the underpass or come up mid to the bridge: that crossing is
+// where the round is decided. The long way round (east) climbs to A; B is
+// north-west, past the west end of the bridge; CT spawn sits between the
+// sites at the north.
+
+const S = 128;            // street level
+const duBounds = { x0: -2560, z0: -2560, x1: 2560, z1: 2560 };
+const duAreas = [
+  // T side
+  [-700, 1700, 700, 2300, S],             // T spawn
+  [-300, 1100, 300, 1720, S],             // T ramp up to the junction
+  [-1300, 900, -280, 1300, S],            // street west, to the underpass
+  [-300, 280, 300, 1120, S],              // T mid
+  // the underpass (sunken), with the bridge over its middle
+  [-1300, 300, -900, 920],                // entry ramp down (floor 0, the ramp climbs to S)
+  [-1300, -100, -900, 320],               // trench, open to the sky
+  [-1300, -420, -900, -100, 0, S - 32],   // under the bridge (the bridge deck is the roof)
+  [-1300, -900, -900, -420],              // trench north
+  [-1300, -1320, -900, -900],             // exit ramp up to the CT courtyard (floor 0)
+  // the bridge and its approaches, at street level
+  [-1800, -420, -1300, -100, S],          // bridge west end
+  [-900, -420, -300, -100, S],            // bridge east end
+  [-400, -120, 300, 300, S],              // mid, up to the bridge's east end
+  // CT side
+  [-1500, -1720, -300, -1300, S],         // CT courtyard (underpass exit)
+  [-400, -2300, 700, -1700, S],           // CT spawn
+  [700, -2020, 920, -1720, S],            // CT to A
+  [-1800, -920, -1500, -100, S],          // west street from the bridge to B
+  [-2400, -2000, -1480, -900, S],         // bombsite B
+  // the long way: east, then north up to A
+  [700, 1800, 1500, 2200, S],             // T spawn east
+  [1480, -620, 1900, 2200, S],            // long
+  [1280, -1120, 1900, -600, S],           // up to A
+  [900, -2100, 2200, -1100, S],           // bombsite A
+];
+
+export const dust = {
+  id: 'de_aq_dust',
+  name: 'de_aq_dust',
+  bounds: duBounds,
+  palette: {
+    floor: hex(0.72, 0.64, 0.46), wall: hex(0.80, 0.70, 0.52),
+    cover: hex(0.45, 0.30, 0.17), metal: hex(0.45, 0.45, 0.48),
+    accent: hex(0.52, 0.42, 0.30), wood: hex(0.60, 0.46, 0.32),
+  },
+  sky: { top: hex(0.55, 0.65, 0.75), horizon: hex(0.85, 0.78, 0.65) },
+  fog: { color: hex(0.78, 0.72, 0.55), density: 0.0002 },
+  ambient: 0.75,
+  sun: 1.0,
+  boxes: [
+    G(0, 0, 5120, 5120, 'floor'),
+    ...carve({ bounds: duBounds, areas: duAreas, wallH: S + 256 }),
+    // bridge parapets (waist high: CTs peek over them into the trench)
+    W(-1100, S + 20, -416, 400, 40, 8, 'accent'),
+    W(-1100, S + 20, -104, 400, 40, 8, 'accent'),
+    // cover: crates at the underpass mouth, on the sites, the famous stack at A
+    W(-1180, 32, 150, 64, 64, 64, 'cover'),
+    W(-1000, 32, -650, 64, 64, 64, 'cover'),
+    W(-1000, 96, -650, 64, 64, 64, 'cover'),
+    W(-900, S + 32, -1550, 64, 64, 64, 'cover'),
+    W(1500, S + 32, -1500, 128, 64, 128, 'cover'),
+    W(1500, S + 96, -1500, 64, 64, 64, 'cover'),
+    W(1900, S + 32, -1850, 64, 64, 64, 'cover'),
+    W(-2000, S + 32, -1400, 128, 64, 64, 'cover'),
+    W(-1700, S + 32, -1700, 64, 64, 64, 'cover'),
+    W(0, S + 32, 700, 64, 64, 64, 'cover'),
+    W(1700, S + 32, 900, 64, 64, 64, 'cover'),
+  ],
+  ramps: [
+    RAMP(-1100, S, 920, -1100, 0, 500, 400, 'floor'),          // down into the underpass
+    RAMP(-1100, 0, -900, -1100, S, -1320, 400, 'floor'),       // up out of it, into the CT courtyard
+  ],
+  columns: [],
+  water: [],
+  coverZones: [[1500, -600, 1880, 2100], [-1250, -880, -950, 250], [950, -2050, 2150, -1150], [-2350, -1950, -1500, -950]],
+  coverCount: 12,
+  coverSeed: 0xD057,
+  spawns: { [TEAM.T]: cluster(0, 2000, S), [TEAM.CT]: cluster(150, -2000, S) },
+  bombsites: { A: [1500, S, -1650], B: [-1950, S, -1450] },
+};
+
 export const CLASSIC_MAPS = [dust2];

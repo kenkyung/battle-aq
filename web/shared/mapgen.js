@@ -52,15 +52,9 @@ export function carve({ bounds, areas, wallH = 256, wallMat = 'wall', floorMat =
     return out;
   };
   const box = (x0, y0, z0, x1, y1, z1, mat) => boxes.push({ c: [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2], s: [x1 - x0, y1 - y0, z1 - z0], mat });
-  // walls: only solid cells next to open space matter, but merged whole regions keep the count low
-  const nearOpen = (i, j) => {
-    for (let b = -2; b <= 2; b++) for (let a = -2; a <= 2; a++) {
-      const ii = i + a, jj = j + b;
-      if (ii >= 0 && jj >= 0 && ii < nx && jj < nz && open[ii + jj * nx]) return true;
-    }
-    return false;
-  };
-  for (const r of rects((i, j) => (!open[i + j * nx] && nearOpen(i, j) ? 'w' : null))) box(r.x0, 0, r.z0, r.x1, wallH, r.z1, wallMat);
+  // all solid space is filled (merged into big blocks): leaving hollow pockets
+  // between wall shells would give the nav graph unreachable islands
+  for (const r of rects((i, j) => (!open[i + j * nx] ? 'w' : null))) box(r.x0, 0, r.z0, r.x1, wallH, r.z1, wallMat);
   for (const r of rects((i, j) => (open[i + j * nx] && floor[i + j * nx] > 0 ? floor[i + j * nx] : null))) box(r.x0, 0, r.z0, r.x1, r.k, r.z1, floorMat);
   for (const r of rects((i, j) => (open[i + j * nx] && roof[i + j * nx] > 0 ? roof[i + j * nx] : null))) box(r.x0, r.k, r.z0, r.x1, r.k + 32, r.z1, roofMat);
   return boxes;
