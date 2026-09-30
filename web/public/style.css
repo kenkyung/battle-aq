@@ -238,3 +238,10 @@ label.check input { accent-color: var(--t); }
 .bcol.pick h4 { color: var(--t); }
 .bcol.pick .bitem .k { color: #1a1408; background: var(--t); }
 .bitem .k { font-style: normal; font: 700 10px var(--font); color: var(--hud-dim); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; margin-right: 6px; }
+
+#hostages { position: absolute; top: 58px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; align-items: center;
+  font: 700 10px var(--font); letter-spacing: 2px; color: var(--hud-dim); }
+#hostages span { margin-right: 6px; }
+#hostages i { width: 9px; height: 16px; border-radius: 4px 4px 2px 2px; background: #eeeae0; box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+#hostages i.r { background: #74d17f; }
+#hostages i.k { background: #d0443a; opacity: .7; }

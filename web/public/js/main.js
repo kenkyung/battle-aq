@@ -10,11 +10,12 @@ import { HUD } from './hud.js';
 import { Viewmodel } from './viewmodel.js';
 import { Effects } from './fx.js';
 import { BombView } from './bomb3d.js';
+import { HostageView } from './hostages3d.js';
 import { NadeView } from './nades3d.js';
 import { Sfx, surfaceOf } from './sfx.js';
 import { preloadModels, setAnisotropy } from './assets.js';
 import { getMap, MAP_LIST } from '../shared/maps.js';
-import { WEAPONS, TEAM, PLAYER, CROSSHAIR } from '../shared/constants.js';
+import { WEAPONS, TEAM, PLAYER, CROSSHAIR, HOSTAGE } from '../shared/constants.js';
 import { inBuyZone } from '../shared/economy.js';
 import { raycast } from '../shared/physics.js';
 import { RADIO } from '../shared/radio.js';
@@ -81,6 +82,13 @@ let map = null;
 let world = null;
 let fx = null;
 let bombView = null;
+let hostageView = null;
+let useHint = '';
+const hostageTally = { rescued: 0, killed: 0 };
+function hostageCount() {
+  const total = (map && map.hostages ? map.hostages.length : 0);
+  return { total, rescued: hostageTally.rescued, killed: hostageTally.killed };
+}
 let nadeView = null;
 let player = null;
 let remotes = null;
@@ -155,7 +163,7 @@ function surfaceAt(pos) {
 
 // practice options
 for (const m of MAP_LIST) $('pMap').insertAdjacentHTML('beforeend', `<option value="${m.id}">${m.id.replace(/^(de|cs)_aq_/, '')}</option>`);
-$('pMap').value = store.get('baq_pmap', 'de_aq_dust');
+$('pMap').value = params.get('map') || store.get('baq_pmap', 'de_aq_dust');
 $('pTeam').value = store.get('baq_pteam', 'T');
 $('pDiff').value = store.get('baq_pdiff', 'normal');
 $('pBots').value = store.get('baq_pbots', '5');
@@ -203,12 +211,15 @@ async function useMap(id) {
     if (world) world.dispose();
     if (fx) fx.dispose();
     if (bombView) bombView.dispose();
+    if (hostageView) hostageView.dispose();
     map = getMap(id);
     world = await loadWorld(scene, map);
     fx = new Effects(scene, map, world.colliders);
     fx.sfx = sfx;
     fx.surfaceOf = (mat) => surfaceOf(mat, map.id);
     bombView = new BombView(scene, fx);
+    hostageView = new HostageView(scene, world);
+    if (map.rescueZones) hostageView.setZones(map.rescueZones);
     if (nadeView) nadeView.clear();
     nadeView = new NadeView(scene, fx, sfx, world.colliders);
     sfx.colliders = world.colliders;
@@ -301,7 +312,8 @@ async function onWelcome(welcome) {
   remotes.sfx = sfx;
   remotes.surfaceAt = surfaceAt;
   player = new LocalPlayer(camera, world.colliders, net, vm, fx);
-  player.others = () => remotes.targets();
+  player.hostageMode = round.mode === 'hostage';
+  player.others = () => remotes.targets().concat(hostageView ? hostageView.targets() : []);
   player.bodies = () => remotes.bodies();
   player.surfaceAt = surfaceAt;
   player.sound = (name, opts = {}) => {
@@ -356,6 +368,7 @@ net.on('state', (msg) => {
   }
   for (const id of [...remotes.players.keys()]) if (!seen.has(id)) remotes.remove(id);
   for (const id of [...roster.keys()]) if (!seen.has(id)) roster.delete(id);
+  if (hostageView) hostageView.sync(msg.hostages || []);
   if (msg.bomb) {
     const was = bomb.state;
     bomb = msg.bomb;
@@ -503,16 +516,46 @@ function applyRound(r) {
   round.practice = !!r.practice;
   round.endsAt = now + (r.timer || 0);
   round.buyEndsAt = r.buyTime < 0 ? -1 : now + r.buyTime;
+  round.mode = r.mode || 'bomb';
+  if (r.phase === 'freeze' || r.phase === 'warmup') { hostageTally.rescued = 0; hostageTally.killed = 0; }
+  if (player) player.hostageMode = round.mode === 'hostage';
+  if (r.rescueZones && hostageView) hostageView.setZones(r.rescueZones);
+  hud.setHostages(round.mode === 'hostage' ? hostageCount() : null);
   hud.setPhase(r.phase, r.round);
   hud.setScore(r.scoreT, r.scoreCT);
   if (r.phase === 'warmup') hud.centerMsg('WARMUP — the match starts when both teams have a player');
-  else if (r.phase === 'freeze') { hud.centerMsg('buy your gear: press B'); bomb = { state: 'none' }; if (nadeView) nadeView.clear(); }
+  else if (r.phase === 'freeze') {
+    hud.centerMsg(round.mode === 'hostage' && myTeam === TEAM.CT ? 'buy your gear (B), then rescue the hostages: walk up and press E'
+      : round.mode === 'hostage' ? 'buy your gear (B), then guard the hostages' : 'buy your gear: press B');
+    bomb = { state: 'none' };
+    if (nadeView) nadeView.clear();
+  }
   else if (prev === 'freeze' || prev === 'warmup') hud.centerMsg('');
   if (prev === 'freeze' && r.phase === 'round') sfx.radio(Math.random() < 0.5 ? 'Go go go' : "Let's move out");
   if (r.phase !== 'matchend') hud.hideMatchEnd();
 }
 
 net.on('round', applyRound);
+
+// hostage events: follow / stay (to the CT who used it), rescued, hurt, killed
+net.on('hostage', (msg) => {
+  if (msg.kind === 'follow') { hud.centerMsg('the hostage is following you'); sfx.play('hitmark', { volume: 0.4 }); setTimeout(() => hud.centerMsg(''), 1500); }
+  else if (msg.kind === 'stay') { hud.centerMsg('the hostage will wait here'); setTimeout(() => hud.centerMsg(''), 1500); }
+  else if (msg.kind === 'rescued') {
+    hostageTally.rescued++;
+    const who = msg.by === myId ? 'You' : (roster.get(msg.by) || {}).name || 'A CT';
+    hud.addChat('*', TEAM.CT, `${who} rescued a hostage (${msg.left} left)`);
+    sfx.radio('Hostage has been rescued');
+  } else if (msg.kind === 'killed') {
+    hostageTally.killed++;
+    const who = msg.by === myId ? 'You' : (roster.get(msg.by) || {}).name || 'Someone';
+    hud.addChat('*', 0, `${who} killed a hostage!`);
+    if (msg.by === myId) { hud.centerMsg('you killed a hostage: -$1500'); setTimeout(() => hud.centerMsg(''), 2500); }
+  } else if (msg.kind === 'hurt' && msg.by === myId) {
+    hud.centerMsg("don't shoot the hostages!"); setTimeout(() => hud.centerMsg(''), 1500);
+  }
+  if (round.mode === 'hostage') hud.setHostages(hostageCount());
+});
 net.on('match_start', () => {
   hud.banner(round.practice ? 'PRACTICE MATCH' : 'MATCH START', null, 2500);
   hud.hideMatchEnd();
@@ -523,7 +566,8 @@ net.on('halftime', () => hud.banner('HALFTIME — SWITCHING SIDES', null, 4000))
 
 net.on('round_end', (msg) => {
   hud.setScore(msg.scoreT, msg.scoreCT);
-  const how = { bomb: 'THE BOMB EXPLODED', defuse: 'THE BOMB WAS DEFUSED', time: 'TIME RAN OUT', elim: '' }[msg.how] || '';
+  const how = { bomb: 'THE BOMB EXPLODED', defuse: 'THE BOMB WAS DEFUSED', rescue: 'ALL HOSTAGES HAVE BEEN RESCUED',
+    time: round.mode === 'hostage' ? 'HOSTAGES HAVE NOT BEEN RESCUED' : 'TIME RAN OUT', elim: '' }[msg.how] || '';
   keypad(false);
   setTimeout(() => sfx.radio(msg.winner === TEAM.T ? 'Terrorists win' : 'Counter-terrorists win'), msg.how === 'bomb' ? 1800 : 300);
   const who = msg.winner === TEAM.T ? 'TERRORISTS WIN' : 'COUNTER-TERRORISTS WIN';
@@ -540,7 +584,7 @@ net.on('match_end', (msg) => {
 net.on('votes', (msg) => hud.renderVotes(msg.tally));
 net.on('map', async (msg) => {
   hud.hideMatchEnd();
-  hud.banner('LOADING ' + msg.mapId.replace('de_aq_', '').toUpperCase(), null, 3000);
+  hud.banner('LOADING ' + msg.mapId.replace(/^(de|cs)_aq_/, '').toUpperCase(), null, 3000);
   await useMap(msg.mapId);
   if (remotes) remotes.clear();
   bomb = { state: 'none' };
@@ -799,6 +843,16 @@ function frame(now) {
   remotes.update(dt, camera.position);
   if (bomb.state === 'planted' && bomb.localLeft !== undefined) bomb.localLeft -= dt;
   if (bombView) bombView.update(bomb, dt);
+  if (hostageView) {
+    hostageView.update(dt);
+    // CT next to a hostage: say how to take it (CS: "Press USE to...")
+    if (round.mode === 'hostage' && player && player.alive && myTeam === TEAM.CT && round.phase === 'round') {
+      const p = player.state.pos;
+      const near = hostageView.alive().find((e) => Math.hypot(e.cur.pos[0] - p[0], e.cur.pos[2] - p[2]) < HOSTAGE.useReach);
+      const txt = near ? (near.leader === myId ? 'E: tell the hostage to stay' : 'E: take the hostage (lead it to a rescue zone)') : '';
+      if (txt !== useHint) { useHint = txt; hud.setHint(txt); }
+    } else if (useHint) { useHint = ''; hud.setHint(''); }
+  }
   if (nadeView) nadeView.update(dt);
   updateFlash(dt);
   bombBeep(dt);
@@ -853,7 +907,8 @@ function frame(now) {
     const tp = performance.now() / 1000;
     while (radarPings.length && radarPings[0].until < tp) radarPings.shift();
     for (const p of radarPings) if (Math.floor(tp * 4) % 2) mates.push({ pos: p.pos, team: myTeam === TEAM.T ? TEAM.CT : TEAM.T });
-    hud.drawRadar(src, player.alive ? player.state.yaw : camera.rotation.y, mates, bomb);
+    const hs = round.mode === 'hostage' && hostageView ? { zones: myTeam === TEAM.CT ? hostageView.rings.map((g) => [g.position.x, 0, g.position.z, g.geometry.parameters.outerRadius]) : [], list: hostageView.alive().map((e) => e.cur.pos) } : null;
+    hud.drawRadar(src, player.alive ? player.state.yaw : camera.rotation.y, mates, bomb, hs);
   }
 
   // ---- render: world, then the viewmodel on top

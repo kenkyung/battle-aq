@@ -300,9 +300,12 @@ def build_map(path, quick=False):
     # indoor lamps (hostage maps: offices, warehouse): baked like the sun.
     # 1 game unit = 1 Blender unit, so the wattages are large.
     for i, (x, y, z, watts, col) in enumerate(data.get('lights', [])):
-        ld = bpy.data.lights.new(f'lamp{i}', 'POINT')
-        ld.energy = watts
-        ld.shadow_soft_size = 12
+        # a ceiling panel shining down (an area light lights only below
+        # itself, so the ceiling around it does not burn out)
+        ld = bpy.data.lights.new(f'lamp{i}', 'AREA')
+        ld.shape = 'RECTANGLE'
+        ld.size, ld.size_y = 64, 24
+        ld.energy = watts * 0.7
         ld.color = hexcol(col)[:3]
         lo = bpy.data.objects.new(f'lamp{i}', ld)
         lo.location = to_bl([x, y, z])

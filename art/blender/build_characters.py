@@ -253,6 +253,55 @@ def build_body(team):
     return M
 
 
+def build_civilian():
+    """Hostage: office worker, white shirt + tie, slacks, dress shoes, hands
+    zip-tied in front (arms rigid with the chest, like the soldiers')."""
+    PARTS.clear()
+    M = {}
+    M['shirt'] = material('shirt', cloth((0.86, 0.86, 0.84), (0.66, 0.67, 0.68), scale=0.2, seed=41), h_fabric(0.5), bump=0.6)
+    M['legs'] = material('slacks', cloth((0.26, 0.27, 0.30), (0.16, 0.17, 0.19), scale=0.2, seed=42), h_fabric(0.4))
+    M['tie'] = material('tie', cloth((0.45, 0.10, 0.12), (0.30, 0.06, 0.08), scale=0.5, seed=43), bevel=0.1)
+    M['shoes'] = material('shoes', plain((0.12, 0.07, 0.04), rough=0.35, grit=0.15), h_grain(2.0), bump=0.15)
+    M['head'] = material('face', face((0.78, 0.60, 0.48)), h_grain(2.0), bump=0.1)
+    M['hair'] = material('hair', plain((0.42, 0.40, 0.38), rough=0.9, grit=0.5), h_knit, bump=0.4)
+    M['belt'] = material('belt', plain((0.10, 0.07, 0.05), rough=0.4), bevel=0.2)
+    M['skin'] = M['head']
+    M['tieW'] = material('zip', plain((0.9, 0.9, 0.88), 0.5), bevel=0.05)
+    for s, x in (('L', -4.3), ('R', 4.3)):
+        capsule('thigh' + s, (x, 0.2, 35.5), (x, 0.4, 20), 4.0, 'thigh.' + s, M['legs'], segs=10, r2=3.2)
+        capsule('shin' + s, (x, 0.4, 19.5), (x, -0.3, 4.5), 3.1, 'shin.' + s, M['legs'], segs=10, r2=2.8)
+        box('shoe' + s, (x, 1.8, 1.8), (4.6, 9.8, 3.4), 'foot.' + s, M['shoes'], bevel=1.1, taper=(0.9, 0.75))
+    box('pelvis', (0, 0, 37.3), (13.6, 8.4, 6.4), 'hips', M['legs'], bevel=1.2)
+    box('belt', (0, 0, 40.2), (14.2, 8.8, 1.6), 'hips', M['belt'], bevel=0.3)
+    capsule('abdomen', (0, 0, 42.5), (0, 0, 47.5), 6.4, 'spine', M['shirt'], segs=12)
+    box('torso', (0, -0.2, 54.0), (14.4, 8.8, 10.6), 'chest', M['shirt'], bevel=2.2, taper=(1.06, 0.96))
+    for s, x in (('L', -7.6), ('R', 7.6)):
+        dome('delt' + s, (x, 0, 56.4), 3.1, 'chest', M['shirt'], scale=(1.0, 1.1, 1.0), segs=12)
+    box('collarH', (0, 0.4, 59.8), (6.4, 6.4, 1.6), 'chest', M['shirt'], bevel=0.5)
+    box('knot', (0, 4.2, 58.6), (1.4, 0.8, 1.4), 'chest', M['tie'], bevel=0.3)
+    box('tie', (0, 4.7, 53.0), (2.0, 0.4, 10.0), 'chest', M['tie'], bevel=0.2, taper=(0.7, 1.0))
+    for k, zz in enumerate((56.0, 52.0, 48.0, 44.0)):
+        box(f'button{k}', (1.6, 4.5 if zz > 46 else 6.2, zz), (0.5, 0.3, 0.5), 'chest' if zz > 46 else 'spine', M['tieW'], bevel=0.05)
+    # arms down, forearms forward, wrists tied together at the belly
+    capsule('uarmR', (7.8, 0.0, 56.8), (8.8, 2.0, 46.5), 2.6, 'chest', M['shirt'], segs=10, r2=2.3)
+    capsule('farmR', (8.8, 2.0, 46.5), (1.8, 7.8, 43.0), 2.3, 'chest', M['shirt'], segs=10, r2=1.9)
+    capsule('uarmL', (-7.8, 0.0, 56.8), (-8.8, 2.0, 46.5), 2.6, 'chest', M['shirt'], segs=10, r2=2.3)
+    capsule('farmL', (-8.8, 2.0, 46.5), (-1.8, 7.8, 43.0), 2.3, 'chest', M['shirt'], segs=10, r2=1.9)
+    box('handR', (1.4, 8.6, 42.6), (2.4, 3.2, 3.4), 'chest', M['skin'], bevel=0.9)
+    box('handL', (-1.4, 8.6, 42.6), (2.4, 3.2, 3.4), 'chest', M['skin'], bevel=0.9)
+    box('ziptie', (0, 7.4, 43.2), (5.8, 2.6, 0.7), 'chest', M['tieW'], bevel=0.1)
+    capsule('neck', (0, 0, 59.5), (0, 0.4, 63.0), 2.4, 'head', M['head'], segs=10)
+    dome('skull', (0, 0.4, 66.4), 4.1, 'head', M['head'], scale=(0.95, 1.08, 1.45), segs=16)
+    box('jaw', (0, 1.1, 64.6), (5.4, 5.8, 4.0), 'head', M['head'], bevel=1.3, taper=(1.3, 1.15))
+    box('nose', (0, 4.8, 66.5), (1.2, 1.4, 2.0), 'head', M['head'], bevel=0.4, taper=(0.8, 0.6))
+    for s, x in (('L', -3.9), ('R', 3.9)):
+        box('ear' + s, (x, 0.2, 66.8), (0.8, 1.8, 2.6), 'head', M['head'], bevel=0.3)
+        box('side' + s, (x * 0.98, -0.8, 68.4), (1.0, 6.0, 3.0), 'head', M['hair'], bevel=0.5)
+    box('back', (0, -3.6, 68.0), (7.4, 1.4, 4.0), 'head', M['hair'], bevel=0.6)
+    box('glasses', (0, 4.35, 67.8), (6.0, 0.4, 1.4), 'head', material('frames', plain((0.06, 0.06, 0.06), 0.3), bevel=0.05), bevel=0.1)
+    return M
+
+
 def mat_flag():
     def f(g, co, x, y, z):
         stripes = g.smooth(g.fract(g.mul(z, 1.4)), 0.45, 0.55)
@@ -464,7 +513,10 @@ def build_actions(arm_ob):
 
 def build(team):
     reset_scene()
-    build_body(team)
+    if team == 'H':
+        build_civilian()
+    else:
+        build_body(team)
     parts = list(PARTS)
     arm_ob = build_armature()
     body = skin(parts, arm_ob)
@@ -475,7 +527,7 @@ def build(team):
     build_actions(arm_ob)
     tris = sum(len(p.vertices) - 2 for p in body.data.polygons)
     print(f'soldier_{team}: {tris} triangles')
-    path = os.path.join(OUT, f'soldier_{team.lower()}.glb')
+    path = os.path.join(OUT, 'hostage.glb' if team == 'H' else f'soldier_{team.lower()}.glb')
     bpy.ops.object.select_all(action='DESELECT')
     arm_ob.select_set(True); body.select_set(True)
     bpy.ops.export_scene.gltf(
@@ -487,5 +539,5 @@ def build(team):
     print('wrote', path, f'{os.path.getsize(path) / 1024:.0f} KB')
 
 
-for team in ('T', 'CT'):
+for team in (sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else None) or ('T', 'CT', 'H'):
     build(team)

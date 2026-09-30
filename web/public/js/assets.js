@@ -37,13 +37,14 @@ export function loadTexture(path, { srgb = true, repeat = true } = {}) {
 }
 
 // Shared models, loaded once at startup.
-export const Models = { weapons: null, soldiers: {} };
+export const Models = { weapons: null, soldiers: {}, hostage: null };
 
 export async function preloadModels(onProgress = () => {}) {
   const jobs = [
     loadGLB('models/weapons.glb').then((g) => { Models.weapons = g; }),
     loadGLB('models/soldier_t.glb').then((g) => { Models.soldiers[1] = g; }),
     loadGLB('models/soldier_ct.glb').then((g) => { Models.soldiers[2] = g; }),
+    loadGLB('models/hostage.glb').then((g) => { Models.hostage = g; }),
   ];
   let done = 0;
   for (const j of jobs) j.then(() => onProgress(++done / jobs.length));

@@ -23,7 +23,8 @@ LAN players:                 http://192.168.x.x:8080
 
 Everyone (you included) opens one of those URLs, enters a name, hits PLAY.
 Options: `node server/index.js --port 9000 --map de_aq_aztec --host 0.0.0.0`
-(maps: `de_aq_dust`, `de_aq_inferno`, `de_aq_aztec`; `PORT`/`HOST`/`MAP` env vars work too).
+(maps: `de_aq_dust`, `de_aq_inferno`, `de_aq_aztec`, `cs_aq_office`, `cs_aq_assault`, `cs_aq_italy`;
+`PORT`/`HOST`/`MAP` env vars work too).
 
 The client uses only relative URLs, so it also runs behind a reverse-proxy
 path (the arcade serves it at `/battle/`).
@@ -38,19 +39,22 @@ buy, carry and plant the bomb, retake, defuse and control their spray.
 ```bash
 cd web
 npm test           # CS 1.6 ballistics, smoke (join/sync/fire/kill), M2 economy,
-                   # bomb + round flow (plant/defuse/blast, halftime, map vote)
+                   # bomb + round flow (plant/defuse/blast, halftime, map vote),
+                   # grenades, bot fill, collisions (wall fuzz, server move
+                   # checks), hostage rescue on every cs_ map
 ```
 
 ## Controls
 
-WASD move · mouse look · Space jump · Ctrl crouch · Shift walk ·
+WASD move · mouse look · Space jump · C (or Ctrl) crouch · Shift walk ·
 LMB fire · RMB scope (AWP/Scout) · R reload · 1/2/3 primary/pistol/knife ·
 4 grenades (hold fire, release to throw) · 5 bomb (hold fire in a site to plant) ·
-E defuse · G drop bomb · Q last weapon · wheel cycle · B buy menu (mouse or number
-keys) · Z / X / C radio commands · Tab scores · Y chat · **Esc pause menu**
+E defuse / take a hostage · G drop bomb · Q last weapon · wheel cycle · B buy menu
+(mouse or number keys) · Z / X / V radio commands · Tab scores · Y chat · **Esc pause menu**
 
-Crouch is Ctrl; while you play, the game swallows browser shortcuts
-like Ctrl+D. Only fullscreen (pause menu → Fullscreen) can also stop Ctrl+W.
+Play starts in fullscreen with Keyboard Lock (setting), so Ctrl combos and Esc
+stay in the game; hold Esc to leave fullscreen. The buy menu keeps the mouse
+captured and shows its own cursor.
 
 ## How a match works
 
@@ -69,6 +73,10 @@ like Ctrl+D. Only fullscreen (pause menu → Fullscreen) can also stop Ctrl+W.
 - **Bomb**: one terrorist carries the C4; plant it (3 s) at bombsite A or B,
   then CT have 35 s to defuse (10 s, 5 s with a $200 kit). T win by
   elimination or detonation, CT by elimination, defuse or the clock.
+- **Hostages** (cs_ maps): four hostages start with the terrorists. A CT
+  presses E next to one (+$150) and it follows; walking it into a rescue
+  zone (green ring) pays $1000 (+$850 to the team). All living hostages out
+  = CT win; the clock running out = T win. Killing a hostage costs $1500.
 - **Economy**: $800 start, $300 per kill ($1500 knife), $3250 round win
   ($3500 CT elimination), loss bonus $1400 → $3400 on a losing streak,
   $16000 cap. Buy in your spawn during buy time + 20 s.
@@ -128,6 +136,12 @@ docs/        design references (CS 1.6 numbers, map notes)
 - [x] Practice mode vs bots (nav graph + bot AI)
 - [x] M6 — sounds: synthesized at load (Web Audio, no files), 3D HRTF with wall
       muffling, per-weapon gunshots, surface footsteps, bomb beeps, radio voice
+- [x] Grenades, CS 1.6 movement, bot fill, server-checked collisions, new
+      soldier models + locomotion
+- [x] M7 — hostage rescue: cs_aq_office, cs_aq_assault, cs_aq_italy
+- [ ] M8 → M17 — CS 1.6 parity in iterations: movement, full arsenal +
+      penetration, rules / economy, netcode (usercmds, lag compensation), HUD,
+      audio, ZBot-level bots, classic map layouts, modes, performance
 
 See `ROADMAP.md` for the ticket-sized backlog.
 

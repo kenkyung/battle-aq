@@ -253,8 +253,10 @@ export class LocalPlayer {
           if (hold !== this.planting) { this.planting = hold; this.net.send({ t: 'plant', on: hold }); }
         } else if (this.planting) { this.planting = false; this.net.send({ t: 'plant', on: false }); }
         // E: defuse (the server checks you are next to the planted bomb)
+        // on hostage maps E is a press (take / release a hostage), not a hold
         const use = input.useHeld();
-        if (use !== this.defusing) { this.defusing = use; this.net.send({ t: 'defuse', on: use }); }
+        if (this.hostageMode) { if (use && !this.useWas) this.net.send({ t: 'defuse', on: true }); this.useWas = use; }
+        else if (use !== this.defusing) { this.defusing = use; this.net.send({ t: 'defuse', on: use }); }
         if (input.consumeDrop()) this.net.send({ t: 'drop' });
         if (input.consumeZoom() && w.zoomFov && !this.reloading(now)) {
           this.setZoom((this.zoom + 1) % 3);

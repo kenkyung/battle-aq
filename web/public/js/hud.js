@@ -172,6 +172,21 @@ export class HUD {
   }
 
   centerMsg(text) { this.set('cmsg', text, (v) => { this.el['center-msg'].textContent = v; }); }
+  // hostage maps: one figure per hostage (white = to rescue, green = rescued,
+  // red = dead); null hides it
+  setHostages(c) {
+    if (!this._hEl) {
+      this._hEl = document.createElement('div');
+      this._hEl.id = 'hostages';
+      document.getElementById('hud').appendChild(this._hEl);
+    }
+    this._hEl.classList.toggle('hidden', !c);
+    if (!c) return;
+    const icons = [];
+    for (let i = 0; i < c.total; i++) icons.push(i < c.rescued ? 'r' : i < c.rescued + c.killed ? 'k' : '');
+    this._hEl.innerHTML = '<span>HOSTAGES</span>' + icons.map((k) => `<i class="${k}"></i>`).join('');
+  }
+
   setHint(text) { this.set('hint', text, (v) => { this.el.hint.textContent = v; }); }
 
   setSpectate(text) {
@@ -237,7 +252,7 @@ export class HUD {
     this.radarBg = { canvas: c, b, s };
   }
 
-  drawRadar(me, yaw, mates, bomb) {
+  drawRadar(me, yaw, mates, bomb, hostages = null) {
     if (!this.radarBg) return;
     const ctx = this.radarCtx;
     const W = this.el.radar.width;
@@ -255,6 +270,18 @@ export class HUD {
       ctx.fillStyle = m.team === TEAM.CT ? '#7fb2e8' : '#e0b25c';
       ctx.beginPath(); ctx.arc((m.pos[0] - b.x0) * s, (m.pos[2] - b.z0) * s, 5, 0, Math.PI * 2); ctx.fill();
       if (m.c4) { ctx.strokeStyle = '#ff5a45'; ctx.lineWidth = 3; ctx.stroke(); }
+    }
+    if (hostages) {
+      // rescue zones (green rings) and the hostages still to save (white)
+      ctx.lineWidth = 3;
+      for (const z of hostages.zones || []) {
+        ctx.strokeStyle = 'rgba(120,220,140,0.9)';
+        ctx.beginPath(); ctx.arc((z[0] - b.x0) * s, (z[2] - b.z0) * s, Math.max(8, (z[3] || 280) * s), 0, Math.PI * 2); ctx.stroke();
+      }
+      for (const h of hostages.list) {
+        ctx.fillStyle = '#f4f4f0';
+        ctx.fillRect((h[0] - b.x0) * s - 4, (h[2] - b.z0) * s - 4, 8, 8);
+      }
     }
     if (bomb && bomb.pos) {
       const x = (bomb.pos[0] - b.x0) * s, y = (bomb.pos[2] - b.z0) * s;
@@ -390,7 +417,7 @@ export class HUD {
   renderVotes(tally, current) {
     if (current) this._voteCurrent = current;
     const box = document.getElementById('voteMaps');
-    box.innerHTML = this._voteMaps.map((id) => `<button data-map="${id}" class="${this._voteMine === id ? 'mine' : ''}">${esc(id.replace('de_aq_', ''))}<b>${tally[id] || 0}</b><small>${id === this._voteCurrent ? 'played last' : ''}</small></button>`).join('');
+    box.innerHTML = this._voteMaps.map((id) => `<button data-map="${id}" class="${this._voteMine === id ? 'mine' : ''}">${esc(id.replace(/^(de|cs)_aq_/, ''))}<b>${tally[id] || 0}</b><small>${id === this._voteCurrent ? 'played last' : ''}</small></button>`).join('');
     for (const b of box.querySelectorAll('button')) {
       b.onclick = () => { this._voteMine = b.dataset.map; this._onVote(b.dataset.map); this.renderVotes(this._lastTally || {}); };
     }

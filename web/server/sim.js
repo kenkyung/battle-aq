@@ -13,11 +13,14 @@ const { TEAM, TICK_RATE } = await import('../shared/constants.js');
 
 const [map = 'de_aq_dust', minutes = '8', diff = 'normal'] = process.argv.slice(2);
 const g = new Game(map, { practice: true, id: 'sim' });
+{ const use = g.useHostage.bind(g); g.useHostage = (p) => { const r = use(p); if (r) events.uses = (events.uses || 0) + 1; return r; }; }
 const events = { kills: 0, headshots: 0, plants: 0, defuses: 0, explosions: 0, rounds: [], halftime: 0, matchEnd: null, byWeapon: {} };
 const orig = g.broadcast.bind(g);
 g.broadcast = (obj, ex) => {
   if (obj.t === 'kill') { events.kills++; if (obj.headshot) events.headshots++; events.byWeapon[obj.weapon] = (events.byWeapon[obj.weapon] || 0) + 1; }
   if (obj.t === 'bomb_event') { if (obj.kind === 'planted') events.plants++; if (obj.kind === 'defused') events.defuses++; if (obj.kind === 'exploded') events.explosions++; }
+  if (obj.t === 'hostage' && ['rescued', 'killed'].includes(obj.kind)) events[obj.kind] = (events[obj.kind] || 0) + 1;
+  if (obj.t === 'hostage' && obj.kind === 'follow') events.follows = (events.follows || 0) + 1;
   if (obj.t === 'round_end') {
     let note = '';
     if (obj.how === 'time') {

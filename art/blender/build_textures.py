@@ -351,7 +351,7 @@ def drywall(g, u, v):
     scuff = g.smooth(g.noise(u, v, 8, 2, detail=4, seed=193), 0.66, 0.75)
     col = g.mix(n, rgb(0.74, 0.72, 0.66), rgb(0.82, 0.8, 0.74))
     col = g.mix(g.mul(fine, 0.12), col, rgb(0.6, 0.58, 0.54))
-    col = g.mix(g.mul(scuff, 0.3), col, rgb(0.5, 0.48, 0.44))
+    col = g.mix(g.mul(scuff, 0.1), col, rgb(0.62, 0.6, 0.55))
     col = g.mix(g.sub(1.0, base), col, rgb(0.28, 0.24, 0.2))
     return col, g.add(g.mul(fine, 0.1), g.mul(g.sub(1.0, base), 0.4)), 0.9
 

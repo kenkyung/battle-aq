@@ -10,7 +10,7 @@
 // being shot) -> pick a goal from the objective (carry / plant / guard / retake
 // / defuse) -> follow an A* path there -> fight whatever it can see.
 
-import { movePlayer, norm, playerBox, bodyBox, raycast } from '../shared/physics.js';
+import { movePlayer, norm, playerBox, bodyBox, hitBox, raycast, raycastPlayers } from '../shared/physics.js';
 import { PLAYER, WEAPONS, TEAM, BOMB } from '../shared/constants.js';
 import { ECONOMY, inBuyZone } from '../shared/economy.js';
 import { navFor } from './nav.js';
@@ -505,6 +505,8 @@ export class BotBrain {
     if (w.melee && dist > 80) return;
     if (off > (sniper ? 0.02 : 0.09)) return;               // not on target yet
     if (now < this.burstPauseUntil || now < p.nextFire) return;
+    // never spray through a hostage standing between us and the target
+    if (this.game.hostageMode && this.hostageInLine(me, dist)) return;
     if (w.auto) {
       if (this.burstLeft <= 0) this.burstLeft = Math.round(rnd(...this.skill.burst)) + (dist < 500 ? 3 : 0);
       this.burstLeft--;
@@ -517,5 +519,15 @@ export class BotBrain {
     const dir = norm(aimWithPunch(this.state.yaw, this.state.pitch, [p.recoil.punch[0] * c, p.recoil.punch[1] * c]));
     this.game.handleFire(p, { origin: me, dir, zoomed: sniper });
     kick(p.recoil, p.weapon, { onGround: this.state.onGround, speed: Math.hypot(this.state.vel[0], this.state.vel[2]), ducking: p.crouching });
+  }
+
+  hostageInLine(me, dist) {
+    const aim = norm(aimWithPunch(this.state.yaw, this.state.pitch, [0, 0]));
+    const hs = this.game.hostages.filter((h) => h.alive && !h.rescued).map((h) => ({ id: h.id, box: hitBox(h.pos, false) }));
+    if (!hs.length) return false;
+    // a little wider than the hull: spread and recoil wander
+    for (const h of hs) { h.box.min[0] -= 8; h.box.min[2] -= 8; h.box.max[0] += 8; h.box.max[2] += 8; }
+    const hit = raycastPlayers(me, aim, hs, dist);
+    return !!hit;
   }
 }

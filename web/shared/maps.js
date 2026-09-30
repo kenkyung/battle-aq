@@ -437,7 +437,7 @@ const aztec = {
 };
 
 // flipped on once the client renders hostages (HUD, models, rescue zones)
-const HOSTAGE_READY = false;
+const HOSTAGE_READY = true;
 const ALL = [dust, inferno, aztec, ...(HOSTAGE_READY ? HOSTAGE_MAPS : [])];
 for (const m of ALL) m.props = PROPS[m.id] || [];
 

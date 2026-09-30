@@ -1120,6 +1120,7 @@ export class Game {
       if (p.money < price) return fail('not enough money');
       p.armor = 100; p.helmet = true;
     } else if (item === 'kit') {
+      if (this.hostageMode) return fail('there is no bomb on this map');
       if (p.kit) return fail('you already have a defuse kit');
       if (p.money < price) return fail('not enough money');
       p.kit = true;
@@ -1138,7 +1139,7 @@ export class Game {
 
   addMoney(p, amount, reason) {
     const before = p.money;
-    p.money = Math.min(ECONOMY.maxMoney, p.money + amount);
+    p.money = Math.max(0, Math.min(ECONOMY.maxMoney, p.money + amount));   // CS: never below $0
     if (p.money !== before) this.sendInv(p, p.money - before, reason);
   }
 
