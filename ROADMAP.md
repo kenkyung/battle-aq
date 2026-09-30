@@ -198,10 +198,18 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       listens to actions, not keys.
 - [ ] Later: spectator overview map, VGUI buy menu art, custom HUD fonts.
 
-## M13 — Audio parity
-- [ ] Surface footsteps incl. metal / grate / ladder / water; land sounds.
-- [ ] Distance-filtered gunshots, shell casings, reload sounds per weapon.
-- [ ] Full radio set (3 menus) and hostage voices; bomb beep cadence exact.
+## M13 — Audio parity  [done]
+- [x] Footsteps by surface from each map's textures: sand, stone, metal,
+      wood, water, and new snow / carpet / tile; ladder rungs; landings.
+- [x] Air absorption: gunfire loses its top end with distance (distant
+      shots thud), on top of HRTF panning and wall muffling.
+- [x] Spent casings on the floor after each shot (brass / shotgun hulls),
+      heard from nearby players too; AWP / Scout bolt cycle after a shot.
+- [x] Reloads by weapon family: pistol slide, rifle bolt, M249 box + belt,
+      shotgun shells one by one; draw sounds (knife shing, pistol slide).
+- [x] Hostage voices when they follow / stay; full CS radio set (Z / X / V).
+- [x] C4: beep gap shrinking from ~1.4 s to 0.1 s, tone rising each fifth
+      of the fuse, a rapid burst in the last 1.5 s.
 
 ## M14 — Bot parity (CS ZBot)
 - [ ] Nav mesh with hiding / sniper / approach spots per map.

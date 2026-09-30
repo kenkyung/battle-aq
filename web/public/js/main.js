@@ -321,6 +321,7 @@ async function onWelcome(welcome) {
   remotes = new Remotes(scene, fx, world);
   remotes.renderTime = viewTime;
   remotes.sfx = sfx;
+  remotes.listenerNear = (p, d) => Math.hypot(p[0] - camera.position.x, p[2] - camera.position.z) < d;
   remotes.surfaceAt = surfaceAt;
   player = new LocalPlayer(camera, world.colliders, net, vm, fx);
   player.map = map;
@@ -356,7 +357,7 @@ async function onWelcome(welcome) {
   input.lock();
   // ?buy=ak47,assault buys on join (warmup lets you buy anywhere) — for testing
   if (params.get('buy')) for (const item of params.get('buy').split(',')) net.send({ t: 'buy', item });
-  window.__baq = { scene, camera, renderer, player, remotes, world, fx, vm, hud, net, roster, get bomb() { return bomb; }, get round() { return round; }, get myId() { return myId; } };
+  window.__baq = { scene, camera, renderer, player, remotes, world, fx, vm, hud, net, roster, sfx, get bomb() { return bomb; }, get round() { return round; }, get myId() { return myId; } };
 }
 
 function setTeam(team) {
@@ -583,6 +584,7 @@ function applyRound(r) {
   round.mode = r.mode || 'bomb';
   round.rulesName = r.rulesName || '';
   round.rules = r.rules;
+  round.c4timer = r.c4timer;
   round.maxRounds = r.maxRounds;
   round.friendlyfire = !!r.friendlyfire;
   // cl_interp: two update intervals plus a little slack (0.05 .. 0.1 s)
@@ -612,8 +614,8 @@ net.on('you', (msg) => { if (player) player.reconcile(msg); });
 
 // hostage events: follow / stay (to the CT who used it), rescued, hurt, killed
 net.on('hostage', (msg) => {
-  if (msg.kind === 'follow') { hud.centerMsg('the hostage is following you'); sfx.play('hitmark', { volume: 0.4 }); setTimeout(() => hud.centerMsg(''), 1500); }
-  else if (msg.kind === 'stay') { hud.centerMsg('the hostage will wait here'); setTimeout(() => hud.centerMsg(''), 1500); }
+  if (msg.kind === 'follow') { hud.centerMsg('the hostage is following you'); sfx.say(['Okay, let\'s go!', 'Let\'s get out of here!', 'Yes, I\'ll go with you.'][Math.floor(Math.random() * 3)]); setTimeout(() => hud.centerMsg(''), 1500); }
+  else if (msg.kind === 'stay') { hud.centerMsg('the hostage will wait here'); sfx.say('I\'ll stay here.'); setTimeout(() => hud.centerMsg(''), 1500); }
   else if (msg.kind === 'rescued') {
     hostageTally.rescued++;
     const who = msg.by === myId ? 'You' : (roster.get(msg.by) || {}).name || 'A CT';
@@ -1165,10 +1167,16 @@ function frame(now) {
 let beepT = 0;
 function bombBeep(dt) {
   if (bomb.state !== 'planted' || !bomb.pos) { beepT = 0; return; }
+  // CS C4: the gap between beeps shrinks faster as it runs down (from about
+  // 1.4 s to 0.1 s), the tone climbs a step each fifth of the fuse, and the
+  // last second and a half is a rapid burst
   const left = Math.max(0, bomb.localLeft ?? 0);
-  const interval = Math.max(0.1, Math.min(1, left / 30));
+  const total = round.c4timer || 35;
+  const f = Math.min(1, left / total);
+  const interval = left < 1.5 ? 0.07 : 0.1 + 1.3 * Math.pow(f, 1.6);
+  const stage = Math.min(4, Math.floor((1 - f) * 5));
   beepT += dt;
-  if (beepT >= interval) { beepT = 0; sfx.playAt('beep', bomb.pos, { volume: 0.9, ref: 220, max: 4000, jitter: 0 }); }
+  if (beepT >= interval) { beepT = 0; sfx.playAt('beep', bomb.pos, { volume: 0.9, ref: 220, max: 4000, jitter: 0, rate: 1 + stage * 0.07 + (left < 1.5 ? 0.15 : 0) }); }
 }
 
 function tickBombHud() {

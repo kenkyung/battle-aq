@@ -91,7 +91,7 @@ export class LocalPlayer {
     const w = WEAPONS[m.weapon];
     if (w && w.shell) {
       // a shell went in: its sound; done when full or out of shells
-      if (this.reloadUntil && m.mag > 0) this.sound('mag_in', { volume: 0.55 });
+      if (this.reloadUntil && m.mag > 0) this.sound('shell_insert', { volume: 0.6 });
       if (m.mag >= w.mag || m.reserve <= 0) this.reloadUntil = 0;
       return;
     }
@@ -155,7 +155,9 @@ export class LocalPlayer {
     this.setZoom(0);
     this.cancelReloadSounds();
     this.vm.setWeapon(id, this.mode(id));
-    this.sound('deploy', { volume: 0.5 });
+    // CS draw sounds: the knife's shing, a pistol's slide, a rifle's handling
+    const dw = WEAPONS[id];
+    this.sound(dw.melee ? 'knife_deploy' : dw.slot === 'secondary' ? 'slide' : 'deploy', { volume: dw.melee ? 0.45 : 0.5 });
     if (tell) this.net.send({ t: 'weapon', id });
   }
 
@@ -226,9 +228,11 @@ export class LocalPlayer {
     this.setZoom(0);
     this.vm.reload(w.reload);
     this.net.send({ t: 'reload' });
-    // magazine out, in, then the bolt / slide
+    // the reload's sounds by weapon family (fractions of the reload time)
     this.cancelReloadSounds();
-    const seq = [[0.18, 'mag_out'], [0.62, 'mag_in'], [0.84, 'bolt']];
+    const seq = w.cls === 'mg' ? [[0.08, 'box_open'], [0.3, 'mag_out'], [0.55, 'belt'], [0.72, 'mag_in'], [0.88, 'box_close']]
+      : w.slot === 'secondary' ? [[0.2, 'mag_out'], [0.6, 'mag_in'], [0.86, 'slide']]
+        : [[0.18, 'mag_out'], [0.62, 'mag_in'], [0.84, 'bolt']];
     for (const [f, name] of seq) this._reloadTimers.push(setTimeout(() => this.sound(name, { volume: 0.7 }), f * w.reload * 1000));
   }
 
@@ -273,7 +277,12 @@ export class LocalPlayer {
         this.fx.shot(origin, d, k === 0 && Math.random() < 0.5 ? [muz.x, muz.y, muz.z] : null, this.others(), null, { tracer: k === 0, silent: k > 0 });
       }
     }
-    if (w.cls === 'sniper' && !w.autoSniper) this.setZoom(0); // bolt-action: the scope drops after the shot
+    if (w.cls === 'sniper' && !w.autoSniper) {
+      this.setZoom(0); // bolt-action: the scope drops after the shot
+      this._reloadTimers.push(setTimeout(() => this.sound('bolt', { volume: 0.6 }), 450));
+    }
+    // the spent case hits the floor a moment later
+    if (!w.melee) this._reloadTimers.push(setTimeout(() => this.sound(w.pellets ? 'shell_shotgun' : 'shell_brass', { volume: 0.22 }), 380 + Math.random() * 250));
     if (!w.melee && a.mag === 0) { this.burstLeft = 0; this.startReload(); }
   }
 

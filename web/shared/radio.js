@@ -1,4 +1,4 @@
-// CS 1.6 radio commands: Z, X and C open the three menus, a number sends it
+// CS 1.6 radio commands: Z, X and V (C is crouch here) open the three menus, a number sends it
 // to your team (text + voice).
 export const RADIO = {
   z: ['Cover me!', 'You take the point.', 'Hold this position.', 'Regroup team.', 'Follow me.', 'Taking fire, need assistance!'],

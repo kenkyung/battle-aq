@@ -226,6 +226,11 @@ export class Remotes {
       else this.sfx.playAt(`fire_${msg.weapon}`, at, { volume: 1, ref: 260, max: 7000 });
     }
     if (msg.weapon === 'knife') return;
+    // brass on the floor near the shooter (only heard up close)
+    if (this.sfx && r && this.listenerNear && this.listenerNear(r.cur.pos, 700)) {
+      const at = r.cur.pos.slice();
+      setTimeout(() => this.sfx.playAt(msg.dirs ? 'shell_shotgun' : 'shell_brass', at, { volume: 0.3, ref: 60, max: 700 }), 380 + Math.random() * 250);
+    }
     const dirs = msg.dirs || [msg.dir];
     dirs.forEach((d, k) => this.fx.shot(msg.origin, d, k === 0 ? muzzle : null, others, msg.id, { tracer: k === 0, exits: k === 0 ? msg.exits : null }));
   }

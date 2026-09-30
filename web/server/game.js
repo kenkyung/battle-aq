@@ -292,7 +292,7 @@ export class Game {
       scoreT: this.score[TEAM.T], scoreCT: this.score[TEAM.CT],
       round: this.roundNumber, maxRounds: this.rules.maxrounds, halftime: this.halftimeRound,
       rules: this.rulesId, rulesName: this.rules.name, winlimit: this.rules.winlimit, friendlyfire: this.rules.friendlyfire,
-      tickrate: this.rules.tickrate, updaterate: this.rules.updaterate,
+      tickrate: this.rules.tickrate, updaterate: this.rules.updaterate, c4timer: this.rules.c4timer,
       map: this.map.id, practice: this.practice, mode: this.hostageMode ? 'hostage' : 'bomb',
       rescueZones: this.hostageMode ? this.rescueZones() : undefined,
     };

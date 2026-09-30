@@ -12,6 +12,7 @@
 // Radio lines ("Bomb has been planted", "Terrorists win") use the browser's
 // speech synthesis.
 
+import { themeFor } from '../shared/themes.js';
 import { raycast } from '../shared/physics.js';
 
 const SR = 32000;
@@ -155,6 +156,19 @@ function step(kind) {
       h.osc('sine', 140, 70, h.env(h.out, { a: 0.001, d: 0.06, peak: 0.8 }), { dur: 0.15 });
       h.noise(h.filter('bandpass', 2400, 1.5, h.env(h.out, { a: 0.0005, d: 0.025, peak: 0.7 })), { dur: 0.08 });
       h.noise(h.filter('lowpass', 900, 0.7, h.env(h.out, { at: 0.02, a: 0.002, d: 0.05, peak: 0.3 })), { at: 0.02, dur: 0.1 });
+    } else if (kind === 'snow') {
+      // packed snow: a soft crunch of many tiny grains
+      for (let i = 0; i < 10; i++) {
+        const at = i * 0.008 + h.rand() * 0.012;
+        h.noise(h.filter('bandpass', 2200 + h.rand() * 2400, 2, h.env(h.out, { at, a: 0.001, d: 0.015, peak: 0.35 + h.rand() * 0.3 })), { at, dur: 0.05 });
+      }
+      h.noise(h.filter('lowpass', 600, 0.7, h.env(h.out, { a: 0.004, d: 0.08, peak: 0.5 })), { dur: 0.2 });
+    } else if (kind === 'carpet') {
+      h.noise(h.filter('lowpass', 420, 0.7, h.env(h.out, { a: 0.004, d: 0.07, peak: 0.7 })), { dur: 0.16 });
+      h.osc('sine', 90, 60, h.env(h.out, { a: 0.002, d: 0.05, peak: 0.4 }), { dur: 0.1 });
+    } else if (kind === 'tile') {
+      h.noise(h.filter('bandpass', 3200, 2.5, h.env(h.out, { a: 0.0004, d: 0.018, peak: 0.9 })), { dur: 0.06 });
+      h.osc('sine', 180, 110, h.env(h.out, { a: 0.001, d: 0.04, peak: 0.5 }), { dur: 0.1 });
     } else if (kind === 'water') {
       // splash: a wet burst plus a couple of droplet blips
       h.noise(h.filter('bandpass', 1400, 0.8, h.env(h.out, { a: 0.003, d: 0.16, peak: 0.9 })), { dur: 0.3 });
@@ -176,6 +190,27 @@ const RECIPES = {
   ...Object.fromEntries(Object.entries(GUNS).map(([id, p]) => [`fire_${id}`, [p[0], gun(p)]])),
   fire_m4a1_s: [0.4, suppressed(1900)],
   fire_usp_s: [0.4, suppressed(1500)],
+  // spent brass hitting the floor: two or three small metallic bounces
+  shell_brass: [0.6, (h) => {
+    for (const [at, f, pk] of [[0, 5200, 0.5], [0.09 + h.rand() * 0.04, 6100, 0.3], [0.2 + h.rand() * 0.06, 5600, 0.15]]) {
+      h.osc('sine', f, f * 0.99, h.env(h.out, { at, a: 0.0003, d: 0.05, peak: pk }), { at, dur: 0.08 });
+      h.osc('sine', f * 1.51, f * 1.5, h.env(h.out, { at, a: 0.0003, d: 0.03, peak: pk * 0.5 }), { at, dur: 0.05 });
+    }
+  }],
+  shell_shotgun: [0.5, (h) => {
+    for (const at of [0, 0.12]) h.noise(h.filter('bandpass', 900, 1.5, h.env(h.out, { at, a: 0.001, d: 0.04, peak: 0.5 })), { at, dur: 0.08 });
+  }],
+  slide: [0.25, (h) => { click(3000, 4, 0.012, 0.9)(h); h.noise(h.filter('bandpass', 1800, 2, h.env(h.out, { at: 0.05, a: 0.002, d: 0.05, peak: 0.6 })), { at: 0.05, dur: 0.1 }); click(4200, 5, 0.01, 0.8)(h); }],
+  box_open: [0.3, (h) => { click(1400, 3, 0.02, 0.8)(h); h.noise(h.filter('lowpass', 900, 0.7, h.env(h.out, { at: 0.04, a: 0.004, d: 0.1, peak: 0.5 })), { at: 0.04, dur: 0.2 }); }],
+  box_close: [0.3, (h) => { h.osc('sine', 260, 120, h.env(h.out, { a: 0.001, d: 0.06, peak: 0.8 }), { dur: 0.12 }); click(2400, 4, 0.015, 0.8)(h); }],
+  belt: [0.4, (h) => { for (let i = 0; i < 5; i++) { const at = i * 0.05; h.noise(h.filter('bandpass', 3800, 4, h.env(h.out, { at, a: 0.0005, d: 0.02, peak: 0.4 })), { at, dur: 0.04 }); } }],
+  shell_insert: [0.25, (h) => { h.noise(h.filter('bandpass', 1400, 1.5, h.env(h.out, { a: 0.003, d: 0.05, peak: 0.6 })), { dur: 0.1 }); click(2600, 4, 0.012, 0.7)(h); }],
+  knife_deploy: [0.4, (h) => {
+    const f = h.filter('bandpass', 3000, 6, h.env(h.out, { a: 0.02, d: 0.3, peak: 0.6 }));
+    f.frequency.setValueAtTime(2600, 0); f.frequency.exponentialRampToValueAtTime(5200, 0.3);
+    h.noise(f, { dur: 0.35 });
+    h.osc('sine', 4100, 4000, h.env(h.out, { at: 0.02, a: 0.002, d: 0.3, peak: 0.12 }), { at: 0.02, dur: 0.35 });
+  }],
   knife_stab: [0.5, (h) => {
     const f = h.filter('bandpass', 700, 1.2, h.env(h.out, { a: 0.12, d: 0.2, peak: 0.9 }));
     f.frequency.setValueAtTime(400, 0); f.frequency.exponentialRampToValueAtTime(1800, 0.25);
@@ -291,16 +326,22 @@ const RECIPES = {
     for (let i = 0; i < 14; i++) { const at = h.rand() * 7.5; const f = 1800 + h.rand() * 2600; h.osc('sine', f, f * (0.7 + h.rand() * 0.8), h.env(h.out, { at, a: 0.01, d: 0.12, peak: 0.3 }), { at, dur: 0.2 }); }
   }],
 };
-for (const kind of ['sand', 'stone', 'metal', 'wood', 'water']) {
+for (const kind of ['sand', 'stone', 'metal', 'wood', 'water', 'snow', 'carpet', 'tile']) {
   for (let v = 0; v < 4; v++) RECIPES[`step_${kind}_${v}`] = [0.3, step(kind), 900 + v];
 }
 
 // palette material -> footstep / impact surface
+// footstep surface from the texture the map uses for a material
 export function surfaceOf(mat, mapId) {
-  if (mat === 'metal') return 'metal';
-  if (mat === 'wood' || mat === 'cover') return 'wood';
-  if (mat === 'floor') return mapId === 'de_aq_inferno' ? 'stone' : 'sand';
-  if (mat === 'bags') return 'sand';
+  const th = themeFor(mapId);
+  const tex = (th && th.mats && th.mats[mat] && th.mats[mat].tex) || mat || '';
+  if (/snow/.test(tex)) return 'snow';
+  if (/carpet/.test(tex)) return 'carpet';
+  if (/drywall|ceiling|tile/.test(tex)) return 'tile';
+  if (/metal|corrugated|container|barrel/.test(tex)) return 'metal';
+  if (/crate|plank|wood|door|pallet|cover/.test(tex)) return 'wood';
+  if (/water/.test(tex)) return 'water';
+  if (/sand|dust_sand|jungle|ground|hedge|burlap|bags/.test(tex)) return 'sand';
   return 'stone';
 }
 
@@ -379,6 +420,12 @@ export class Sfx {
           node.connect(lp); node = lp; g.gain.value *= 0.55;
         }
       }
+      // air absorption: far sounds lose their top end (distant gunfire thuds)
+      if (dist > 600) {
+        const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass';
+        lp.frequency.value = Math.max(1500, 16000 * Math.exp(-(dist - 600) / 2200));
+        node.connect(lp); node = lp;
+      }
       const pan = this.ctx.createPanner();
       pan.panningModel = 'HRTF';
       pan.distanceModel = 'inverse';
@@ -406,6 +453,18 @@ export class Sfx {
     const g = this.ctx.createGain(); g.gain.value = 0.09;
     src.connect(g); g.connect(this.master); src.start();
     this.ambient = src;
+  }
+
+  // a spoken line in another voice (hostages): doesn't cut off the radio
+  say(text, { pitch = 1.15, rate = 1.0 } = {}) {
+    if (!this.radioOn || !window.speechSynthesis) return;
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = rate; u.pitch = pitch; u.volume = Math.min(1, this.volume * 0.7);
+      const vs = speechSynthesis.getVoices().filter((x) => /en[-_](US|GB)/i.test(x.lang));
+      if (vs.length > 1) u.voice = vs[1];
+      speechSynthesis.speak(u);
+    } catch { /* no voices */ }
   }
 
   // CS radio lines through the browser's speech synthesis
