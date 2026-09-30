@@ -231,12 +231,25 @@ wss.on('connection', (ws) => {
 
 // ------------------------------------------------------------------ loops
 
+// Each room runs at its own tickrate and sends snapshots at its own update
+// rate (rules: Casual 33 / 30 Hz, Competitive 66 / 60 Hz); one 4 ms timer
+// drives them all from per-room accumulators.
+let lastLoop = performance.now();
 const simInterval = setInterval(() => {
-  for (const g of rooms.values()) guard(g, () => g.update());
-}, 1000 / TICK_RATE);
-const snapInterval = setInterval(() => {
-  for (const g of rooms.values()) if (g.players.size > 0) guard(g, () => g.broadcastSnapshots());
-}, 1000 / SNAPSHOT_RATE);
+  const nowMs = performance.now();
+  const el = Math.min(250, nowMs - lastLoop);
+  lastLoop = nowMs;
+  for (const g of rooms.values()) {
+    const tick = 1000 / (g.rules.tickrate || TICK_RATE), snap = 1000 / (g.rules.updaterate || SNAPSHOT_RATE);
+    g._tickAcc = (g._tickAcc || 0) + el;
+    g._snapAcc = (g._snapAcc || 0) + el;
+    let n = 0;
+    while (g._tickAcc >= tick && n++ < 4) { g._tickAcc -= tick; guard(g, () => g.update()); }
+    if (g._tickAcc > tick * 4) g._tickAcc = 0;               // fell behind: skip, don't spiral
+    if (g._snapAcc >= snap) { g._snapAcc %= snap; if (g.players.size > 0) guard(g, () => g.broadcastSnapshots()); }
+  }
+}, 4);
+const snapInterval = null;
 
 // a bug in one room is logged (once a minute at most) instead of killing the process
 const lastError = new Map();
@@ -276,7 +289,6 @@ server.listen(args.port, args.host, () => {
 
 function shutdown() {
   clearInterval(simInterval);
-  clearInterval(snapInterval);
   wss.close();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 500);

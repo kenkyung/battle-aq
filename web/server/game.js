@@ -29,7 +29,7 @@ import {
 } from '../shared/economy.js';
 import { newRecoil, resetRecoil, shotSpread, spreadDir, baseDamage, armorAbsorb, tagModifier } from '../shared/ballistics.js';
 import {
-  buildColliders, playerBox, aabbOverlap, hitBox, raycast, raycastPlayers, norm, len, sub, movePlayer, tag,
+  buildColliders, playerBox, aabbOverlap, hitBox, raycast, raycastPlayers, norm, len, sub, movePlayer, tag, bodyBox, waterLevel,
 } from '../shared/physics.js';
 import { navFor } from './nav.js';
 import { radioText } from '../shared/radio.js';
@@ -52,6 +52,10 @@ function eyeOf(p) {
   if (Number.isFinite(p.eye)) return p.crouching ? PLAYER.crouchEye : p.eye;
   return p.crouching ? PLAYER.crouchEye : PLAYER.standEye;
 }
+
+// snapshot precision: 0.1 u positions, 0.001 rad angles (bandwidth)
+const r1 = (v) => [Math.round(v[0] * 10) / 10, Math.round(v[1] * 10) / 10, Math.round(v[2] * 10) / 10];
+const r3 = (a) => Math.round((a || 0) * 1000) / 1000;
 
 export class Game {
   constructor(mapId = 'de_aq_dust', { practice = false, id = 'public', fillTo = 0, botDifficulty = 'normal', rules = 'casual' } = {}) {
@@ -288,6 +292,7 @@ export class Game {
       scoreT: this.score[TEAM.T], scoreCT: this.score[TEAM.CT],
       round: this.roundNumber, maxRounds: this.rules.maxrounds, halftime: this.halftimeRound,
       rules: this.rulesId, rulesName: this.rules.name, winlimit: this.rules.winlimit, friendlyfire: this.rules.friendlyfire,
+      tickrate: this.rules.tickrate, updaterate: this.rules.updaterate,
       map: this.map.id, practice: this.practice, mode: this.hostageMode ? 'hostage' : 'bomb',
       rescueZones: this.hostageMode ? this.rescueZones() : undefined,
     };
@@ -304,6 +309,7 @@ export class Game {
       if (p.alive && this.drops.length) this.checkPickup(p, t);
     }
     for (const p of this.players.values()) if (p.bot) p.bot.think(dt, t);
+    this.recordHistory(t);
     this.updateBomb(t);
     this.updateNades(dt, t);
     this.updateHostages(dt, t);
@@ -693,6 +699,7 @@ export class Game {
     p.spawnIdx = idx;
     const spot = spots[idx];
     p.pos = [spot[0], spot[1], spot[2]];
+    this.resetMove(p);
     p.yaw = this.spawnYaw(p.team);
     p.hp = PLAYER.maxHp;
     p.burst = 0;
@@ -731,6 +738,115 @@ export class Game {
       if (score > bestScore) { bestScore = score; best = yaw; }
     }
     return (this._spawnYaw[team] = best);
+  }
+
+  // ------------------------------------------------------------- usercmds (M11)
+  //
+  // Clients send their inputs — keys, view angles and frame time, with a
+  // sequence number — and the server runs the same shared physics on them:
+  // it owns the position. Each snapshot is followed by a `you` message with
+  // the last command applied and the resulting physics state, from which the
+  // client re-predicts (replays the commands the server has not seen yet).
+  // A time budget (real time elapsed) stops a client from simulating faster
+  // than the clock (speed hacks).
+
+  resetMove(p) {
+    p.move = { pos: p.pos.slice(), vel: [0, 0, 0], yaw: p.yaw || 0, pitch: 0, onGround: true, crouching: false };
+    p.hist = [];
+  }
+
+  runCmds(p, cmds) {
+    const t = now();
+    if (!p.move) this.resetMove(p);
+    p.usesCmds = true;
+    p.cmdBudget = Math.min(0.3, (p.cmdBudget ?? 0.2) + (t - (p.cmdClock || t)));
+    p.cmdClock = t;
+    const others = [];
+    for (const q of this.players.values()) if (q !== p && q.alive) others.push(bodyBox(q.pos, q.crouching));
+    const solids = others.length ? this.colliders.concat(others) : this.colliders;
+    const w = WEAPONS[p.weapon] || WEAPONS.knife;
+    for (const c of cmds.slice(0, 64)) {
+      if (!c || !Number.isInteger(c.s) || c.s <= (p.lastSeq || 0)) continue;
+      const dt = Math.max(0.001, Math.min(0.05, Number(c.dt) || 0));
+      if (p.cmdBudget < dt - 0.05) break;               // faster than real time: dropped
+      p.cmdBudget -= dt;
+      p.lastSeq = c.s;
+      if (Number.isFinite(c.y)) p.yaw = p.move.yaw = c.y;
+      if (Number.isFinite(c.p)) p.pitch = p.move.pitch = Math.max(-1.6, Math.min(1.6, c.p));
+      if (!p.alive) continue;
+      const k = c.k | 0;
+      const rooted = this.phase === 'freeze' || this.planting.has(p.id) || this.defusing.has(p.id);
+      const keys = {
+        f: rooted ? 0 : k & 1, b: rooted ? 0 : k & 2, l: rooted ? 0 : k & 4, r: rooted ? 0 : k & 8,
+        jump: rooted ? 0 : k & 16, crouch: (k & 32) || this.defusing.has(p.id), walk: k & 64,
+        maxSpeed: c.z && w.zoomSpeed ? w.zoomSpeed : w.speed, ladders: this.map.ladders,
+      };
+      movePlayer(p.move, keys, dt, solids);
+      if (p.move.landSpeed) {
+        const v = p.move.landSpeed;
+        p.move.landSpeed = 0;
+        if (!waterLevel(this.map, p.move.pos, p.move.crouching)) this.fallDamage(p, v);
+        if (!p.alive) break;
+      }
+    }
+    p.pos = p.move.pos;
+    p.crouching = !!p.move.crouching;
+    p.eye = p.move.eye;
+    const sp = Math.hypot(p.move.vel[0], p.move.vel[2]);
+    p.moving = sp > 12;
+    p.speed = sp;
+  }
+
+  // CS 1.6: damage above 580 u/s of fall speed, fatal at 1024
+  fallDamage(p, v) {
+    if (!p.alive || !Number.isFinite(v) || v <= MOVE.fallSafe) return;
+    const dmg = Math.min(200, Math.round((v - MOVE.fallSafe) * (100 / (MOVE.fallFatal - MOVE.fallSafe))));
+    p.hp -= dmg;
+    this.broadcast({ t: 'hit', victim: p.id, attacker: p.id, part: 'legs', dmg, hp: Math.max(0, p.hp), armor: p.armor, weapon: 'fall', point: p.pos, from: p.pos });
+    if (p.hp <= 0) this.kill(p, null, 'fall', false);
+  }
+
+  // what the owner needs to re-predict from
+  youMsg(p) {
+    const m = p.move;
+    return {
+      t: 'you', s: p.lastSeq || 0,
+      st: { pos: m.pos, vel: m.vel, onGround: m.onGround, crouching: m.crouching, inDuck: !!m.inDuck, duckT: m.duckT || 0,
+        eye: m.eye, velMod: m.velMod, tagAcc: m.tagAcc, fatigue: m.fatigue, jumpHeld: !!m.jumpHeld, offLadder: m.offLadder || 0 },
+    };
+  }
+
+  // Lag compensation: where every player was at server time `at`, from the
+  // position history (interpolated), for up to sv_maxunlag = 0.5 s back.
+  hitboxesAt(at, exclude) {
+    const out = [];
+    for (const q of this.players.values()) {
+      if (!q.alive || q.id === exclude) continue;
+      let pos = q.pos, crouch = q.crouching;
+      const h = q.hist;
+      if (at !== null && h && h.length) {
+        let i = h.length - 1;
+        while (i > 0 && h[i].t > at) i--;
+        const a = h[i], b = h[Math.min(h.length - 1, i + 1)];
+        if (a.t <= at && b !== a && b.t > a.t) {
+          const f = Math.min(1, (at - a.t) / (b.t - a.t));
+          pos = [0, 1, 2].map((k) => a.pos[k] + (b.pos[k] - a.pos[k]) * f);
+          crouch = f < 0.5 ? a.crouching : b.crouching;
+        } else if (a.t <= at) { pos = a.pos; crouch = a.crouching; }
+        else { pos = h[0].pos; crouch = h[0].crouching; }
+      }
+      out.push({ id: q.id, box: hitBox(pos, crouch) });
+    }
+    return out;
+  }
+
+  recordHistory(t) {
+    for (const p of this.players.values()) {
+      if (!p.alive) { p.hist = []; continue; }
+      const h = p.hist || (p.hist = []);
+      h.push({ t, pos: p.pos.slice(), crouching: !!p.crouching });
+      while (h.length && h[0].t < t - 1) h.shift();
+    }
   }
 
   // ------------------------------------------------------------- movement check
@@ -796,7 +912,7 @@ export class Game {
   onMessage(p, msg) {
     switch (msg.t) {
       case 'state':
-        if (!p.alive) break;
+        if (!p.alive || p.usesCmds) break;     // usercmd clients move by their commands
         // frozen at round start: look around, but stay on the spawn
         if (this.phase !== 'freeze' && Array.isArray(msg.pos) && msg.pos.length === 3 && msg.pos.every(Number.isFinite)) this.acceptMove(p, msg.pos, !!msg.crouching);
         if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
@@ -816,7 +932,7 @@ export class Game {
         break;
       }
       case 'dev_tp':
-        if (process.env.BAQ_DEV === '1' && p.alive && this.phase !== 'freeze' && Array.isArray(msg.pos)) { p.pos = msg.pos.map(Number); p.moveT = now(); }
+        if (process.env.BAQ_DEV === '1' && p.alive && this.phase !== 'freeze' && Array.isArray(msg.pos)) { p.pos = msg.pos.map(Number); p.moveT = now(); if (p.move) p.move.pos = p.pos.slice(); }
         break;
       case 'fire':
         this.handleFire(p, msg);
@@ -846,17 +962,14 @@ export class Game {
         if (msg.on && this.hostageMode) { this.useHostage(p); break; }
         this.setDefusing(p, !!msg.on);
         break;
-      case 'fall': {
-        // client-reported landing speed (movement is client-predicted); CS
-        // 1.6: damage above 580 u/s, fatal at 1024
-        const v = Number(msg.speed);
-        if (!p.alive || !Number.isFinite(v) || v <= MOVE.fallSafe) break;
-        const dmg = Math.min(200, Math.round((v - MOVE.fallSafe) * (100 / (MOVE.fallFatal - MOVE.fallSafe))));
-        p.hp -= dmg;
-        this.broadcast({ t: 'hit', victim: p.id, attacker: p.id, part: 'legs', dmg, hp: Math.max(0, p.hp), armor: p.armor, weapon: 'fall', point: p.pos, from: p.pos });
-        if (p.hp <= 0) this.kill(p, null, 'fall', false);
+      case 'fall':
+        // legacy clients report their landings; usercmd clients are
+        // simulated here and take fall damage in runCmds
+        if (!p.usesCmds) this.fallDamage(p, Number(msg.speed));
         break;
-      }
+      case 'cmd':
+        if (Array.isArray(msg.c)) this.runCmds(p, msg.c);
+        break;
       case 'radio':
         this.radio(p, String(msg.menu || ''), Number(msg.i));
         break;
@@ -1030,9 +1143,11 @@ export class Game {
     let origin = Array.isArray(msg.origin) && msg.origin.every(Number.isFinite) ? msg.origin : eye;
     if (len(sub(origin, eye)) > 96) origin = eye;
 
-    const others = [...this.players.values()]
-      .filter((q) => q.alive && q.id !== p.id)
-      .map((q) => ({ id: q.id, box: hitBox(q.pos, q.crouching) }));
+    // lag compensation: hit boxes where the shooter saw them (the view time
+    // the client reports, at most 0.5 s back)
+    const vt = Number(msg.vt);
+    const at = p.usesCmds && Number.isFinite(vt) ? Math.max(t - 0.5, Math.min(t, vt)) : null;
+    const others = this.hitboxesAt(at, p.id);
     if (this.hostageMode) for (const h of this.hostages) if (h.alive && !h.rescued) others.push({ id: h.id, box: hitBox(h.pos, false) });
 
     if (!w.melee) this.noise(p, mode === 'silenced');
@@ -1127,6 +1242,7 @@ export class Game {
     victim.hp -= hpDmg;
     if (victim.bot) victim.bot.onHurt(attacker, now());
     if (victim.bot) tag(victim.bot.state, tagModifier(attacker.weapon, phit.part, victim.crouching));
+    else if (victim.move) tag(victim.move, tagModifier(attacker.weapon, phit.part, victim.crouching));
 
     this.broadcast({
       t: 'hit', victim: victim.id, attacker: attacker.id,
@@ -1448,20 +1564,22 @@ export class Game {
     return { state: b.state };
   }
 
-  snapshotFor(viewer) {
+  snapshotFor(viewer, full = true) {
     return {
       t: 'state',
       ts: now(),
       bomb: this.bombInfo(viewer),
-      drops: this.drops.map((d) => ({ id: d.id, w: d.weapon, pos: d.pos, yaw: d.yaw, mode: d.mode || undefined })),
-      hostages: this.hostageMode ? this.hostages.map((h) => ({ id: h.id, pos: h.pos, yaw: h.yaw, alive: h.alive, rescued: h.rescued, leader: h.leader, moving: !!h.moving })) : undefined,
+      drops: this.drops.map((d) => ({ id: d.id, w: d.weapon, pos: r1(d.pos), yaw: r3(d.yaw), mode: d.mode || undefined })),
+      hostages: this.hostageMode ? this.hostages.map((h) => ({ id: h.id, pos: r1(h.pos), yaw: r3(h.yaw), alive: h.alive, rescued: h.rescued, leader: h.leader, moving: !!h.moving })) : undefined,
+      // false flags are left out; score / deaths / ping only in every 15th
+      // snapshot (the client keeps the last values) — bandwidth
       players: [...this.players.values()].map((p) => ({
-        id: p.id, team: p.team, pos: p.pos, yaw: p.yaw, pitch: p.pitch,
-        alive: p.alive, crouching: p.crouching, moving: p.moving,
-        weapon: p.weapon, mode: p.modes[p.weapon] || undefined, reloading: !!p.reloadUntil || !!p.shellAt,
-        k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined,
+        id: p.id, team: p.team, pos: r1(p.pos), yaw: r3(p.yaw), pitch: r3(p.pitch),
+        alive: p.alive, crouching: p.crouching || undefined, moving: p.moving || undefined,
+        weapon: p.weapon, mode: p.modes[p.weapon] || undefined, reloading: (!!p.reloadUntil || !!p.shellAt) || undefined,
+        ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined } : {}),
         c4: viewer.team === TEAM.T && p.c4 ? 1 : undefined,
-        planting: this.planting.has(p.id), defusing: this.defusing.has(p.id),
+        planting: this.planting.has(p.id) || undefined, defusing: this.defusing.has(p.id) || undefined,
       })),
     };
   }
@@ -1475,11 +1593,14 @@ export class Game {
       for (const p of this.players.values()) if (p.ws) this.send(p, { t: 'ping', ts: t });
     }
     const byTeam = {};
+    this._snapN = (this._snapN || 0) + 1;
+    const full = this._snapN % 15 === 1;
     for (const p of this.players.values()) {
       if (!p.ws || p.ws.readyState !== 1) continue;
       const key = p.team;
-      if (!byTeam[key]) byTeam[key] = JSON.stringify(this.snapshotFor(p));
+      if (!byTeam[key]) byTeam[key] = JSON.stringify(this.snapshotFor(p, full));
       p.ws.send(byTeam[key]);
+      if (p.usesCmds && p.move) this.send(p, this.youMsg(p));
     }
   }
 

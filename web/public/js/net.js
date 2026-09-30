@@ -8,6 +8,8 @@ export class Net {
     this.onOpen = null;
     this.onClose = null;
     this.connected = false;
+    this.bytesIn = 0;    // for net_graph
+    this.bytesOut = 0;
   }
 
   on(type, fn) { this.handlers.set(type, fn); }
@@ -35,6 +37,7 @@ export class Net {
       };
       this.ws.onmessage = (ev) => {
         let msg;
+        this.bytesIn += ev.data.length;
         try { msg = JSON.parse(ev.data); } catch { return; }
         // debug counters for automated testing
         window.__msgCount = (window.__msgCount || 0) + 1;
@@ -46,7 +49,7 @@ export class Net {
   }
 
   send(obj) {
-    if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(obj));
+    if (this.ws && this.ws.readyState === 1) { const d = JSON.stringify(obj); this.bytesOut += d.length; this.ws.send(d); }
   }
 
   close() { if (this.ws) this.ws.close(); }

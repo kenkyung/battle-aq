@@ -14,6 +14,8 @@ export const RULES = {
     halftime: 7,          // sides swap after this round
     friendlyfire: false,  // mp_friendlyfire
     roundEnd: 5,          // s between rounds
+    tickrate: 33,         // server simulation, Hz
+    updaterate: 30,       // snapshots to clients, Hz (cl_updaterate)
   },
   competitive: {
     name: 'Competitive (MR15)',
@@ -26,6 +28,8 @@ export const RULES = {
     halftime: 15,
     friendlyfire: true,
     roundEnd: 5,
+    tickrate: 66,
+    updaterate: 60,
   },
 };
 

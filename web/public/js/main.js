@@ -317,11 +317,13 @@ async function onWelcome(welcome) {
   await useMap(welcome.mapId);
   if (remotes) remotes.clear();
   remotes = new Remotes(scene, fx, world);
+  remotes.renderTime = viewTime;
   remotes.sfx = sfx;
   remotes.surfaceAt = surfaceAt;
   player = new LocalPlayer(camera, world.colliders, net, vm, fx);
   player.map = map;
   player.hostageMode = round.mode === 'hostage';
+  player.viewTime = viewTime;
   player.others = () => remotes.targets().concat(hostageView ? hostageView.targets() : []);
   player.bodies = () => remotes.bodies();
   player.surfaceAt = surfaceAt;
@@ -364,16 +366,49 @@ function setTeam(team) {
 
 const nameOf = (id) => (roster.get(id) || { name: `#${id}`, team: 0 });
 
+// net_graph: fps, latency, rates, bandwidth — once a second
+const netStats = { snaps: 0, frames: 0, t: performance.now(), lastIn: 0, lastOut: 0, text: '' };
+let netGraph = store.get('baq_netgraph', '0') === '1';
+$('ngOn').checked = netGraph;
+$('ngOn').addEventListener('change', (e) => { netGraph = e.target.checked; store.set('baq_netgraph', netGraph ? '1' : '0'); });
+function updateNetGraph() {
+  netStats.frames++;
+  const nowMs = performance.now();
+  if (nowMs - netStats.t < 1000) return;
+  const s = (nowMs - netStats.t) / 1000;
+  const me = roster.get(myId);
+  netStats.text = `fps ${Math.round(netStats.frames / s)}  ping ${me && me.ping !== undefined ? me.ping : '?'} ms\n`
+    + `in ${((net.bytesIn - netStats.lastIn) / s / 1024).toFixed(1)} k/s  out ${((net.bytesOut - netStats.lastOut) / s / 1024).toFixed(1)} k/s\n`
+    + `updaterate ${Math.round(netStats.snaps / s)}/${round.updaterate || '?'}  tickrate ${round.tickrate || '?'}  interp ${Math.round(interp * 1000)} ms  pending ${player ? player.pending.length : 0}`;
+  netStats.snaps = 0; netStats.frames = 0; netStats.t = nowMs;
+  netStats.lastIn = net.bytesIn; netStats.lastOut = net.bytesOut;
+  const el = document.getElementById('netgraph');
+  if (el) { el.classList.toggle('hidden', !netGraph); el.textContent = netStats.text; }
+}
+
+// server clock: the snapshot timeline, offset from ours by the smallest
+// observed delay (a max filter that slowly forgets, so drift is followed)
+let clockOffset = null;
+let interp = 0.1;                                    // cl_interp
+const serverNow = () => performance.now() / 1000 + (clockOffset || 0);
+const viewTime = () => serverNow() - interp;
 net.on('state', (msg) => {
   if (!remotes) return;
+  if (Number.isFinite(msg.ts)) {
+    const sample = msg.ts - performance.now() / 1000;
+    clockOffset = clockOffset === null ? sample : Math.max(sample, clockOffset - 0.002);
+    netStats.snaps++;
+  }
   const seen = new Set();
   for (const p of msg.players) {
     seen.add(p.id);
     const r = roster.get(p.id) || { id: p.id, name: `#${p.id}` };
-    Object.assign(r, { team: p.team, alive: p.alive, k: p.k, d: p.d, pos: p.pos, ping: p.ping, bot: p.bot, c4: p.c4 });
+    Object.assign(r, { team: p.team, alive: p.alive, pos: p.pos, c4: p.c4 });
+    if (p.k !== undefined) Object.assign(r, { k: p.k, d: p.d, ping: p.ping, bot: p.bot });   // only in full snapshots
+    if (r.k === undefined) { r.k = 0; r.d = 0; }
     roster.set(p.id, r);
     if (p.id === myId) continue;
-    remotes.setTarget({ ...p, name: r.name });
+    remotes.setTarget({ ...p, name: r.name }, msg.ts);
   }
   for (const id of [...remotes.players.keys()]) if (!seen.has(id)) remotes.remove(id);
   for (const id of [...roster.keys()]) if (!seen.has(id)) roster.delete(id);
@@ -546,6 +581,9 @@ function applyRound(r) {
   round.rulesName = r.rulesName || '';
   round.maxRounds = r.maxRounds;
   round.friendlyfire = !!r.friendlyfire;
+  // cl_interp: two update intervals plus a little slack (0.05 .. 0.1 s)
+  if (r.updaterate) interp = Math.max(0.05, Math.min(0.1, 2 / r.updaterate + 0.015));
+  round.tickrate = r.tickrate; round.updaterate = r.updaterate;
   if (r.phase === 'freeze' || r.phase === 'warmup') { hostageTally.rescued = 0; hostageTally.killed = 0; }
   if (player) player.hostageMode = round.mode === 'hostage';
   if (r.rescueZones && hostageView) hostageView.setZones(r.rescueZones);
@@ -566,6 +604,7 @@ function applyRound(r) {
 
 net.on('round', applyRound);
 net.on('ping', (msg) => net.send({ t: 'pong', ts: msg.ts }));
+net.on('you', (msg) => { if (player) player.reconcile(msg); });
 
 // hostage events: follow / stay (to the CT who used it), rescued, hurt, killed
 net.on('hostage', (msg) => {
@@ -867,6 +906,7 @@ let fpsT = 0, fpsN = 0;
 
 function frame(now) {
   requestAnimationFrame(frame);
+  if (running) updateNetGraph();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const t = now / 1000;

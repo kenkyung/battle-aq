@@ -57,6 +57,13 @@ export class LocalPlayer {
 
     this.camera.rotation.order = 'YXZ';
     this._sendTimer = 0;
+    // usercmds (M11): every frame's input is predicted here and sent; the
+    // server's `you` acks a sequence number and its state, and the commands
+    // it has not seen yet are replayed on top (reconciliation)
+    this.seq = 0;
+    this.pending = [];
+    this.cmdOut = [];
+    this.smooth = [0, 0, 0];   // visual error left from a correction, decays
     this._eyeSmooth = PLAYER.standEye;
     this._fov = BASE_FOV;
   }
@@ -101,6 +108,7 @@ export class LocalPlayer {
   spawnAt(pos, yaw) {
     this.state.pos = [pos[0], pos[1], pos[2]];
     this.state.vel = [0, 0, 0];
+    this.pending = []; this.smooth = [0, 0, 0];
     if (typeof yaw === 'number') { this.state.yaw = yaw; this.state.pitch = 0; }
     this.hp = PLAYER.maxHp;
     this.alive = true;
@@ -251,7 +259,7 @@ export class LocalPlayer {
     const dir = this.aimDir();
     const origin = this.eyePos();
     this.shotCount++;
-    this.net.send({ t: 'fire', origin, dir, zoomed, alt: alt || undefined });
+    this.net.send({ t: 'fire', origin, dir, zoomed, alt: alt || undefined, vt: this.viewTime ? this.viewTime() : undefined });
     kick(this.recoil, this.weapon, ctx);                        // next shot climbs
     this.vm.fire(alt);
 
@@ -286,7 +294,16 @@ export class LocalPlayer {
       // other players block you, as in CS
       const bodies = this.bodies();
       const solids = bodies.length ? this.colliders.concat(bodies) : this.colliders;
-      movePlayer(this.state, still ? { ...keys, f: 0, b: 0, l: 0, r: 0, jump: 0, crouch: this.defusing || keys.crouch } : keys, dt, solids);
+      const mk = still ? { ...keys, f: 0, b: 0, l: 0, r: 0, jump: 0, crouch: this.defusing || keys.crouch } : keys;
+      const cmd = {
+        s: ++this.seq, dt: Math.round(dt * 10000) / 10000,
+        k: (mk.f ? 1 : 0) | (mk.b ? 2 : 0) | (mk.l ? 4 : 0) | (mk.r ? 8 : 0) | (mk.jump ? 16 : 0) | (mk.crouch ? 32 : 0) | (mk.walk ? 64 : 0),
+        y: Math.round(this.state.yaw * 10000) / 10000, p: Math.round(this.state.pitch * 10000) / 10000, z: this.zoom > 0 ? 1 : 0,
+      };
+      movePlayer(this.state, mk, cmd.dt, solids);
+      this.pending.push({ cmd, keys: mk });
+      if (this.pending.length > 240) this.pending.shift();
+      this.cmdOut.push(cmd);
 
       if (canAct) {
         const slot = input.consumeWeaponSlot();
@@ -355,7 +372,9 @@ export class LocalPlayer {
       if (!this.state.onGround) this._fallSpeed = Math.max(this._fallSpeed, -this.state.vel[1]);
       if (this.state.onGround && !this._wasGround && this._fallSpeed > 320) this.sound('land', { volume: Math.min(1, this._fallSpeed / 600) });
       // landing in water takes no fall damage (PM_CheckFalling: waterlevel > 0)
-      if (this.state.landSpeed) { if (this.state.landSpeed > 580 && !wet) this.net.send({ t: 'fall', speed: this.state.landSpeed }); this.state.landSpeed = 0; }
+      // fall damage is the server's (it simulates our commands)
+      if (this.state.landSpeed) this.state.landSpeed = 0;
+      void wet;
       if (this.state.onGround) this._fallSpeed = 0;
       this._wasGround = this.state.onGround;
     }
@@ -368,14 +387,40 @@ export class LocalPlayer {
     this._eyeSmooth = this.eyeHeight();
     this.applyCamera(dt);
 
+    // commands go out every frame (batched above ~80 fps)
     this._sendTimer -= dt;
-    if (this.alive && this._sendTimer <= 0) {
-      this._sendTimer = 0.04; // 25 Hz
-      this.net.send({
-        t: 'state', pos: this.state.pos, yaw: this.state.yaw, pitch: this.state.pitch, eye: this.eyeHeight(),
-        crouching: this.state.crouching, moving: this.isMoving(), speed: Math.round(this.speed()),
-      });
+    if (this.cmdOut.length && this._sendTimer <= 0) {
+      this._sendTimer = 0.012;
+      this.net.send({ t: 'cmd', c: this.cmdOut });
+      this.cmdOut = [];
     }
+    const k = Math.exp(-dt * 12);
+    for (let i = 0; i < 3; i++) this.smooth[i] *= k;
+  }
+
+  // The server's word on where we are after command `msg.s`: take its state
+  // and replay the newer commands on top. A small difference is blended out
+  // over a few frames instead of snapping the camera.
+  reconcile(msg) {
+    this.pending = this.pending.filter((q) => q.cmd.s > msg.s);
+    if (!this.alive || !msg.st) return;
+    const before = this.state.pos.slice();
+    const yaw = this.state.yaw, pitch = this.state.pitch, land = this.state.landSpeed;
+    const st = msg.st;
+    Object.assign(this.state, {
+      pos: st.pos.slice(), vel: st.vel.slice(), onGround: st.onGround, crouching: st.crouching, inDuck: st.inDuck,
+      duckT: st.duckT, eye: st.eye, velMod: st.velMod, tagAcc: st.tagAcc, fatigue: st.fatigue, jumpHeld: st.jumpHeld, offLadder: st.offLadder,
+    });
+    const bodies = this.bodies();
+    const solids = bodies.length ? this.colliders.concat(bodies) : this.colliders;
+    for (const q of this.pending) {
+      this.state.yaw = q.cmd.y; this.state.pitch = q.cmd.p;
+      movePlayer(this.state, q.keys, q.cmd.dt, solids);
+    }
+    this.state.yaw = yaw; this.state.pitch = pitch; this.state.landSpeed = land;
+    const err = [before[0] - this.state.pos[0], before[1] - this.state.pos[1], before[2] - this.state.pos[2]];
+    if (Math.hypot(...err) > 48) this.smooth = [0, 0, 0];           // a real teleport: snap
+    else for (let i = 0; i < 3; i++) this.smooth[i] += err[i];
   }
 
   // CS zoom levels are fields of view out of its 90 degrees: the same
@@ -390,7 +435,7 @@ export class LocalPlayer {
 
   applyCamera(dt) {
     const e = this._eyeSmooth;
-    this.camera.position.set(this.state.pos[0], this.state.pos[1] + e, this.state.pos[2]);
+    this.camera.position.set(this.state.pos[0] + this.smooth[0], this.state.pos[1] + e + this.smooth[1], this.state.pos[2] + this.smooth[2]);
     // the view shows the punch, as CS 1.6 does
     this.camera.rotation.y = this.state.yaw + this.recoil.punch[1] * Math.PI / 180;
     this.camera.rotation.x = this.state.pitch + this.recoil.punch[0] * Math.PI / 180;

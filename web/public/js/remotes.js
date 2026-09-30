@@ -175,8 +175,14 @@ export class Remotes {
 
   clear() { for (const id of [...this.players.keys()]) this.remove(id); }
 
-  setTarget(p) {
+  // p: a snapshot entry; ts: the snapshot's server time (seconds)
+  setTarget(p, ts) {
     const r = this.ensure(p);
+    if (Number.isFinite(ts)) {
+      r.buf = r.buf || [];
+      if (!r.buf.length || ts > r.buf[r.buf.length - 1].ts) r.buf.push({ ts, pos: [...p.pos], yaw: p.yaw || 0, pitch: p.pitch || 0, crouching: !!p.crouching });
+      if (r.buf.length > 30) r.buf.shift();
+    }
     if (p.reloading && !r.reloading && this.sfx) this.sfx.playAt('mag_out', r.cur.pos.map((v, i) => v + (i === 1 ? 48 : 0)), { volume: 0.6, max: 1400 });
     r.reloading = !!p.reloading;
     if (p.name) r.name = p.name;
@@ -224,19 +230,51 @@ export class Remotes {
     dirs.forEach((d, k) => this.fx.shot(msg.origin, d, k === 0 ? muzzle : null, others, msg.id, { tracer: k === 0, exits: k === 0 ? msg.exits : null }));
   }
 
+  // Interpolation (M11): each remote is drawn where it was at the view time
+  // (server time - cl_interp), between the two snapshots around it — the
+  // same moment the server rewinds to when we shoot (lag compensation).
+  interpolate(r, rt) {
+    const b = r.buf;
+    let i = b.length - 1;
+    while (i > 0 && b[i].ts > rt) i--;
+    const a = b[i], c = b[Math.min(b.length - 1, i + 1)];
+    if (a === c || rt <= a.ts || c.ts <= a.ts) {
+      const e = rt <= a.ts ? a : c;
+      r.cur.pos = e.pos.slice(); r.cur.yaw = e.yaw; r.cur.pitch = e.pitch; r.icrouch = e.crouching;
+      r.ivel = [0, 0, 0];
+      return;
+    }
+    const f = Math.min(1, (rt - a.ts) / (c.ts - a.ts));
+    const jump = Math.hypot(c.pos[0] - a.pos[0], c.pos[2] - a.pos[2]) > 220;     // respawn / teleport
+    const k = jump ? (f < 0.5 ? 0 : 1) : f;
+    r.cur.pos = [0, 1, 2].map((j) => a.pos[j] + (c.pos[j] - a.pos[j]) * k);
+    let dy = c.yaw - a.yaw;
+    while (dy > Math.PI) dy -= 2 * Math.PI;
+    while (dy < -Math.PI) dy += 2 * Math.PI;
+    r.cur.yaw = a.yaw + dy * f;
+    r.cur.pitch = a.pitch + (c.pitch - a.pitch) * f;
+    r.icrouch = f < 0.5 ? a.crouching : c.crouching;
+    const w = jump ? 0 : 1 / (c.ts - a.ts);
+    r.ivel = [0, 1, 2].map((j) => (c.pos[j] - a.pos[j]) * w);
+  }
+
   update(dt, cameraPos) {
     const t = Math.min(1, dt * 12);
+    const rt = this.renderTime ? this.renderTime() : null;
     for (const r of this.players.values()) {
-      // a jump of more than a few metres is a respawn/teleport: snap there
-      // instead of gliding across the map (which looked like walking through walls)
-      if (Math.hypot(r.tgt.pos[0] - r.cur.pos[0], r.tgt.pos[2] - r.cur.pos[2]) > 220) r.cur.pos = r.tgt.pos.slice();
       const prev = r.cur.pos.slice();
-      for (let i = 0; i < 3; i++) r.cur.pos[i] += (r.tgt.pos[i] - r.cur.pos[i]) * t;
-      let dy = r.tgt.yaw - r.cur.yaw;
-      while (dy > Math.PI) dy -= 2 * Math.PI;
-      while (dy < -Math.PI) dy += 2 * Math.PI;
-      r.cur.yaw += dy * t;
-      r.cur.pitch += (r.tgt.pitch - r.cur.pitch) * t;
+      if (rt !== null && r.buf && r.buf.length) this.interpolate(r, rt);
+      else {
+        // no timeline yet: chase the latest target (a big jump snaps)
+        if (Math.hypot(r.tgt.pos[0] - r.cur.pos[0], r.tgt.pos[2] - r.cur.pos[2]) > 220) r.cur.pos = r.tgt.pos.slice();
+        for (let i = 0; i < 3; i++) r.cur.pos[i] += (r.tgt.pos[i] - r.cur.pos[i]) * t;
+        let dy = r.tgt.yaw - r.cur.yaw;
+        while (dy > Math.PI) dy -= 2 * Math.PI;
+        while (dy < -Math.PI) dy += 2 * Math.PI;
+        r.cur.yaw += dy * t;
+        r.cur.pitch += (r.tgt.pitch - r.cur.pitch) * t;
+        r.ivel = null;
+      }
       r.group.position.set(r.cur.pos[0], r.cur.pos[1], r.cur.pos[2]);
       r.group.rotation.y = r.cur.yaw;
       r.group.visible = r.id !== this.hiddenId;
@@ -244,7 +282,7 @@ export class Remotes {
       // smoothed ground velocity -> speed, and its direction relative to the aim
       const k = Math.min(1, dt * 8);
       r.vel = r.vel || [0, 0, 0];
-      const nv = (r.tgtT !== undefined && performance.now() / 1000 - r.tgtT < 0.3 && r.netVel) || [0, 0, 0];
+      const nv = r.ivel || (r.tgtT !== undefined && performance.now() / 1000 - r.tgtT < 0.3 && r.netVel) || [0, 0, 0];
       for (let i = 0; i < 3; i++) r.vel[i] += (nv[i] - r.vel[i]) * k;
       r.speed = Math.hypot(r.vel[0], r.vel[2]);
       let gaitTarget = 0;
@@ -261,15 +299,15 @@ export class Remotes {
       r.gait = (r.gait || 0) + (gaitTarget - (r.gait || 0)) * Math.min(1, dt * 10);
       if (r.alive) {
         let clip = 'idle';
-        const air = !r.tgt.crouching && Math.abs(r.vel[1]) > 150;
+        const air = !(r.icrouch ?? r.tgt.crouching) && Math.abs(r.vel[1]) > 150;
         if (air) clip = 'jump';
-        else if (r.tgt.crouching) clip = r.speed > 20 ? 'crouch_walk' : 'crouch_idle';
+        else if ((r.icrouch ?? r.tgt.crouching)) clip = r.speed > 20 ? 'crouch_walk' : 'crouch_idle';
         else if (r.speed > 150) clip = 'run';
         else if (r.speed > 20) clip = 'walk';
         this.play(r, clip, air ? 0.12 : 0.2);
       }
       // running feet are audible through the map, as in CS
-      if (this.sfx && r.alive && r.speed > 150 && !r.tgt.crouching && Math.abs(r.cur.pos[1] - prev[1]) < 2) {
+      if (this.sfx && r.alive && r.speed > 150 && !(r.icrouch ?? r.tgt.crouching) && Math.abs(r.cur.pos[1] - prev[1]) < 2) {
         r.stepDist = (r.stepDist || 0) + r.speed * dt;
         if (r.stepDist > 88) {
           r.stepDist = 0;
@@ -326,7 +364,7 @@ export class Remotes {
   // solid boxes for the local player's movement
   bodies() {
     const out = [];
-    for (const r of this.players.values()) if (r.alive && r.id !== this.hiddenId) out.push(bodyBox(r.cur.pos, r.tgt.crouching));
+    for (const r of this.players.values()) if (r.alive && r.id !== this.hiddenId) out.push(bodyBox(r.cur.pos, (r.icrouch ?? r.tgt.crouching)));
     return out;
   }
 
@@ -334,7 +372,7 @@ export class Remotes {
   targets() {
     const out = [];
     for (const r of this.players.values()) {
-      if (r.alive) out.push({ id: r.id, pos: r.cur.pos, crouching: r.tgt.crouching });
+      if (r.alive) out.push({ id: r.id, pos: r.cur.pos, crouching: (r.icrouch ?? r.tgt.crouching) });
     }
     return out;
   }

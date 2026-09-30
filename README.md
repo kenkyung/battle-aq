@@ -125,15 +125,13 @@ docs/        design references (CS 1.6 numbers, map notes)
 
 ## Network model
 
-- One Node process, one port. Static files over HTTP, game over WebSocket
-  (`/ws`, JSON messages).
-- **Movement is client-predicted** using the shared physics module; the server
-  relays positions in 20 Hz snapshots.
-- **Damage is server-authoritative**: clients send `fire` intent (origin +
-  direction), the server raycasts against the map and players, then broadcasts
-  `hit`/`kill` events. The client never decides a hit.
-- Three.js is vendored (`public/vendor/three.module.js`) — no CDN, so it works
-  over Tailscale/LAN with no internet.
+CS-style (M11): clients send **usercmds** (inputs + view angles + frame
+time) every frame; the server simulates them with the same physics code and
+is authoritative, the client predicts and reconciles against the server's
+acknowledged state. Other players are **interpolated** 50–100 ms in the past;
+shots are **lag-compensated** (hit boxes rewound to what the shooter saw, up
+to 0.5 s). Rooms run at 33 Hz (Casual) or 66 Hz (Competitive), snapshots at
+30 / 60 Hz. Settings → net_graph shows fps, ping and rates.
 
 ## Roadmap
 

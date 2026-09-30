@@ -158,12 +158,24 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       players and alive per team, map + rules + round; ping measured.
 - [x] `server/rules.test.js`.
 
-## M11 — Netcode parity
-- [ ] Input-command movement (usercmds) simulated on the server with client
-      prediction + reconciliation (replaces checked client positions).
-- [ ] Lag compensation: rewind hit boxes to the shooter's view time.
-- [ ] Interpolation buffer (~100 ms), tickrate options (33 / 66 / 100),
-      ping + net_graph overlay, packet-loss tolerance.
+## M11 — Netcode parity  [done]
+- [x] Usercmds: the client sends its inputs (keys, view angles, frame time,
+      sequence number) every frame; the server runs the shared physics on
+      them and owns the position (fall damage, tagging, ladders included).
+      A real-time budget drops commands sent faster than the clock.
+- [x] Client prediction + reconciliation: each snapshot is followed by
+      `you` (last command applied + physics state); unacknowledged commands
+      are replayed on top, small errors blended out on the camera.
+- [x] Interpolation buffer: remote players are drawn at view time (server
+      time - cl_interp 50..100 ms) between the two snapshots around it.
+- [x] Lag compensation: 1 s of position history per player; shots are
+      tested against hit boxes rewound to the shooter's view time (capped at
+      sv_maxunlag 0.5 s).
+- [x] Tickrate / updaterate per room: Casual 33 / 30 Hz, Competitive
+      66 / 60 Hz; leaner snapshots (~27 KB/s for a 3v3).
+- [x] net_graph overlay (fps, ping, in/out rate, updaterate, tickrate,
+      interp, pending commands) — Settings.
+- [x] `server/netcode.test.js`.
 
 ## M12 — HUD and UX parity
 - [ ] CS 1.6 HUD layout and fonts, weapon icons in the kill feed (headshot
