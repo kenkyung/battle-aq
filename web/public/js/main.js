@@ -16,7 +16,7 @@ import { Sfx, surfaceOf } from './sfx.js';
 import { preloadModels, setAnisotropy } from './assets.js';
 import { getMap, MAP_LIST } from '../shared/maps.js';
 import { WEAPONS, TEAM, PLAYER, CROSSHAIR, HOSTAGE } from '../shared/constants.js';
-import { inBuyZone } from '../shared/economy.js';
+import { inBuyZone, BUY_MENU } from '../shared/economy.js';
 import { raycast } from '../shared/physics.js';
 import { RADIO } from '../shared/radio.js';
 
@@ -741,6 +741,22 @@ input.onKey = (code, e, down) => {
       // the mouse stays captured: an in-game cursor points at the items
       hud.showCursor(input.locked);
     } else { hud.centerMsg(round.phase === 'end' ? 'the round is over' : 'you can only buy in your spawn during buy time'); setTimeout(() => hud.centerMsg(''), 1800); }
+  } else if (code === 'F1' || code === 'F2' || code === 'Comma' || code === 'Period') {
+    // CS 1.6 quick-buy binds: F1 autobuy, F2 rebuy, "," primary ammo, "." pistol ammo
+    if (input.typing) return;
+    if (!canBuy()) { hud.centerMsg(round.phase === 'end' ? 'the round is over' : 'you can only buy in your spawn during buy time'); setTimeout(() => hud.centerMsg(''), 1800); return; }
+    if (code === 'F1') net.send({ t: 'autobuy' });
+    else if (code === 'F2') net.send({ t: 'rebuy' });
+    else net.send({ t: 'buy', item: code === 'Comma' ? 'ammo1' : 'ammo2' });
+  } else if (code === 'KeyO') {
+    // O: the equipment menu (CS buyequip) = the buy menu opened on Gear
+    if (input.typing || hud.buyOpen()) return;
+    if (canBuy()) {
+      hud.openBuy(buyContext(), (item) => net.send({ t: 'buy', item }));
+      hud._input = input; input.buyOpen = true;
+      hud.showCursor(input.locked);
+      hud.buyKey(BUY_MENU.findIndex((c) => c.key === 'gear') + 1);
+    }
   } else if (code === 'Escape') {
     // Esc just closes the buy menu (no pause screen); a click takes the mouse back
     // In fullscreen (keyboard lock) the browser hands Esc to us and keeps the

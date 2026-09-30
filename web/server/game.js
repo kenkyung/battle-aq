@@ -25,7 +25,7 @@ import {
   PLAYER, WEAPONS, TEAM, ROUND, BOMB, HOSTAGE, DEFAULT_PISTOL, DRAW_TIME, MELEE_REACH,
 } from '../shared/constants.js';
 import {
-  ECONOMY, itemInfo, lossBonus, inBuyZone, buyZoneCenter,
+  ECONOMY, itemInfo, lossBonus, inBuyZone, buyZoneCenter, ammoBox, AUTOBUY,
 } from '../shared/economy.js';
 import { newRecoil, resetRecoil, shotSpread, spreadDir, baseDamage, armorAbsorb } from '../shared/ballistics.js';
 import {
@@ -237,6 +237,11 @@ export class Game {
     this.planting.clear(); this.defusing.clear();
     this.buyEndsAt = now() + ROUND.freezeTime + ECONOMY.buyTimeIntoRound;
     this.setPhase('freeze', ROUND.freezeTime);
+    // what each player bought last round becomes their F2 rebuy
+    for (const p of this.players.values()) {
+      if (p.roundBuys && p.roundBuys.length) p.lastBuys = p.roundBuys;
+      p.roundBuys = [];
+    }
     // Survivors keep their weapons and armour; the dead start over.
     for (const p of this.players.values()) {
       if (!p.alive) this.resetLoadout(p);
@@ -781,6 +786,12 @@ export class Game {
       case 'buy':
         this.handleBuy(p, String(msg.item || ''));
         break;
+      case 'autobuy':
+        this.autobuy(p);
+        break;
+      case 'rebuy':
+        this.rebuy(p);
+        break;
       case 'plant':
         this.setPlanting(p, !!msg.on);
         break;
@@ -1083,9 +1094,9 @@ export class Game {
     return null;
   }
 
-  handleBuy(p, item) {
+  handleBuy(p, item, quiet = false) {
     const info = itemInfo(item);
-    const fail = (reason) => this.send(p, { t: 'buy_fail', item, reason });
+    const fail = (reason) => { if (!quiet) this.send(p, { t: 'buy_fail', item, reason }); return false; };
     if (!info || WEAPONS[item]?.bomb) return fail('unknown item');
     const blocked = this.canBuy(p);
     if (blocked) return fail(blocked);
@@ -1124,6 +1135,16 @@ export class Game {
       if (p.kit) return fail('you already have a defuse kit');
       if (p.money < price) return fail('not enough money');
       p.kit = true;
+    } else if (item === 'ammo1' || item === 'ammo2') {
+      // one box of the gun's calibre, as CS's buyammo1 / buyammo2
+      const gun = p.inv[item === 'ammo1' ? 'primary' : 'secondary'];
+      if (!gun) return fail(item === 'ammo1' ? 'you have no primary weapon' : 'you have no pistol');
+      const a = p.ammo[gun], full = WEAPONS[gun].reserve;
+      if (!a || a.reserve >= full) return fail('your ammo is already full');
+      const [boxPrice, rounds] = ammoBox(gun);
+      price = boxPrice;
+      if (p.money < price) return fail('not enough money');
+      a.reserve = Math.min(full, a.reserve + rounds);
     } else if (item === 'ammo') {
       if (p.money < price) return fail('not enough money');
       let changed = false;
@@ -1135,6 +1156,52 @@ export class Game {
     }
     p.money -= price;
     this.sendInv(p, -price, info.name);
+    // remembered for F2 rebuy (ammo boxes are topped up by rebuy anyway)
+    if (!item.startsWith('ammo')) (p.roundBuys = p.roundBuys || []).push(item);
+    return true;
+  }
+
+  // Fill an ammo slot completely, box by box (autobuy's primammo / secammo).
+  fillAmmo(p, item) { let n = 0; while (n < 12 && this.handleBuy(p, item, true)) n++; return n > 0; }
+
+  // F1: CS autobuy — first affordable primary from the list (only if you have
+  // none), full ammo, then kit / armour.
+  autobuy(p) {
+    const blocked = this.canBuy(p);
+    if (blocked) return this.send(p, { t: 'buy_fail', item: 'autobuy', reason: blocked });
+    let bought = false;
+    for (const id of AUTOBUY) {
+      if (id === 'primammo') { bought = this.fillAmmo(p, 'ammo1') || bought; continue; }
+      if (id === 'secammo') { bought = this.fillAmmo(p, 'ammo2') || bought; continue; }
+      const info = itemInfo(id);
+      if (!info) continue;
+      if (info.weapon && p.inv.primary) continue;
+      if (id === 'kevlar' && p.armor >= 100) continue;
+      if (id === 'assault' && p.armor >= 100 && p.helmet) continue;
+      if (id === 'kit' && (p.kit || this.hostageMode || p.team !== TEAM.CT)) continue;
+      bought = this.handleBuy(p, id, true) || bought;
+    }
+    if (!bought) this.send(p, { t: 'buy_fail', item: 'autobuy', reason: 'nothing to buy' });
+  }
+
+  // F2: CS rebuy — what you bought last round, skipping what you still have
+  rebuy(p) {
+    const blocked = this.canBuy(p);
+    if (blocked) return this.send(p, { t: 'buy_fail', item: 'rebuy', reason: blocked });
+    const list = p.lastBuys || [];
+    if (!list.length) return this.send(p, { t: 'buy_fail', item: 'rebuy', reason: 'nothing bought last round' });
+    const nadeCount = {};
+    for (const id of list) {
+      const w = WEAPONS[id];
+      if (w && w.grenade) {
+        nadeCount[id] = (nadeCount[id] || 0) + 1;
+        if ((p.nades[id] || 0) >= nadeCount[id]) continue;   // already carrying that many
+      } else if (w && p.inv[w.slot] === id) continue;
+      else if ((id === 'kevlar' && p.armor >= 100) || (id === 'assault' && p.armor >= 100 && p.helmet) || (id === 'kit' && p.kit)) continue;
+      this.handleBuy(p, id, true);
+    }
+    this.fillAmmo(p, 'ammo1');
+    this.fillAmmo(p, 'ammo2');
   }
 
   addMoney(p, amount, reason) {

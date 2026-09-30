@@ -5,7 +5,7 @@
 const GAME_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC', 'KeyR', 'KeyQ', 'KeyE', 'KeyB', 'KeyY', 'KeyG', 'KeyZ', 'KeyX', 'KeyV',
   'Space', 'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'Tab',
-  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F1',
+  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F1', 'F2', 'Comma', 'Period', 'KeyO',
 ]);
 
 export class Input {
@@ -41,8 +41,8 @@ export class Input {
       // dialog, Ctrl+S "save page", etc. While playing, the game owns the
       // keyboard. (Ctrl+W can only be blocked in fullscreen: see lockKeys.)
       if (this.capture && (e.ctrlKey || e.metaKey || e.altKey || GAME_KEYS.has(e.code))) e.preventDefault();
-      if (e.code === 'Tab') e.preventDefault();
-      if (['KeyB', 'Tab', 'KeyY', 'Escape', 'Enter', 'KeyZ', 'KeyX', 'KeyV'].includes(e.code) && this.onKey) this.onKey(e.code, e, true);
+      if (e.code === 'Tab' || e.code === 'F1' || e.code === 'F2') e.preventDefault();   // F1 would open Chrome's help
+      if (['KeyB', 'Tab', 'KeyY', 'Escape', 'Enter', 'KeyZ', 'KeyX', 'KeyV', 'F1', 'F2', 'Comma', 'Period', 'KeyO'].includes(e.code) && this.onKey) this.onKey(e.code, e, true);
       // digits pick a radio line while a radio menu is open
       if ((this.radioOpen || this.buyOpen) && /^Digit[0-9]$/.test(e.code)) { if (this.onKey) this.onKey(e.code, e, true); return; }
       if (e.repeat) return;
