@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { weaponModel } from './assets.js';
+import { finishMaterial } from './finishes.js';
 import { WEAPONS, TEAM } from '../shared/constants.js';
 import { flashTexture } from './textures.js';
 
@@ -85,16 +86,23 @@ export class Viewmodel {
   // mode 'silenced' shows the suppressed model (<id>_s in weapons.glb)
   setWeapon(id, mode = null, animate = true) {
     const mid = mode === 'silenced' && weaponModel(id + '_s') ? id + '_s' : id;
-    if (id === this.weapon && mid === this.modelId) return;
+    const fin = this.finishOf ? this.finishOf(id) : 0;         // M21
+    if (id === this.weapon && mid === this.modelId && fin === this.fin) return;
     const same = id === this.weapon;
     this.weapon = id;
     this.modelId = mid;
+    this.fin = fin;
     this.silenced = mid !== id;
     this.holder.clear();
     const gun = weaponModel(mid);
     if (!gun) { this.gun = null; return; }
     this.gun = gun;
-    gun.traverse((o) => { if (o.isMesh) { o.material = this.pbr(o.material, id === 'deagle' || id === 'knife'); o.frustumCulled = false; } });
+    gun.traverse((o) => {
+      if (!o.isMesh) return;
+      o.material = finishMaterial(this.pbr(o.material, id === 'deagle' || id === 'knife'), fin);
+      this._mats.add(o.material);
+      o.frustumCulled = false;
+    });
     this.holder.add(gun);
     const hold = holdFor(id);
     this.holder.position.set(...hold.pos);

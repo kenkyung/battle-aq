@@ -301,6 +301,20 @@ export const PENETRATION = { wood: 0.7, metal: 0.5, stone: 0.0, default: 0.0 };
 // Team ids.
 export const TEAM = { T: 1, CT: 2 };
 
+// Weapon finishes (M21): index = what goes over the wire. 0 is the plain
+// factory look; the pattern ones paint the gun's metal and polymer parts.
+export const FINISHES = [
+  { id: 'factory', name: 'Factory' },
+  { id: 'desert', name: 'Desert Storm' },
+  { id: 'urban', name: 'Urban' },
+  { id: 'forest', name: 'Forest DDPAT' },
+  { id: 'arctic', name: 'Arctic' },
+  { id: 'digital', name: 'Digital' },
+  { id: 'tiger', name: 'Tiger Stripe' },
+  { id: 'crimson', name: 'Crimson Web' },
+  { id: 'gold', name: 'Gold' },
+];
+
 // Player skins (M19): four per team, index 0 is the team default (also the
 // cl_minmodels model). Models: assets/models/skin_<id>.glb.
 export const SKINS = {

@@ -12,6 +12,7 @@ import { clone as cloneSkinned } from '../vendor/addons/utils/SkeletonUtils.js';
 import { TEAM } from '../shared/constants.js';
 import { bodyBox } from '../shared/physics.js';
 import { Models, weaponModel, skinModel } from './assets.js';
+import { applyFinish } from './finishes.js';
 
 // Right-hand grip in model space (three.js coords; Blender (3.8, 13.4, 49.4)).
 const GRIP = new THREE.Vector3(3.8, 49.6, -13.4);
@@ -116,16 +117,18 @@ export class Remotes {
     return r;
   }
 
-  setWeapon(r, id, mode = null) {
+  setWeapon(r, id, mode = null, fin = r.weapon === id ? r.fin : 0) {
     const mid = mode === 'silenced' && weaponModel(id + '_s') ? id + '_s' : id;
-    if ((r.weapon === id && r.modelId === mid) || !r.model) return;
+    if ((r.weapon === id && r.modelId === mid && r.fin === fin) || !r.model) return;
     r.weapon = id;
     r.modelId = mid;
     r.mode = mode;
+    r.fin = fin;
     if (r.gun) r.gun.parent.remove(r.gun);
     const gun = weaponModel(mid);
     if (!gun) return;
     gun.traverse((o) => { if (o.isMesh) o.material = new THREE.MeshLambertMaterial({ map: o.material.map }); });
+    applyFinish(gun, fin);
     // Place it at the grip in model space while the rig is at rest, then let
     // the chest bone carry it (attach() keeps the world transform).
     const chest = r.bones.chest;
@@ -228,7 +231,7 @@ export class Remotes {
     if (!alive && r.alive) this.play(r, 'death', 0.1);
     if (alive && !r.alive) { r.cur.pos = [...p.pos]; this.resetPose(r); }
     r.alive = alive;
-    if (p.weapon) this.setWeapon(r, p.weapon, p.mode || null);
+    if (p.weapon) this.setWeapon(r, p.weapon, p.mode || null, p.fin || 0);
     // a shield plate carried in front of the chest
     if (!!p.shield !== !!r.shieldOn && r.bones.chest) {
       r.shieldOn = !!p.shield;

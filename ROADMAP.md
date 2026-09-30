@@ -344,9 +344,16 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       that jumped between stacked floors and nearest-node picks over shafts.
       `server/nuke.test.js`.
 
-## M21 — Weapon finishes
-- [ ] Selectable finishes per weapon (factory, desert, urban, forest, gold)
-      from the menu; shown on viewmodel, third-person and drops.
+## M21 — Weapon finishes  [done]
+- [x] Nine finishes (Factory, Desert Storm, Urban, Forest DDPAT, Arctic,
+      Digital, Tiger Stripe, Crimson Web, Gold): patterns painted at startup
+      on tiling canvases, applied in the weapon shader to the steel and
+      polymer parts (wood and brass keep their look).
+- [x] Menu "Weapon finishes": one pick for all weapons plus per-weapon picks,
+      remembered; console `finish ak47 gold`.
+- [x] Shown on the viewmodel, in third person and on dropped guns; a gun keeps
+      its finish when dropped — pick up someone's gold AK and it is yours;
+      some bots carry flashy guns too.
 
 ## M22 — Level performance II
 - [ ] Instanced props, texture atlases for the level.

@@ -84,7 +84,10 @@ export class LocalPlayer {
     this.ammo = {};
     for (const [id, a] of Object.entries(m.ammo)) this.ammo[id] = { mag: a[0], reserve: a[1] };
     if (!m.reloading) this.reloadUntil = 0;
+    this.fins = m.fin || {};               // weapon finishes (M21)
+    this.vm.finishOf = (id) => this.fins[id] || 0;
     if (m.weapon !== this.weapon || this.vm.weapon !== m.weapon) this.equip(m.weapon, false);
+    else if (this.vm.fin !== (this.fins[this.weapon] || 0)) this.vm.setWeapon(this.weapon, this.mode(this.weapon), false);
   }
 
   applyAmmo(m) {

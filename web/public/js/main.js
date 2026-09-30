@@ -19,12 +19,13 @@ import { NadeView } from './nades3d.js';
 import { Sfx, surfaceOf } from './sfx.js';
 import { preloadModels, setAnisotropy } from './assets.js';
 import { getMap, MAP_LIST } from '../shared/maps.js';
-import { WEAPONS, TEAM, PLAYER, CROSSHAIR, HOSTAGE, SKINS } from '../shared/constants.js';
+import { WEAPONS, TEAM, PLAYER, CROSSHAIR, HOSTAGE, SKINS, FINISHES } from '../shared/constants.js';
 import { inBuyZone, BUY_MENU } from '../shared/economy.js';
 import { raycast, tag } from '../shared/physics.js';
 import { tagModifier } from '../shared/ballistics.js';
 import { RADIO } from '../shared/radio.js';
 import { Snow, underWater } from './weather.js';
+import { swatchURL } from './finishes.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -211,7 +212,8 @@ function surfaceAt(pos) {
 }
 
 // practice options
-for (const m of MAP_LIST) $('pMap').insertAdjacentHTML('beforeend', `<option value="${m.id}">${m.id.replace(/^(de|cs)_aq_/, '').replace(/^fy_aq_/, 'fy_')}</option>`);
+const mapLabel = (id) => id.replace(/^(de|cs)_aq_/, '').replace(/^fy_aq_/, 'fy_');
+for (const m of MAP_LIST) $('pMap').insertAdjacentHTML('beforeend', `<option value="${m.id}">${mapLabel(m.id)}</option>`);
 $('pMap').value = params.get('map') || store.get('baq_pmap', 'de_aq_dust');
 $('gRules').value = params.get('rules') || store.get('baq_rules', 'casual');
 $('pTeam').value = params.get('team') || store.get('baq_pteam', 'T');
@@ -243,7 +245,7 @@ function showOnline() {
   $('online').textContent = `${here} on this map · ${serverInfo.players} total`;
   for (const o of $('pMap').options) {
     const n = serverInfo.byMap ? serverInfo.byMap[o.value] || 0 : 0;
-    o.textContent = o.value.replace(/^(de|cs)_aq_/, '') + (n ? ` (${n} playing)` : '');
+    o.textContent = mapLabel(o.value) + (n ? ` (${n} playing)` : '');
   }
 }
 
@@ -253,6 +255,36 @@ function setLoad(frac, text) {
 }
 
 let mapLoading = null;
+// ------------------------------------------------------------------ weapon finishes (M21)
+
+let finPicks = {};
+try { finPicks = JSON.parse(store.get('baq_fin', '{}')) || {}; } catch { finPicks = {}; }
+function sendFinishes() { if (net && net.ws) net.send({ t: 'finishes', f: finPicks }); }
+function setFinish(weapon, idx) {
+  if (idx === null || idx === undefined || (weapon !== '*' && idx === -1)) delete finPicks[weapon];
+  else finPicks[weapon] = idx;
+  store.set('baq_fin', JSON.stringify(finPicks));
+  sendFinishes();
+  drawFinishes();
+}
+const FIN_WEAPONS = Object.entries(WEAPONS).filter(([, w]) => (w.slot === 'primary' || w.slot === 'secondary' || w.melee) && !w.bomb);
+$('finWeapon').innerHTML = '<option value="*">All weapons</option>'
+  + FIN_WEAPONS.map(([id, w]) => `<option value="${id}">${w.name || id}</option>`).join('');
+function drawFinishes() {
+  const wid = $('finWeapon').value;
+  const cur = finPicks[wid] !== undefined ? finPicks[wid] : wid === '*' ? 0 : -1;
+  const allIdx = finPicks['*'] || 0;
+  $('finSwatches').innerHTML = (wid === '*' ? [] : [[-1, `Same as all (${FINISHES[allIdx].name})`]]).concat(FINISHES.map((f, i) => [i, f.name]))
+    .map(([i, name]) => {
+      const url = i >= 0 ? swatchURL(i) : null;
+      const cls = `fsw${i === cur ? ' on' : ''}${i >= 0 && FINISHES[i].id === 'gold' ? ' gold' : ''}${i < 0 ? ' inherit' : ''}`;
+      return `<button class="${cls}" data-i="${i}"><i${url ? ` style="background-image:url(${url})"` : ''}></i>${name}</button>`;
+    }).join('');
+  for (const b of $('finSwatches').querySelectorAll('.fsw')) b.addEventListener('click', () => setFinish(wid, parseInt(b.dataset.i, 10)));
+}
+$('finWeapon').addEventListener('change', drawFinishes);
+$('finBox').addEventListener('toggle', () => { if ($('finBox').open) drawFinishes(); });
+
 let snowFx = null, uwOn = false;
 // weather + under-water tint, every frame before the scene renders
 function envFx(dt) {
@@ -440,6 +472,7 @@ async function onWelcome(welcome) {
   }
   setTeam(welcome.you.team);
   if (savedSkin(welcome.you.team) >= 0) sendSkin(welcome.you.team, savedSkin(welcome.you.team));
+  sendFinishes();
   remotes.minModels = minModels;
   const me = welcome.you;
   if (me.alive) player.spawnAt(me.pos, me.yaw);
@@ -931,6 +964,14 @@ con.cmd('kill', 'suicide (-1 frag)', () => net.send({ t: 'suicide' }));
 con.cmd('say', 'say <text>', (a) => net.send({ t: 'chat', text: a.join(' ') }));
 con.cmd('jointeam', 'jointeam 1 | 2 | 5 (auto)', (a) => net.send({ t: 'jointeam', team: { 1: 'T', 2: 'CT' }[a[0]] || 'auto' }));
 con.cmd('chooseteam', 'open the team menu', () => { con.toggle(false); openTeamMenu(true); });
+con.cmd('finish', 'finish <weapon|all> <name|index> — weapon finish (e.g. finish ak47 gold)', (a) => {
+  const w = a[0] === 'all' ? '*' : a[0];
+  if (!w || (w !== '*' && !WEAPONS[w])) return con.print('usage: finish <weapon|all> <' + FINISHES.map((f) => f.id).join('|') + '>');
+  const i = /^\d+$/.test(a[1] || '') ? parseInt(a[1], 10) : FINISHES.findIndex((f) => f.id === a[1]);
+  if (i < 0 || i >= FINISHES.length) return con.print('finishes: ' + FINISHES.map((f, k) => `${k} ${f.id}`).join(', '));
+  setFinish(w, i);
+  con.print(`${w === '*' ? 'all weapons' : w}: ${FINISHES[i].name}`);
+});
 con.cmd('chooseappearance', 'pick your player model', () => { con.toggle(false); openSkinMenu(myTeam); });
 let minModels = store.get('baq_minmodels', '0') === '1';
 con.cvar('cl_minmodels', minModels ? '1' : '0', 'show every player as their team\'s default model', (v) => {

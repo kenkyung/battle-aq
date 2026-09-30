@@ -322,6 +322,16 @@ table.lb th { color: var(--hud-dim); font-weight: 600; font-size: 10px; letter-s
 .bitem .bart { float: right; height: 16px; opacity: .7; margin-top: 1px; background-repeat: no-repeat; }
 #overview { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 8; border-radius: 6px; box-shadow: 0 20px 60px rgba(0,0,0,.6); pointer-events: none; }
 
+/* M21: weapon finishes */
+#finWeapon { width: 100%; margin: 4px 0 6px; }
+.finsw { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-bottom: 6px; }
+.fsw { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 4px; border-radius: 4px; border: 1px solid var(--line);
+  background: rgba(255,255,255,.04); color: var(--hud); font: 600 10px var(--font); cursor: pointer; }
+.fsw i { display: block; height: 26px; border-radius: 3px; background: #3a3d41 center / 64px; }
+.fsw.gold i { background: linear-gradient(135deg, #7a5410, #f5cf6a 45%, #b8862b 60%, #fce9a8); }
+.fsw.on, .fsw:hover { border-color: var(--hudc); background: rgba(255,176,40,.1); }
+.fsw.inherit { opacity: .8; }
+
 /* M20: under water (the pool) */
 #underwater { position: absolute; inset: 0; z-index: 4; pointer-events: none;
   background: radial-gradient(ellipse at 50% 40%, rgba(40,140,170,.28), rgba(10,60,90,.62));

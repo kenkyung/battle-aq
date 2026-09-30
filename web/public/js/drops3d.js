@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { weaponModel } from './assets.js';
+import { applyFinish } from './finishes.js';
 
 export class DropView {
   constructor(scene, world) {
@@ -21,6 +22,7 @@ export class DropView {
       const m = weaponModel(mid);
       if (!m) continue;
       m.traverse((o) => { if (o.isMesh) { o.material = new THREE.MeshLambertMaterial({ map: o.material.map, normalMap: o.material.normalMap || null }); } });
+      applyFinish(m, d.fin || 0);
       const g = new THREE.Group();
       g.add(m);
       m.rotation.z = Math.PI / 2;            // on its side

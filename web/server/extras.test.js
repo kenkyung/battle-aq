@@ -61,6 +61,27 @@ console.log('skins');
   ok(bot.skin >= 0 && bot.skin <= 3, 'bots get a random skin');
 }
 
+console.log('weapon finishes');
+{
+  const g = new Game('de_aq_dust', { practice: true });
+  const wa = sock(), wb = sock();
+  const a = g.addPlayer(wa, 'Owner', { team: TEAM.T });
+  const b = g.addPlayer(wb, 'Finder', { team: TEAM.T });
+  g.checkMode();
+  g.onMessage(a, { t: 'finishes', f: { '*': 2, ak47: 8, bogus: 3, m4a1: 99 } });
+  ok(a.finPref['*'] === 2 && a.finPref.ak47 === 8 && !('bogus' in a.finPref) && !('m4a1' in a.finPref), 'picks are validated');
+  ok(wa.got('inv').at(-1).fin.glock === 2, 'the default pistol wears the "all weapons" pick');
+  a.money = 16000;
+  g.onMessage(a, { t: 'buy', item: 'ak47' });
+  ok(wa.got('inv').at(-1).fin.ak47 === 8, 'a bought AK wears its own pick (gold)');
+  ok(g.snapshotFor(b).players.find((q) => q.id === a.id).fin === 8, 'others see it in snapshots');
+  const d = g.dropWeapon(a, 'ak47', true);
+  ok(d.fin === 8 && g.snapshotFor(b).drops.find((q) => q.id === d.id).fin === 8, 'dropped, it stays gold');
+  b.pos = [...d.pos]; b.inv.primary = null;
+  g.update();
+  ok(b.inv.primary === 'ak47' && g.finOf(b, 'ak47') === 8, 'whoever picks it up gets the gold AK');
+}
+
 console.log('swimming');
 {
   const water = [{ y: 120, w: 400, d: 400, pos: [0, 0] }];

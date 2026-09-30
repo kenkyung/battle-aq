@@ -22,7 +22,7 @@
 
 import { getMap, MAP_LIST } from '../shared/maps.js';
 import {
-  PLAYER, WEAPONS, TEAM, ROUND, BOMB, HOSTAGE, DEFAULT_PISTOL, DRAW_TIME, MELEE_REACH,
+  PLAYER, WEAPONS, TEAM, ROUND, BOMB, HOSTAGE, DEFAULT_PISTOL, DRAW_TIME, MELEE_REACH, FINISHES,
 } from '../shared/constants.js';
 import {
   ECONOMY, itemInfo, lossBonus, inBuyZone, buyZoneCenter, ammoBox, AUTOBUY,
@@ -778,6 +778,7 @@ export class Game {
     const name = BOT_NAMES.find((n) => !used.has(n)) || `Bot ${nextId}`;
     const p = this.makePlayer(nextId++, null, name, team);
     p.bot = new BotBrain(this, p, difficulty);
+    if (Math.random() < 0.4) p.finPref = { '*': 1 + Math.floor(Math.random() * (FINISHES.length - 1)) };   // some bots like a flashy gun
     this.players.set(p.id, p);
     const canSpawn = this.phase === 'warmup' || this.phase === 'freeze';
     if (canSpawn) this.respawn(p, true, false);
@@ -795,6 +796,7 @@ export class Game {
       inv: {}, ammo: {}, weapon: 'knife', nades: {}, blindUntil: 0,
       nextFire: 0, lastFire: 0, burst: 0, reloadUntil: 0, recoil: newRecoil(), speed: 0, modes: {}, burstIdx: 0, shellAt: 0,
       kills: 0, deaths: 0, skin: Math.floor(Math.random() * 4),
+      fin: {}, finPref: {},                // weapon finishes: per gun in hand / the player's picks
     };
     this.resetLoadout(p);
     return p;
@@ -815,6 +817,7 @@ export class Game {
   resetLoadout(p) {
     const pistol = DEFAULT_PISTOL[p.team];
     p.inv = { primary: null, secondary: pistol, melee: 'knife' };
+    p.fin = {};
     p.ammo = {
       [pistol]: { mag: WEAPONS[pistol].mag, reserve: WEAPONS[pistol].reserve },
       knife: { mag: 1, reserve: 0 },
@@ -1207,6 +1210,16 @@ export class Game {
         this.joinTeam(p, String(msg.team || 'auto'));
         if (Number.isInteger(msg.skin)) p.skin = Math.max(0, Math.min(3, msg.skin));
         break;
+      case 'finishes': {
+        // the player's picks (M21): { weaponId | '*': finish index }
+        const f = {};
+        for (const [k, v] of Object.entries(msg.f || {}).slice(0, 48)) {
+          if ((k === '*' || WEAPONS[k]) && Number.isInteger(v) && v >= 0 && v < FINISHES.length) f[k] = v;
+        }
+        p.finPref = f;
+        this.sendInv(p);
+        break;
+      }
       case 'skin':
         // appearance (M19): 0-3, anything else = random (CS auto-select)
         p.skin = Number.isInteger(msg.i) && msg.i >= 0 && msg.i <= 3 ? msg.i : Math.floor(Math.random() * 4);
@@ -1636,6 +1649,8 @@ export class Game {
     delete p.ammo[id];
     const mode = p.modes[id] || null;
     delete p.modes[id];
+    const fin = this.finOf(p, id);           // the finish goes with the gun
+    delete p.fin[id];
     if (p.weapon === id) {
       p.weapon = p.inv.primary || p.inv.secondary || 'knife';
       p.reloadUntil = 0; p.shellAt = 0;
@@ -1655,7 +1670,7 @@ export class Game {
     const hit = raycast([pos[0], pos[1] + 40, pos[2]], [0, -1, 0], this.colliders, 4000);
     if (hit) pos[1] = hit.point[1];
     this.dropSeq = (this.dropSeq || 0) + 1;
-    const d = { id: this.dropSeq, weapon: id, pos, yaw: p.yaw + (Math.random() - 0.5), ammo: { mag: a.mag, reserve: a.reserve }, mode, by: p.id, at: now() };
+    const d = { id: this.dropSeq, weapon: id, pos, yaw: p.yaw + (Math.random() - 0.5), ammo: { mag: a.mag, reserve: a.reserve }, mode, fin, by: p.id, at: now() };
     this.drops.push(d);
     if (this.drops.length > 40) this.drops.shift();
     this.sendInv(p);
@@ -1672,6 +1687,7 @@ export class Game {
       if (d.by === p.id && t - d.at < 1.2) continue;
       if (Math.hypot(d.pos[0] - p.pos[0], d.pos[2] - p.pos[2]) > 36 || Math.abs(d.pos[1] - p.pos[1]) > 48) continue;
       p.inv[w.slot] = d.weapon;
+      p.fin[d.weapon] = d.fin || 0;
       p.ammo[d.weapon] = { mag: d.ammo.mag, reserve: d.ammo.reserve };
       if (d.mode) p.modes[d.weapon] = d.mode;
       this.drops.splice(i, 1);
@@ -1728,6 +1744,7 @@ export class Game {
       if (old) this.dropWeapon(p, old, true);          // CS: the old gun lands on the floor
       p.inv[w.slot] = item;
       delete p.modes[item];
+      delete p.fin[item];                          // a new gun wears the buyer's pick
       p.ammo[item] = { mag: w.mag, reserve: w.reserve };
       p.weapon = item;
       resetRecoil(p.recoil, item);
@@ -1843,7 +1860,15 @@ export class Game {
       money: p.money, armor: p.armor, helmet: p.helmet, kit: p.kit, c4: p.c4, hp: p.hp,
       inv: { ...p.inv, c4: p.c4 ? 'c4' : null, grenade: this.currentNade(p) }, nades: { ...p.nades }, nvg: !!p.nvg, shield: !!p.shield,
       weapon: p.weapon, ammo, reloading: !!p.reloadUntil, modes: { ...p.modes },
+      fin: Object.fromEntries(['knife', p.inv.primary, p.inv.secondary].filter(Boolean).map((id) => [id, this.finOf(p, id)])),
     };
+  }
+
+  // a gun's finish: the one it came with (picked up), else the player's pick
+  finOf(p, id) {
+    if (p.fin && p.fin[id] !== undefined) return p.fin[id];
+    const pref = p.finPref || {};
+    return pref[id] !== undefined ? pref[id] : pref['*'] || 0;
   }
 
   currentNade(p) {
@@ -1894,7 +1919,7 @@ export class Game {
       t: 'state',
       ts: now(),
       bomb: this.bombInfo(viewer),
-      drops: this.drops.map((d) => ({ id: d.id, w: d.weapon, pos: r1(d.pos), yaw: r3(d.yaw), mode: d.mode || undefined })),
+      drops: this.drops.map((d) => ({ id: d.id, w: d.weapon, pos: r1(d.pos), yaw: r3(d.yaw), mode: d.mode || undefined, fin: d.fin || undefined })),
       hostages: this.hostageMode ? this.hostages.map((h) => ({ id: h.id, pos: r1(h.pos), yaw: r3(h.yaw), alive: h.alive, rescued: h.rescued, leader: h.leader, moving: !!h.moving })) : undefined,
       // false flags are left out; score / deaths / ping only in every 15th
       // snapshot (the client keeps the last values) — bandwidth
@@ -1902,7 +1927,7 @@ export class Game {
         ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined } : {}) } : {
         id: p.id, team: p.team, pos: r1(p.pos), yaw: r3(p.yaw), pitch: r3(p.pitch), skin: p.skin || undefined,
         alive: p.alive, crouching: p.crouching || undefined, moving: p.moving || undefined, shield: p.shield ? 1 : undefined,
-        weapon: p.weapon, mode: p.modes[p.weapon] || undefined, reloading: (!!p.reloadUntil || !!p.shellAt) || undefined,
+        weapon: p.weapon, mode: p.modes[p.weapon] || undefined, fin: this.finOf(p, p.weapon) || undefined, reloading: (!!p.reloadUntil || !!p.shellAt) || undefined,
         ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined } : {}),
         c4: viewer.team === TEAM.T && p.c4 ? 1 : undefined, vip: this.vipMode && p.vip ? 1 : undefined,
         planting: this.planting.has(p.id) || undefined, defusing: this.defusing.has(p.id) || undefined,
