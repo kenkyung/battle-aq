@@ -244,10 +244,22 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       objective, spawns / hostages clear of geometry, collider budget.
 - [ ] Later: nuke / train-style layouts, vents, more ladders.
 
-## M16 — Modes and servers
-- [ ] VIP (as_) mode, deathmatch / warmup DM, custom room settings.
-- [ ] Server browser, persistent stats, admin kick / ban, anti-cheat
-      (rate limits, PVS-lite so hidden enemies are not sent).
+## M16 — Modes and servers  [done]
+- [x] Deathmatch (CSDM-style): timed, frag limit, instant respawns at the
+      spot farthest from the enemy, $16000 and buy anywhere.
+- [x] VIP (as_): a CT is the VIP (USP, 200 armour, cannot buy) and must
+      reach the escape zone; VIP killed or time out = T win; CS rewards.
+- [x] Server browser (menu): every public / custom room with players, bots,
+      rules; create a room (name, map, rules, bot fill, round time, win
+      limit, friendly fire, optional password).
+- [x] Persistent stats (kills, deaths, HS %, wins) + leaderboard in the menu.
+- [x] Admin via rcon (console: rcon_password / rcon): status, kick, ban
+      (IP, timed or permanent), unban, map, restart, bot_add / bot_kick,
+      say, mp_* cvars. RCON_PASSWORD in /etc/battle-aq.env.
+- [x] Anti-cheat: per-connection rate limit (flooding kicks), 64 KB message
+      cap, bad-rcon lockout, PVS-lite (distant unseen silent enemies are sent
+      without positions, so wallhacks see nothing at range).
+- [x] `server/modes.test.js`, `server/servers.test.js`.
 
 ## M17 — Performance
 - [ ] Model LOD + instancing, texture atlases, 144 fps on integrated GPUs,

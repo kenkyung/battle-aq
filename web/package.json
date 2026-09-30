@@ -8,7 +8,7 @@
     "start": "node server/index.js",
     "server": "node server/index.js",
     "smoke": "node server/smoke.js",
-    "test": "node server/ballistics.test.js && node server/smoke.js && node server/m2.test.js && node server/bomb.test.js && node server/nades.test.js && node server/fill.test.js && node server/collide.test.js && node server/hostage.test.js && node server/buy.test.js && node server/movement.test.js && node server/weapons.test.js && node server/rules.test.js && node server/netcode.test.js && node server/bots.test.js && node server/world.test.js && node tools/validate-maps.mjs",
+    "test": "node server/ballistics.test.js && node server/smoke.js && node server/m2.test.js && node server/bomb.test.js && node server/nades.test.js && node server/fill.test.js && node server/collide.test.js && node server/hostage.test.js && node server/buy.test.js && node server/movement.test.js && node server/weapons.test.js && node server/rules.test.js && node server/netcode.test.js && node server/bots.test.js && node server/world.test.js && node tools/validate-maps.mjs && node server/modes.test.js && node server/servers.test.js",
     "sim": "node server/sim.js"
   },
   "engines": {

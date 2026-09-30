@@ -110,6 +110,12 @@ $S tar -xzf /tmp/battle-aq.tar.gz -C "$D/releases/$STAMP"
 $S chown -R root:root "$D/releases/$STAMP"; $S chmod -R a+rX "$D/releases/$STAMP"
 $S ln -sfn "$D/releases/$STAMP" "$D/current"
 $S cp /tmp/battle-aq.service /etc/systemd/system/battle-aq.service
+# first deploy: an rcon password for the admin (see: sudo cat /etc/battle-aq.env)
+if [ ! -f /etc/battle-aq.env ]; then
+  echo "RCON_PASSWORD=$(head -c 12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)" | $S tee /etc/battle-aq.env >/dev/null
+  $S chmod 600 /etc/battle-aq.env
+  echo "--> created /etc/battle-aq.env with an rcon password"
+fi
 rm -f /tmp/battle-aq.tar.gz /tmp/battle-aq.service
 $S systemctl daemon-reload
 $S systemctl enable battle-aq >/dev/null 2>&1 || true

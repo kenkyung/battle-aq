@@ -36,7 +36,7 @@ function client(name) {
 }
 
 async function main() {
-  const srv = spawn(process.execPath, [path.join(__dirname, 'index.js'), '--port', String(PORT), '--host', '127.0.0.1'], { stdio: 'pipe', env: { ...process.env, BAQ_DEV: '1' } });
+  const srv = spawn(process.execPath, [path.join(__dirname, 'index.js'), '--port', String(PORT), '--host', '127.0.0.1'], { stdio: 'pipe', env: { ...process.env, BAQ_DEV: '1', STATS: '0' } });
   let booted = false;
   srv.stdout.on('data', (d) => { if (String(d).includes('battle-aq web server')) booted = true; });
   srv.stderr.on('data', (d) => process.stderr.write(d));

@@ -228,7 +228,7 @@ export class BotBrain {
       return { key: 'save', pos: this.saveSpot };
     }
 
-    if (g.phase === 'warmup') {
+    if (g.phase === 'warmup' || g.phase === 'dm') {
       if (!this.goal || this.reached(this.goal.pos, 64)) {
         const n = this.nav.randomNode();
         return { key: 'roam' + n.i, pos: [n.x, n.y, n.z] };
@@ -236,6 +236,7 @@ export class BotBrain {
       return this.goal;
     }
     if (g.hostageMode) return this.hostageGoal(now);
+    if (g.vipMode) return this.vipGoal(now);
     const plan = g.tactics ? g.tactics.plan(p.team) : null;
     const follows = plan && this.rollFor('team', this.skill.teamwork);
     if (!this.site) {
@@ -334,6 +335,18 @@ export class BotBrain {
     if (led) return { key: 'intercept' + led.id, pos: led.pos };
     const c = live.reduce((a, h) => [a[0] + h.pos[0] / live.length, a[1] + h.pos[1] / live.length, a[2] + h.pos[2] / live.length], [0, 0, 0]);
     return this.guard(c, 'hostages', 420);
+  }
+
+  // VIP: the VIP runs for the escape zone, the other CTs escort it, the
+  // terrorists hold the escape zone or hunt the VIP
+  vipGoal(now) {
+    const g = this.game, p = this.p;
+    const z = g.vipEscape();
+    const vip = g.players.get(g.vipId);
+    if (p.vip) return { key: 'escape', pos: [z[0], z[1], z[2]] };
+    if (p.team === TEAM.CT) return vip && vip.alive ? this.guard(vip.pos, 'escort', 220) : { key: 'escape-area', pos: [z[0], z[1], z[2]] };
+    if (vip && vip.alive && this.rollFor('hunt-vip', 0.35)) return this.guard(vip.pos, 'vip-hunt', 400);
+    return this.guard([z[0], z[1], z[2]], 'escape-hold', 700);
   }
 
   // a spot near `pos`, stable for a while, so a group spreads out

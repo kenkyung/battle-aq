@@ -44,7 +44,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
   console.log('smoke: booting server on :' + PORT);
-  const srv = spawn(process.execPath, [path.join(__dirname, 'index.js'), '--port', String(PORT), '--host', '127.0.0.1'], { stdio: 'pipe', env: { ...process.env, BAQ_DEV: '1' } });
+  const srv = spawn(process.execPath, [path.join(__dirname, 'index.js'), '--port', String(PORT), '--host', '127.0.0.1'], { stdio: 'pipe', env: { ...process.env, BAQ_DEV: '1', STATS: '0' } });
   let booted = false;
   srv.stdout.on('data', (d) => { if (String(d).includes('battle-aq web server')) booted = true; });
   srv.stderr.on('data', (d) => process.stderr.write(d));
@@ -72,8 +72,11 @@ async function main() {
     // server relays it), waits for the server to see it, then fires until
     // Alpha dies (server-authoritative damage). Spawning on opposite teams
     // puts the clients ~3000u apart with walls between, so this matters.
-    const aPos = b.snapshots.at(-1)?.players.find((p) => p.id === a.id)?.pos;
-    assert(!!aPos, 'beta can read alpha position from snapshot');
+    // far apart behind walls, PVS-lite keeps alpha's position out of beta's
+    // snapshots (anti-wallhack); alpha knows where it is
+    const hidden = b.snapshots.at(-1)?.players.find((p) => p.id === a.id);
+    assert(hidden && hidden.hid && !hidden.pos, 'an unseen, distant enemy is sent without a position (PVS-lite)');
+    const aPos = a.pos;
     // a client may not simply report a far-away position: the server refuses
     // the step and snaps the client back
     const home = b.pos.slice();

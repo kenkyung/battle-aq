@@ -40,6 +40,7 @@ import { themeFor } from '../shared/themes.js';
 import { NADES, throwVelocity, newNade, stepNade, flashAmount } from '../shared/grenades.js';
 import { BotBrain, BOT_NAMES } from './bot.js';
 import { Tactics } from './tactics.js';
+import { stats } from './stats.js';
 
 let nextId = 1;
 
@@ -61,8 +62,9 @@ const r3 = (a) => Math.round((a || 0) * 1000) / 1000;
 export class Game {
   constructor(mapId = 'de_aq_dust', { practice = false, id = 'public', fillTo = 0, botDifficulty = 'normal', rules = 'casual' } = {}) {
     this.id = id;
-    this.rulesId = rules;
-    this.rules = rulesFor(rules);       // mp_* settings of this room
+    // mp_* settings: a preset id, or a custom room's { base, ...overrides }
+    this.rulesId = typeof rules === 'object' ? 'custom' : rules;
+    this.rules = typeof rules === 'object' ? { ...rulesFor(rules.base), ...rules, name: rules.name || 'Custom' } : rulesFor(rules);
     this.practice = practice;
     this.fillTo = fillTo;               // public rooms: top each team up to this many with bots
     this.botDifficulty = botDifficulty;
@@ -92,6 +94,7 @@ export class Game {
 
   loadMap(mapId) {
     this.map = getMap(mapId);
+    this._escape = null;
     this.colliders = buildColliders(this.map);
     // bots path through doors (they open them) but not through glass
     this.nav = navFor(this.map, this.colliders.filter((c) => !c.door));
@@ -112,7 +115,27 @@ export class Game {
   }
 
   get competitive() { return this.phase !== 'warmup'; }
-  get hostageMode() { return (this.map.hostages || []).length > 0; }
+  get hostageMode() { return !this.rules.mode && (this.map.hostages || []).length > 0; }
+  get dm() { return this.rules.mode === 'dm'; }
+  get vipMode() { return this.rules.mode === 'vip'; }
+
+  // VIP escape zone: the map's, else the spot farthest from the CT spawn
+  // that is still well away from the T spawn
+  vipEscape() {
+    if (this._escape) return this._escape;
+    if (this.map.vipEscape) return (this._escape = this.map.vipEscape);
+    const ct = this.map.spawns[TEAM.CT][0], tt = this.map.spawns[TEAM.T][0];
+    let best = null, bd = -1;
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let i = 0; i < 400; i++) {
+      const n = this.nav.randomNode(rnd);
+      const dT = Math.hypot(n.x - tt[0], n.z - tt[2]), dCT = Math.hypot(n.x - ct[0], n.z - ct[2]);
+      if (dT < 900) continue;
+      if (dCT > bd && this.nav.path(ct, [n.x, n.y, n.z])) { bd = dCT; best = [n.x, n.y, n.z, 200]; }
+    }
+    return (this._escape = best || [tt[0], tt[1], tt[2], 200]);
+  }
 
   // ------------------------------------------------------------- hostages
 
@@ -245,7 +268,28 @@ export class Game {
       p.alive = false; // everyone respawns fresh for round 1
     }
     this.broadcast({ t: 'match_start', map: this.map.id });
+    if (this.dm) { this.startDeathmatch(); return; }
     this.startRound();
+  }
+
+  startDeathmatch() {
+    this.clearBomb();
+    this.drops = [];
+    this.setPhase('dm', this.rules.timelimit);
+    for (const p of this.players.values()) { p.money = ECONOMY.warmupMoney; this.respawn(p, true); }
+    this.broadcast({ t: 'round', ...this.roundInfo() });
+  }
+
+  // CSDM spawn: of a handful of random spots, the one farthest from the enemy
+  dmSpot(p) {
+    let best = null, bd = -1;
+    for (let i = 0; i < 24; i++) {
+      const n = this.nav.randomNode();
+      let dmin = 4000;
+      for (const q of this.players.values()) if (q.alive && q.team !== p.team) dmin = Math.min(dmin, Math.hypot(q.pos[0] - n.x, q.pos[2] - n.z));
+      if (dmin > bd) { bd = dmin; best = [n.x, n.y, n.z]; }
+    }
+    return best;
   }
 
   startRound() {
@@ -281,7 +325,8 @@ export class Game {
       this.respawn(p, true);
     }
     this.resetHostages();
-    if (!this.hostageMode) this.giveBomb();
+    if (this.vipMode) this.pickVip();
+    else if (!this.hostageMode) this.giveBomb();
     this.tactics.newRound();
   }
 
@@ -300,8 +345,10 @@ export class Game {
       round: this.roundNumber, maxRounds: this.rules.maxrounds, halftime: this.halftimeRound,
       rules: this.rulesId, rulesName: this.rules.name, winlimit: this.rules.winlimit, friendlyfire: this.rules.friendlyfire,
       tickrate: this.rules.tickrate, updaterate: this.rules.updaterate, c4timer: this.rules.c4timer,
-      map: this.map.id, practice: this.practice, mode: this.hostageMode ? 'hostage' : 'bomb',
+      map: this.map.id, practice: this.practice, mode: this.rules.mode || (this.hostageMode ? 'hostage' : 'bomb'),
       rescueZones: this.hostageMode ? this.rescueZones() : undefined,
+      escape: this.vipMode ? this.vipEscape() : undefined, vip: this.vipMode ? this.vipId : undefined,
+      gameMode: this.rules.mode || undefined, fraglimit: this.dm ? this.rules.fraglimit : undefined, timelimit: this.dm ? this.rules.timelimit : undefined,
     };
   }
 
@@ -320,15 +367,17 @@ export class Game {
     this.updateBomb(t);
     this.updateNades(dt, t);
     this.updateHostages(dt, t);
+    this.checkVipEscape();
     if (this.phase === 'warmup' || t < this.phaseEndsAt) return;
     if (this.phase === 'freeze') this.setPhase('round', this.rules.roundtime);
     // time: the bomb was never planted (CT win) / hostages not rescued (T win)
-    else if (this.phase === 'round') this.endRound(this.hostageMode ? TEAM.T : TEAM.CT, 'time');
+    else if (this.phase === 'round') this.endRound(this.hostageMode || this.vipMode ? TEAM.T : TEAM.CT, 'time');
     else if (this.phase === 'planted') this.explode();
     else if (this.phase === 'end') {
       if (this.matchOver) this.startVote();
       else this.startRound();
     } else if (this.phase === 'matchend') this.finishVote();
+    else if (this.phase === 'dm') { this.matchOver = true; this.startVote(); }
   }
 
   endRound(winner, how) {
@@ -344,6 +393,8 @@ export class Game {
     else if (winner === TEAM.CT && how === 'elim') winBonus = ECONOMY.winBonusElimCT;
     else if (how === 'rescue') winBonus = ECONOMY.winBonusRescue;
     else if (how === 'time') winBonus = ECONOMY.winBonusTime;
+    else if (how === 'escape') winBonus = ECONOMY.winBonusEscape;
+    else if (how === 'vip') winBonus = ECONOMY.winBonusVipKilled;
     const lossPay = lossBonus(this.lossStreak[loser]);
     for (const p of this.players.values()) {
       if (p.team === winner) this.addMoney(p, winBonus, 'round win');
@@ -353,6 +404,7 @@ export class Game {
         this.addMoney(p, pay, 'round loss');
       }
     }
+    stats.round([...this.players.values()].filter((p) => p.team === winner), [...this.players.values()].filter((p) => p.team === loser));
     const lastRound = this.roundNumber >= this.rules.maxrounds;
     this.matchOver = this.score[winner] >= this.rules.winlimit || lastRound;
     this.broadcast({
@@ -365,6 +417,7 @@ export class Game {
 
   checkWinCondition() {
     if (!['round', 'freeze', 'planted'].includes(this.phase)) return;
+    if (this.dm) return;
     const aliveT = this.countAlive(TEAM.T);
     const aliveCT = this.countAlive(TEAM.CT);
     if (aliveCT === 0 && aliveT > 0) this.endRound(TEAM.T, 'elim');
@@ -419,6 +472,12 @@ export class Game {
       next = best[Math.floor(Math.random() * best.length)];
     }
     this.changeMap(next);
+  }
+
+  // rcon restart: a fresh match if both teams are here, else warmup
+  startMatchIfReady() {
+    if (this.teamSize(TEAM.T) > 0 && this.teamSize(TEAM.CT) > 0) this.startMatch();
+    else this.enterWarmup();
   }
 
   changeMap(mapId) {
@@ -742,6 +801,20 @@ export class Game {
   }
 
   respawn(p, instant = false, notify = true) {
+    if (this.dm && this.phase === 'dm') {
+      const spot = this.dmSpot(p) || this.spawnSpots(p.team)[0];
+      p.pos = spot.slice(); this.resetMove(p);
+      p.yaw = Math.random() * Math.PI * 2; p.hp = PLAYER.maxHp; p.money = ECONOMY.warmupMoney;
+      p.reloadUntil = 0; p.nextFire = 0; resetRecoil(p.recoil, p.weapon);
+      const go = () => {
+        if (!this.players.has(p.id) || this.phase !== 'dm') return;
+        p.alive = true;
+        if (p.bot) { p.bot.reset(); p.bot.buy(); }
+        if (notify) { this.send(p, { t: 'respawn', pos: p.pos, yaw: p.yaw, hp: p.hp }); this.sendInv(p); }
+      };
+      if (instant) go(); else setTimeout(go, 2000);
+      return;
+    }
     const spots = this.spawnSpots(p.team);
     const taken = new Set([...this.players.values()].filter((q) => q !== p && q.alive && q.team === p.team).map((q) => q.spawnIdx));
     let idx = spots.findIndex((_, i) => !taken.has(i));
@@ -788,6 +861,33 @@ export class Game {
       if (score > bestScore) { bestScore = score; best = yaw; }
     }
     return (this._spawnYaw[team] = best);
+  }
+
+  // ------------------------------------------------------------- VIP (M16)
+
+  pickVip() {
+    for (const p of this.players.values()) p.vip = false;
+    const cts = [...this.players.values()].filter((p) => p.team === TEAM.CT && p.alive);
+    if (!cts.length) return;
+    const humans = cts.filter((p) => !p.bot);
+    const pool = humans.length && Math.random() < 0.7 ? humans : cts;
+    const v = pool[Math.floor(Math.random() * pool.length)];
+    v.vip = true;
+    // the VIP: a USP, 200 armour with helmet, nothing else
+    v.inv = { primary: null, secondary: 'usp', melee: 'knife' };
+    v.ammo = { usp: { mag: WEAPONS.usp.mag, reserve: WEAPONS.usp.reserve }, knife: { mag: 1, reserve: 0 } };
+    v.weapon = 'usp'; v.nades = {}; v.armor = 200; v.helmet = true;
+    this.vipId = v.id;
+    this.sendInv(v);
+    this.send(v, { t: 'vip' });
+  }
+
+  checkVipEscape() {
+    if (!this.vipMode || this.phase !== 'round') return;
+    const v = this.players.get(this.vipId);
+    if (!v || !v.alive || !v.vip) return;
+    const z = this.vipEscape();
+    if (Math.hypot(v.pos[0] - z[0], v.pos[2] - z[2]) <= z[3]) this.endRound(TEAM.CT, 'escape');
   }
 
   // ------------------------------------------------------------- doors + glass (M15)
@@ -1387,11 +1487,24 @@ export class Game {
       }
     }
     const by = attacker ? attacker.id : victim.id;
+    if (this.competitive && attacker && attacker !== victim && attacker.team !== victim.team) stats.kill(attacker, victim, headshot);
+    else if (this.competitive && !attacker) stats.kill(null, victim, false);
     this.broadcast({ t: 'kill', attacker: by, victim: victim.id, weapon, headshot, wallbang });
     this.broadcast({ t: 'die', id: victim.id, by, weapon });
-    if (!this.competitive) {
+    if (!this.competitive || this.phase === 'dm') {
       this.resetLoadout(victim);
       this.respawn(victim, false);
+    }
+    if (this.phase === 'dm' && attacker && attacker !== victim && attacker.team !== victim.team) {
+      this.score[attacker.team]++;
+      this.broadcast({ t: 'round', ...this.roundInfo() });
+      if (this.score[attacker.team] >= this.rules.fraglimit) this.phaseEndsAt = now();   // frag limit: over
+    }
+    // VIP down: the terrorists win the round
+    if (victim.vip && this.vipMode && ['round', 'planted'].includes(this.phase)) {
+      if (attacker && attacker.team === TEAM.T) this.addMoney(attacker, ECONOMY.vipKillReward, 'killed the VIP');
+      this.endRound(TEAM.T, 'vip');
+      return;
     }
     this.checkWinCondition();
   }
@@ -1508,7 +1621,8 @@ export class Game {
 
   canBuy(p) {
     if (!p.alive) return 'you are dead';
-    if (this.phase === 'warmup') return null;
+    if (p.vip && this.vipMode) return 'the VIP cannot buy';
+    if (this.phase === 'warmup' || this.phase === 'dm') return null;
     if (this.phase === 'end' || this.phase === 'matchend') return 'the round is over';
     if (now() > this.buyEndsAt) return 'buy time is over';
     if (!inBuyZone(this.map, p.team, p.pos)) return 'you are not in a buy zone';
@@ -1675,7 +1789,19 @@ export class Game {
     return { state: b.state };
   }
 
+  // PVS-lite (anti-wallhack): a live enemy the viewer cannot see, that is
+  // far away and has not fired lately, is sent without a position
+  hiddenFrom(viewer, q, t) {
+    if (!viewer || !viewer.alive || !this.competitive || q.team === viewer.team || !q.alive || viewer.bot) return false;
+    if (Math.hypot(q.pos[0] - viewer.pos[0], q.pos[2] - viewer.pos[2]) < 900) return false;
+    if (t - (q.lastFire || 0) < 1.5) return false;
+    const eye = [viewer.pos[0], viewer.pos[1] + (viewer.eye || PLAYER.standEye), viewer.pos[2]];
+    for (const h of [70, 40, 8]) if (this.nav.visible(eye, [q.pos[0], q.pos[1] + h, q.pos[2]])) return false;
+    return true;
+  }
+
   snapshotFor(viewer, full = true) {
+    const t = now();
     return {
       t: 'state',
       ts: now(),
@@ -1684,12 +1810,13 @@ export class Game {
       hostages: this.hostageMode ? this.hostages.map((h) => ({ id: h.id, pos: r1(h.pos), yaw: r3(h.yaw), alive: h.alive, rescued: h.rescued, leader: h.leader, moving: !!h.moving })) : undefined,
       // false flags are left out; score / deaths / ping only in every 15th
       // snapshot (the client keeps the last values) — bandwidth
-      players: [...this.players.values()].map((p) => ({
+      players: [...this.players.values()].map((p) => (this.hiddenFrom(viewer, p, t) ? { id: p.id, team: p.team, alive: true, hid: 1,
+        ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined } : {}) } : {
         id: p.id, team: p.team, pos: r1(p.pos), yaw: r3(p.yaw), pitch: r3(p.pitch),
         alive: p.alive, crouching: p.crouching || undefined, moving: p.moving || undefined,
         weapon: p.weapon, mode: p.modes[p.weapon] || undefined, reloading: (!!p.reloadUntil || !!p.shellAt) || undefined,
         ...(full ? { k: p.kills, d: p.deaths, ping: p.bot ? undefined : (p.ping || 0), bot: p.bot ? 1 : undefined } : {}),
-        c4: viewer.team === TEAM.T && p.c4 ? 1 : undefined,
+        c4: viewer.team === TEAM.T && p.c4 ? 1 : undefined, vip: this.vipMode && p.vip ? 1 : undefined,
         planting: this.planting.has(p.id) || undefined, defusing: this.defusing.has(p.id) || undefined,
       })),
     };
@@ -1708,7 +1835,8 @@ export class Game {
     const full = this._snapN % 15 === 1;
     for (const p of this.players.values()) {
       if (!p.ws || p.ws.readyState !== 1) continue;
-      const key = p.team;
+      // per viewer while PVS culling can differ, else shared per team
+      const key = this.competitive && p.alive ? 'p' + p.id : 't' + p.team;
       if (!byTeam[key]) byTeam[key] = JSON.stringify(this.snapshotFor(p, full));
       p.ws.send(byTeam[key]);
       if (p.usesCmds && p.move) this.send(p, this.youMsg(p));

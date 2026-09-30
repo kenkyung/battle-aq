@@ -277,7 +277,7 @@ async function boot() {
 playBtn.addEventListener('click', join);
 $('playerName').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
 
-function join() {
+function join(extra = {}) {
   // grab the mouse now, inside the click: browsers only allow pointer lock
   // from a user gesture, and it puts the focus straight on the game
   sfx.unlock();
@@ -296,8 +296,48 @@ function join() {
     Object.assign(msg, { mode: 'practice', map: $('pMap').value, team: $('pTeam').value, bots: +$('pBots').value, difficulty: $('pDiff').value });
     store.set('baq_pmap', msg.map); store.set('baq_pteam', msg.team); store.set('baq_pdiff', msg.difficulty); store.set('baq_pbots', String(msg.bots));
   }
+  if (extra && typeof extra === 'object' && !(extra instanceof Event)) Object.assign(msg, extra);
   connect(msg);
 }
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ------------------------------------------------------------------ server browser + leaderboard (M16)
+
+const httpBase = () => {
+  const addr = $('serverAddr').value.trim();
+  return addr ? `${location.protocol}//${addr}/` : new URL('.', location.href).href;
+};
+async function refreshRooms() {
+  try {
+    const list = await (await fetch(httpBase() + 'rooms')).json();
+    $('roomList').innerHTML = list.length ? list.map((r) => `<button class="room" data-room="${r.id}" data-locked="${r.locked ? 1 : 0}">`
+      + `<b>${esc(r.name)}</b> <span>${esc(r.map.replace(/^(de|cs)_aq_/, ''))} · ${esc(r.rules)}</span>`
+      + `<em>${r.humans} + ${r.bots} bots${r.locked ? ' · 🔒' : ''}</em></button>`).join('') : '<div class="dim">no rooms yet — create one</div>';
+    for (const b of document.querySelectorAll('#roomList .room')) {
+      b.addEventListener('click', () => {
+        const password = b.dataset.locked === '1' ? prompt('Room password?') || '' : '';
+        join({ room: b.dataset.room, password });
+      });
+    }
+  } catch { $('roomList').textContent = 'could not reach the server'; }
+}
+async function refreshStats() {
+  try {
+    const rows = await (await fetch(httpBase() + 'stats')).json();
+    $('statsList').innerHTML = rows.length ? '<table class="lb"><tr><th></th><th>name</th><th>kills</th><th>K/D</th><th>HS%</th><th>wins</th></tr>'
+      + rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${r.kills}</td><td>${r.kd}</td><td>${r.hsp}</td><td>${r.wins}</td></tr>`).join('') + '</table>'
+      : '<div class="dim">no stats yet</div>';
+  } catch { $('statsList').textContent = 'could not reach the server'; }
+}
+$('browserBox').addEventListener('toggle', (e) => { if (e.target.open) refreshRooms(); });
+$('statsBox').addEventListener('toggle', (e) => { if (e.target.open) refreshStats(); });
+$('roomsRefresh').addEventListener('click', refreshRooms);
+$('crGo').addEventListener('click', () => join({ create: {
+  name: $('crName').value.trim() || `${$('playerName').value.trim() || 'Player'}'s room`, map: $('pMap').value, rules: $('gRules').value,
+  fill: +$('oSize').value, roundtime: +$('crRound').value, winlimit: +$('crWin').value, ff: $('crFF').checked, password: $('crPass').value,
+  difficulty: $('pDiff').value,
+} }));
 
 async function connect(joinMsg) {
   playBtn.disabled = true;
@@ -415,7 +455,15 @@ net.on('state', (msg) => {
   for (const p of msg.players) {
     seen.add(p.id);
     const r = roster.get(p.id) || { id: p.id, name: `#${p.id}` };
-    Object.assign(r, { team: p.team, alive: p.alive, pos: p.pos, c4: p.c4 });
+    if (p.hid) {
+      // out of sight and far (server PVS): keep the roster entry, hide the model
+      Object.assign(r, { team: p.team, alive: true });
+      if (p.k !== undefined) Object.assign(r, { k: p.k, d: p.d, ping: p.ping, bot: p.bot });
+      roster.set(p.id, r);
+      if (remotes.players.has(p.id)) remotes.hide(p.id);
+      continue;
+    }
+    Object.assign(r, { team: p.team, alive: p.alive, pos: p.pos, c4: p.c4, vip: p.vip });
     if (p.k !== undefined) Object.assign(r, { k: p.k, d: p.d, ping: p.ping, bot: p.bot });   // only in full snapshots
     if (r.k === undefined) { r.k = 0; r.d = 0; }
     roster.set(p.id, r);
@@ -601,6 +649,8 @@ function applyRound(r) {
   if (r.phase === 'freeze' || r.phase === 'warmup') { hostageTally.rescued = 0; hostageTally.killed = 0; }
   if (player) player.hostageMode = round.mode === 'hostage';
   if (r.rescueZones && hostageView) hostageView.setZones(r.rescueZones);
+  if (r.escape && hostageView) hostageView.setZones([r.escape]);           // VIP escape zone ring
+  round.vip = r.vip;
   hud.setHostages(round.mode === 'hostage' ? hostageCount() : null);
   hud.setPhase(r.phase, r.round);
   hud.setScore(r.scoreT, r.scoreCT);
@@ -618,6 +668,7 @@ function applyRound(r) {
 
 net.on('round', applyRound);
 net.on('ping', (msg) => net.send({ t: 'pong', ts: msg.ts }));
+net.on('vip', () => { hud.centerMsg('YOU ARE THE VIP — reach the escape zone (green ring on the radar)'); sfx.radio('Protect the VIP'); setTimeout(() => hud.centerMsg(''), 4000); });
 net.on('door', (msg) => {
   const e = dynWorld && dynWorld.setDoor(msg.id, msg.open);
   if (e) sfx.playAt('door_move', e.base, { volume: 0.8, ref: 200, max: 2500 });
@@ -662,7 +713,8 @@ net.on('halftime', () => hud.banner('HALFTIME — SWITCHING SIDES', null, 4000))
 net.on('round_end', (msg) => {
   hud.setScore(msg.scoreT, msg.scoreCT);
   const how = { bomb: 'THE BOMB EXPLODED', defuse: 'THE BOMB WAS DEFUSED', rescue: 'ALL HOSTAGES HAVE BEEN RESCUED',
-    time: round.mode === 'hostage' ? 'HOSTAGES HAVE NOT BEEN RESCUED' : 'TIME RAN OUT', elim: '' }[msg.how] || '';
+    escape: 'THE VIP HAS ESCAPED', vip: 'THE VIP HAS BEEN ASSASSINATED',
+    time: round.mode === 'hostage' ? 'HOSTAGES HAVE NOT BEEN RESCUED' : round.mode === 'vip' ? 'THE VIP HAS FAILED TO ESCAPE' : 'TIME RAN OUT', elim: '' }[msg.how] || '';
   keypad(false);
   setTimeout(() => sfx.radio(msg.winner === TEAM.T ? 'Terrorists win' : 'Counter-terrorists win'), msg.how === 'bomb' ? 1800 : 300);
   const who = msg.winner === TEAM.T ? 'TERRORISTS WIN' : 'COUNTER-TERRORISTS WIN';
@@ -818,6 +870,10 @@ for (const c of ['autobuy', 'rebuy']) con.cmd(c, c, () => net.send({ t: c }));
 con.cmd('buyammo1', 'one box of primary ammo', () => net.send({ t: 'buy', item: 'ammo1' }));
 con.cmd('buyammo2', 'one box of pistol ammo', () => net.send({ t: 'buy', item: 'ammo2' }));
 con.cmd('buy', 'buy <item> (e.g. buy ak47)', (a) => net.send({ t: 'buy', item: a[0] }));
+let rconPw = '';
+con.cmd('rcon_password', 'rcon_password <password>', (a) => { rconPw = a.join(' '); con.print('rcon password set', 'dim'); });
+con.cmd('rcon', 'rcon <command>: server admin (status, kick, ban, map, restart, bot_add, mp_* …)', (a) => net.send({ t: 'rcon', pw: rconPw, cmd: a.join(' ') }));
+net.on('rcon_reply', (msg) => { for (const line of String(msg.text).split('\n')) con.print(line, 'dim'); if (!con.isOpen()) con.toggle(true); });
 con.cmd('version', 'build id', () => con.print(`Battle-AQ ${document.querySelector('script[type=module]')?.src.match(/v\/([^/]+)/)?.[1] || 'dev'}`));
 
 // ------------------------------------------------------------------ team menu (M)
@@ -970,7 +1026,7 @@ input.onKey = (code, e, down) => {
 // mp_forcecamera: competitive = your team only, casual = anyone
 function spectateTargets() {
   const any = round.rules !== 'competitive';
-  return [...remotes.players.values()].filter((r) => r.alive && (any || r.team === myTeam));
+  return [...remotes.players.values()].filter((r) => r.alive && !r.hidden && (any || r.team === myTeam));
 }
 
 // Dead / spectating, CS style: JUMP cycles first person -> chase cam ->
@@ -1175,7 +1231,7 @@ function frame(now) {
     const tp = performance.now() / 1000;
     while (radarPings.length && radarPings[0].until < tp) radarPings.shift();
     for (const p of radarPings) if (Math.floor(tp * 4) % 2) mates.push({ pos: p.pos, team: myTeam === TEAM.T ? TEAM.CT : TEAM.T });
-    const hs = round.mode === 'hostage' && hostageView ? { zones: myTeam === TEAM.CT ? hostageView.rings.map((g) => [g.position.x, 0, g.position.z, g.geometry.parameters.outerRadius]) : [], list: hostageView.alive().map((e) => e.cur.pos) } : null;
+    const hs = (round.mode === 'hostage' || round.mode === 'vip') && hostageView ? { zones: myTeam === TEAM.CT ? hostageView.rings.map((g) => [g.position.x, 0, g.position.z, g.geometry.parameters.outerRadius]) : [], list: hostageView.alive().map((e) => e.cur.pos) } : null;
     hud.drawRadar(src, player.alive ? player.state.yaw : camera.rotation.y, mates, bomb, hs);
   }
 

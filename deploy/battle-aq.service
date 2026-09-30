@@ -9,6 +9,12 @@ User=www-data
 Environment=PORT=__PORT__
 Environment=HOST=127.0.0.1
 Environment=MAP=__MAP__
+# stats + bans survive redeploys here (ProtectSystem=strict still allows it)
+StateDirectory=battle-aq
+Environment=STATS_FILE=/var/lib/battle-aq/stats.json
+Environment=BANS_FILE=/var/lib/battle-aq/bans.json
+# RCON_PASSWORD (and MOTD) live here, created by install.sh on first deploy
+EnvironmentFile=-/etc/battle-aq.env
 ExecStart=/usr/bin/env node /opt/battle-aq/current/server/index.js
 Restart=always
 RestartSec=3

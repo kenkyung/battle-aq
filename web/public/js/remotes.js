@@ -175,9 +175,18 @@ export class Remotes {
 
   clear() { for (const id of [...this.players.keys()]) this.remove(id); }
 
+  // culled by the server (not visible): hide it until it shows up again
+  hide(id) {
+    const r = this.players.get(id);
+    if (!r) return;
+    r.hidden = true;
+    r.buf = [];
+  }
+
   // p: a snapshot entry; ts: the snapshot's server time (seconds)
   setTarget(p, ts) {
     const r = this.ensure(p);
+    if (r.hidden) { r.hidden = false; r.cur.pos = [...p.pos]; r.tgt.pos = [...p.pos]; }
     if (Number.isFinite(ts)) {
       r.buf = r.buf || [];
       if (!r.buf.length || ts > r.buf[r.buf.length - 1].ts) r.buf.push({ ts, pos: [...p.pos], yaw: p.yaw || 0, pitch: p.pitch || 0, crouching: !!p.crouching });
@@ -267,6 +276,7 @@ export class Remotes {
     const t = Math.min(1, dt * 12);
     const rt = this.renderTime ? this.renderTime() : null;
     for (const r of this.players.values()) {
+      if (r.hidden) { r.group.visible = false; continue; }
       const prev = r.cur.pos.slice();
       if (rt !== null && r.buf && r.buf.length) this.interpolate(r, rt);
       else {
@@ -282,7 +292,7 @@ export class Remotes {
       }
       r.group.position.set(r.cur.pos[0], r.cur.pos[1], r.cur.pos[2]);
       r.group.rotation.y = r.cur.yaw;
-      r.group.visible = r.id !== this.hiddenId;
+      r.group.visible = r.id !== this.hiddenId && !r.hidden;
 
       // smoothed ground velocity -> speed, and its direction relative to the aim
       const k = Math.min(1, dt * 8);
@@ -369,7 +379,7 @@ export class Remotes {
   // solid boxes for the local player's movement
   bodies() {
     const out = [];
-    for (const r of this.players.values()) if (r.alive && r.id !== this.hiddenId) out.push(bodyBox(r.cur.pos, (r.icrouch ?? r.tgt.crouching)));
+    for (const r of this.players.values()) if (r.alive && !r.hidden && r.id !== this.hiddenId) out.push(bodyBox(r.cur.pos, (r.icrouch ?? r.tgt.crouching)));
     return out;
   }
 
@@ -377,7 +387,7 @@ export class Remotes {
   targets() {
     const out = [];
     for (const r of this.players.values()) {
-      if (r.alive) out.push({ id: r.id, pos: r.cur.pos, crouching: (r.icrouch ?? r.tgt.crouching) });
+      if (r.alive && !r.hidden) out.push({ id: r.id, pos: r.cur.pos, crouching: (r.icrouch ?? r.tgt.crouching) });
     }
     return out;
   }

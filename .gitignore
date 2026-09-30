@@ -31,3 +31,4 @@ deploy/deploy.conf
 
 # Blender build scratch
 art/build/
+data/

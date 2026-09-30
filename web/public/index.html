@@ -142,7 +142,7 @@
       </div>
       <div id="onlineSize" class="row">
         <div id="oSizeWrap"><label>Fill with bots up to</label><select id="oSize"><option value="5">5 v 5</option><option value="4">4 v 4</option><option value="3">3 v 3</option><option value="0">no bots</option></select></div>
-        <div><label>Rules</label><select id="gRules"><option value="casual">Casual</option><option value="competitive">Competitive (MR15)</option></select></div>
+        <div><label>Rules</label><select id="gRules"><option value="casual">Casual</option><option value="competitive">Competitive (MR15)</option><option value="deathmatch">Deathmatch</option><option value="vip">VIP (escort)</option></select></div>
         <div id="sideOpts" class="hidden"><label>Side</label><select id="pTeam"><option value="T">Terrorists</option><option value="CT">Counter-Terrorists</option></select></div>
       </div>
       <div id="practiceOpts" class="hidden">
@@ -153,6 +153,25 @@
       </div>
       <button id="playBtn">PLAY</button>
       <div id="menuStatus"></div>
+      <details id="browserBox"><summary>Server browser</summary>
+        <div id="roomList" class="rooms">loading…</div>
+        <button id="roomsRefresh" class="btn small">REFRESH</button>
+        <div class="createroom">
+          <label>Create a room</label>
+          <input id="crName" type="text" maxlength="32" placeholder="room name" spellcheck="false" />
+          <div class="row">
+            <div><label>Round (s)</label><input id="crRound" type="number" min="60" max="600" step="15" value="150" /></div>
+            <div><label>First to</label><input id="crWin" type="number" min="1" max="30" value="8" /></div>
+          </div>
+          <div class="row">
+            <label class="check"><input id="crFF" type="checkbox" /> Friendly fire</label>
+            <input id="crPass" type="text" maxlength="32" placeholder="password (optional)" spellcheck="false" />
+          </div>
+          <button id="crGo" class="btn small primary">CREATE + JOIN</button>
+          <div class="dim">uses the map, rules and bot fill chosen above</div>
+        </div>
+      </details>
+      <details id="statsBox"><summary>Leaderboard</summary><div id="statsList" class="rooms">—</div></details>
       <details id="settings"><summary>Settings</summary>
         <label>Mouse sensitivity <b id="sensVal"></b></label>
         <input id="sens" type="range" min="0.5" max="6" step="0.1" />

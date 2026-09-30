@@ -17,6 +17,8 @@ import { Game } from './game.js';
 import { MAPS } from '../shared/maps.js';
 import { TICK_RATE, SNAPSHOT_RATE, TEAM } from '../shared/constants.js';
 import { RULES } from '../shared/rules.js';
+import { stats } from './stats.js';
+import { rcon, isBanned, rateLimiter } from './admin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -106,6 +108,8 @@ const server = http.createServer((req, res) => {
     urlPath = urlPath.slice('/shared'.length);
   }
   if (urlPath === '/info') return send(res, 200, JSON.stringify(roomsInfo()), 'application/json');
+  if (urlPath === '/rooms') return send(res, 200, JSON.stringify(roomList()), 'application/json');
+  if (urlPath === '/stats') return send(res, 200, JSON.stringify(stats.top(25)), 'application/json');
   if (urlPath === '/' || urlPath === '/index.html') return send(res, 200, indexHtml(), MIME['.html'], 'no-cache');
   // prevent path traversal
   const filePath = path.normalize(path.join(baseDir, urlPath));
@@ -155,6 +159,36 @@ function roomsInfo() {
   return { map: args.map, players, byMap, maps: Object.keys(MAPS), practiceGames: practice, build: BUILD };
 }
 
+// server browser (M16): every public / custom room
+function roomList() {
+  return [...rooms.values()].filter((g) => !g.practice).map((g) => ({
+    id: g.id, name: g.roomName || `${g.map.id} · ${g.rules.name}`, map: g.map.id, rules: g.rules.name,
+    humans: g.humans.length, bots: [...g.players.values()].filter((p) => p.bot).length, max: PUBLIC_ROOM_SIZE,
+    locked: !!g.password, phase: g.phase, score: `${g.score[TEAM.T]}:${g.score[TEAM.CT]}`, round: g.roundNumber,
+  }));
+}
+
+// a custom room from the browser's "create" form
+function customRoom(c) {
+  const id = 'room-' + (++roomSeq);
+  const base = RULES[c.rules] ? c.rules : 'casual';
+  const clamp = (v, lo, hi, d) => (Number.isFinite(+v) ? Math.max(lo, Math.min(hi, +v)) : d);
+  const winlimit = clamp(c.winlimit, 1, 30, RULES[base].winlimit);
+  const rules = {
+    base, name: String(c.name || 'Custom').slice(0, 32),
+    roundtime: clamp(c.roundtime, 60, 600, RULES[base].roundtime),
+    winlimit, maxrounds: winlimit * 2 - 1, halftime: winlimit - 1,
+    friendlyfire: c.ff === undefined ? RULES[base].friendlyfire : !!c.ff,
+  };
+  const g = new Game(MAPS[c.map] ? c.map : args.map, { id, fillTo: [0, 3, 4, 5].includes(+c.fill) ? +c.fill : 5, rules, botDifficulty: ['easy', 'normal', 'hard', 'expert'].includes(c.difficulty) ? c.difficulty : 'normal' });
+  g.roomName = rules.name;
+  g.password = c.password ? String(c.password).slice(0, 32) : '';
+  g.custom = true;
+  rooms.set(id, g);
+  log(`room ${id} "${g.roomName}" created on ${g.map.id}`);
+  return g;
+}
+
 function practiceRoom(msg) {
   const mapId = MAPS[msg.map] ? msg.map : args.map;
   const id = 'practice-' + (++roomSeq);
@@ -177,13 +211,21 @@ function fillBots(game, human, msg) {
   game.checkMode();
 }
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
 
-wss.on('connection', (ws) => {
+const RCON = process.env.RCON_PASSWORD || '';
+wss.on('connection', (ws, req) => {
   let player = null;
   let game = null;
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (isBanned(ip)) { ws.send(JSON.stringify({ t: 'error', text: 'you are banned from this server' })); ws.close(); return; }
+  const limit = rateLimiter();
+  let rconFails = 0;
 
   ws.on('message', (raw) => {
+    const r = limit();
+    if (r === 'drop') return;
+    if (r === 'kick') { log(`flood: kicked ${ip}`); ws.close(); return; }
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
     // one bad message must never take the whole server (every room) down
@@ -202,11 +244,31 @@ wss.on('connection', (ws) => {
         player = game.addPlayer(ws, msg.name, { team: team || TEAM.T });
         fillBots(game, player, msg);
         log(`practice ${game.id} "${player.name}" map=${game.map.id} bots=${game.players.size - 1}`);
+      } else if (msg.create) {
+        game = customRoom(msg.create);
+        player = game.addPlayer(ws, msg.name, { team });
+      } else if (msg.room) {
+        game = rooms.get(String(msg.room));
+        if (!game || game.practice) { ws.send(JSON.stringify({ t: 'error', text: 'that room is gone' })); ws.close(); return; }
+        if (game.password && game.password !== String(msg.password || '')) { ws.send(JSON.stringify({ t: 'error', text: 'wrong room password' })); ws.close(); return; }
+        if (game.humans.length >= PUBLIC_ROOM_SIZE) { ws.send(JSON.stringify({ t: 'error', text: 'that room is full' })); ws.close(); return; }
+        player = game.addPlayer(ws, msg.name, { team });
       } else {
         game = publicRoom(msg.map, parseInt(msg.size, 10), String(msg.rules || 'casual'));
         player = game.addPlayer(ws, msg.name, { team });
-        log(`join  #${player.id} "${player.name}" ${game.id} map=${game.map.id} team=${player.team} (${game.humans.length} here)`);
       }
+      player.ip = ip;
+      log(`join  #${player.id} "${player.name}" ${game.id} map=${game.map.id} team=${player.team} (${game.humans.length} here)`);
+      return;
+    }
+    if (msg.t === 'rcon') {
+      let text;
+      if (!RCON) text = 'rcon is disabled on this server (set RCON_PASSWORD)';
+      else if (String(msg.pw || '') !== RCON) {
+        text = 'bad rcon_password';
+        if (++rconFails >= 5) { log(`rcon: too many bad passwords from ${ip}`); ws.close(); }
+      } else { text = rcon(game, player, String(msg.cmd || '')); log(`rcon ${player.name}: ${msg.cmd}`); }
+      ws.send(JSON.stringify({ t: 'rcon_reply', text }));
       return;
     }
     game.onMessage(player, msg);
@@ -221,7 +283,7 @@ wss.on('connection', (ws) => {
     } else {
       log(`left  #${player.id} "${player.name}" ${game.id} (${game.humans.length} here)`);
       // empty public rooms go away, except one on the default map
-      const keep = [...rooms.values()].filter((g) => !g.practice && g.map.id === args.map).length <= 1 && game.map.id === args.map;
+      const keep = !game.custom && [...rooms.values()].filter((g) => !g.practice && g.map.id === args.map).length <= 1 && game.map.id === args.map;
       if (!game.humans.length && !keep) rooms.delete(game.id);
     }
   });

@@ -29,6 +29,9 @@ export const ECONOMY = {
   hostageRescueTeam: 750, // REWARD_RESCUED_HOSTAGE: to every CT, per hostage rescued
   hostageKill: -1500,     // whoever kills a hostage
   winBonusRescue: 2500,   // REWARD_ALL_HOSTAGES_RESCUED
+  winBonusEscape: 3500,   // REWARD_VIP_ESCAPED
+  winBonusVipKilled: 3250, // REWARD_VIP_ASSASSINATED
+  vipKillReward: 2500,    // REWARD_KILLED_VIP (to the killer)
 };
 
 export const EQUIPMENT = {

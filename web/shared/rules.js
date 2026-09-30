@@ -33,6 +33,17 @@ export const RULES = {
   },
 };
 
+// Deathmatch (CSDM-style): one timed round, instant respawns away from the
+// enemy, $16000 and buy anywhere; first team to the frag limit or the most
+// frags when time runs out.
+RULES.deathmatch = {
+  ...RULES.casual, name: 'Deathmatch', mode: 'dm', timelimit: 600, fraglimit: 80,
+  freezetime: 0, roundtime: 600, maxrounds: 1, winlimit: 1, halftime: 0,
+};
+// VIP (as_ maps): one CT is the VIP (USP, 200 armour, can't buy) and must
+// reach the escape zone; T win by killing the VIP or running out the clock.
+RULES.vip = { ...RULES.casual, name: 'VIP', mode: 'vip', roundtime: 180 };
+
 export function rulesFor(id) { return RULES[id] || RULES.casual; }
 
 // CS 1.6 friendly fire does 35 % damage (cs_player TakeDamage)
