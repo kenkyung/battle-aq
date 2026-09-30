@@ -66,6 +66,20 @@ export async function preloadModels(onProgress = () => {}) {
   await Promise.all(jobs);
 }
 
+// Per-skin first-person hands (hands.glb, M19): loaded after startup; until
+// then (or for a missing one) the per-team pair in weapons.glb is used.
+export const handsReady = new Promise((resolve) => {
+  setTimeout(() => loadGLB('models/hands.glb').then((g) => { Models.hands = g; resolve(true); }).catch(() => resolve(false)), 1500);
+});
+export function handModel(id) {
+  const src = Models.hands && Models.hands.scene.getObjectByName(id);
+  if (!src) return null;
+  const m = src.clone(true);
+  m.position.set(0, 0, 0);
+  m.rotation.set(0, 0, 0);
+  return m;
+}
+
 // A fresh copy of one weapon (or arm) from weapons.glb, with its empties.
 export function weaponModel(id) {
   const src = Models.weapons && Models.weapons.scene.getObjectByName(id);

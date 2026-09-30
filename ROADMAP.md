@@ -316,7 +316,8 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       bots pick at random; the skin index rides in snapshots; the six
       non-default skins load on first sight; `cl_minmodels 1` shows team
       defaults only.
-- [ ] Later: per-skin first-person sleeves / gloves.
+- [x] Per-skin first-person gloves and sleeves (`hands.glb`, loaded after
+      startup; bare forearms for Guerilla, leather for the Elite Crew).
 
 ## M20 — New maps  [done]
 - [x] fy_pool_day2: two houses (glass patio windows) facing across a back
@@ -355,6 +356,42 @@ Every phase ends with: tests + sims green, deploy, a short play-test note.
       its finish when dropped — pick up someone's gold AK and it is yours;
       some bots carry flashy guns too.
 
-## M22 — Level performance II
-- [ ] Instanced props, texture atlases for the level.
+## M22 — Level performance II  [done]
+- [x] Measured first: every level already draws in ~8-10 calls (the Blender
+      bake merges world + props per material), a full 5v5 frame is 22-27
+      draw calls / 40-52k triangles on dust2, nuke, assault and fy_snow.
+      Instancing props or atlasing the level would save under 10 calls, so
+      they are not worth the shader complexity; remote players (body, gun,
+      name tag) are the remaining per-object cost and already LOD + cull.
 
+# Next phases
+
+## M23 — Competitive match flow
+- [ ] Ready-up warmup (`!ready`, start when both teams are ready), knife round
+      for sides, tactical timeouts / pause, team names.
+- [ ] Overtime: MR3 at $10000 when tied 15-15.
+- [ ] Captain map veto (ban / ban / pick) for custom rooms.
+
+## M24 — More maps II
+- [ ] cs_aq_militia-style: the house on the hill, sewer route, hostages upstairs.
+- [ ] de_aq_cbble-style: castle walls, long drop at B, the "drop" into A.
+- [ ] as_aq_oilrig-style for VIP: decks joined by stairs and ladders.
+- [ ] aim_ / awp_ duel arenas and a ka_ knife arena (fy rules, tiny maps).
+
+## M25 — Player models III
+- [ ] Hit reactions: flinch on the hit part, knock-down direction from the
+      killing shot; blood decals on the model.
+- [ ] Better idle / turn-in-place / landing clips, aim offsets for crouch.
+- [ ] Face and body variety inside each skin (4 heads, gear variants).
+
+## M26 — Spectating and broadcast
+- [ ] Freeze cam (who killed you, their HP), round-end kill replays.
+- [ ] Delayed spectator slots (HLTV-style) and an auto-director camera.
+
+## M27 — Social
+- [ ] Parties (join a friend's room together), clan tags, player profiles
+      with stats history, mute / report, chat filter.
+
+## M28 — Input and accessibility
+- [ ] Gamepad support, touch controls for tablets, FOV slider.
+- [ ] Colour-blind friendly team colours (armband / name tag palettes).

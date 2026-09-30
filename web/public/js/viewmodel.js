@@ -7,7 +7,7 @@
 // reload dip, knife swing), driven by the local player each frame.
 
 import * as THREE from 'three';
-import { weaponModel } from './assets.js';
+import { weaponModel, handModel } from './assets.js';
 import { finishMaterial } from './finishes.js';
 import { WEAPONS, TEAM } from '../shared/constants.js';
 import { flashTexture } from './textures.js';
@@ -76,6 +76,14 @@ export class Viewmodel {
 
   setAspect(a) { this.camera.aspect = a; this.camera.updateProjectionMatrix(); }
 
+  // the local player's skin (M19): its gloves and sleeves in first person
+  setSkin(id, force = false) {
+    if (id === this.skinId && !force) return;
+    this.skinId = id;
+    const w = this.weapon; this.weapon = null;
+    if (w) this.setWeapon(w, this.silenced ? 'silenced' : null, false);
+  }
+
   setTeam(team) {
     if (team === this.team) return;
     this.team = team;
@@ -118,7 +126,7 @@ export class Viewmodel {
     const w = WEAPONS[id];
     const attach = (handId, emptyName) => {
       const socket = gun.getObjectByName(emptyName);
-      const hand = weaponModel(handId);
+      const hand = (this.skinId && handModel(handId.replace(/_(t|ct)$/, '_' + this.skinId))) || weaponModel(handId);
       if (!socket || !hand) return;
       hand.traverse((o) => { if (o.isMesh) { o.material = this.pbr(o.material, false); o.frustumCulled = false; } });
       socket.add(hand);

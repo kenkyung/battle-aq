@@ -1223,6 +1223,7 @@ export class Game {
       case 'skin':
         // appearance (M19): 0-3, anything else = random (CS auto-select)
         p.skin = Number.isInteger(msg.i) && msg.i >= 0 && msg.i <= 3 ? msg.i : Math.floor(Math.random() * 4);
+        this.send(p, { t: 'myskin', i: p.skin });
         break;
       case 'suicide':
         // console "kill": -1 frag, as in CS

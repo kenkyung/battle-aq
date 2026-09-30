@@ -17,7 +17,7 @@ import { Voice } from './voice.js';
 import { GameConsole, keyCode, keyName, ACTIONS, DEFAULT_BINDS } from './console.js';
 import { NadeView } from './nades3d.js';
 import { Sfx, surfaceOf } from './sfx.js';
-import { preloadModels, setAnisotropy } from './assets.js';
+import { preloadModels, setAnisotropy, handsReady } from './assets.js';
 import { getMap, MAP_LIST } from '../shared/maps.js';
 import { WEAPONS, TEAM, PLAYER, CROSSHAIR, HOSTAGE, SKINS, FINISHES } from '../shared/constants.js';
 import { inBuyZone, BUY_MENU } from '../shared/economy.js';
@@ -473,6 +473,8 @@ async function onWelcome(welcome) {
   setTeam(welcome.you.team);
   if (savedSkin(welcome.you.team) >= 0) sendSkin(welcome.you.team, savedSkin(welcome.you.team));
   sendFinishes();
+  mySkin = welcome.you.skin || 0;
+  applyMySkin();
   remotes.minModels = minModels;
   const me = welcome.you;
   if (me.alive) player.spawnAt(me.pos, me.yaw);
@@ -806,6 +808,7 @@ net.on('match_start', () => {
 });
 net.on('team', (msg) => {
   setTeam(msg.team);
+  applyMySkin();
   if (skinAfterTeam) { skinAfterTeam = false; openSkinMenu(msg.team); }
   else if (savedSkin(msg.team) >= 0) sendSkin(msg.team, savedSkin(msg.team));
 });
@@ -1129,7 +1132,14 @@ for (const b of document.querySelectorAll('#teammenu .tm')) b.addEventListener('
 
 // ------------------------------------------------------------------ appearance (M19)
 
-let skinAfterTeam = false, skinMenuTeam = 0;
+let skinAfterTeam = false, skinMenuTeam = 0, mySkin = 0;
+// first-person gloves / sleeves follow the skin you wear
+function applyMySkin() {
+  const list = SKINS[myTeam];
+  if (list) vm.setSkin((list[mySkin] || list[0]).id);
+}
+net.on('myskin', (msg) => { mySkin = msg.i || 0; applyMySkin(); });
+handsReady.then((ok) => { if (ok && vm.skinId) vm.setSkin(vm.skinId, true); });
 const savedSkin = (team) => { const v = store.get('baq_skin_' + team, ''); return v === '' ? -1 : parseInt(v, 10); };
 function sendSkin(team, i) {
   if (i >= 0) store.set('baq_skin_' + team, String(i));

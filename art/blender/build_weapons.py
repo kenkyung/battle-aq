@@ -193,6 +193,14 @@ def M(name):
         'glove_ct': leather((0.06, 0.06, 0.065), pads=(0.24, 0.25, 0.27)),
         'sleeve_t': fabric((0.36, 0.30, 0.20), (0.46, 0.39, 0.27), None, 0.4),
         'sleeve_ct': fabric((0.24, 0.27, 0.33), (0.36, 0.40, 0.46), (0.13, 0.14, 0.17), 0.5),
+        # per-skin sleeves (M19 skins, first person): same colours as the models
+        'sleeve_phoenix': fabric((0.36, 0.30, 0.20), (0.46, 0.39, 0.27), None, 0.4),
+        'sleeve_leet': leather((0.26, 0.13, 0.07)),
+        'sleeve_arctic': fabric((0.74, 0.74, 0.71), (0.88, 0.88, 0.85), None, 0.45),
+        'sleeve_seal': fabric((0.24, 0.27, 0.33), (0.36, 0.40, 0.46), (0.13, 0.14, 0.17), 0.5),
+        'sleeve_gsg9': fabric((0.19, 0.24, 0.27), (0.29, 0.35, 0.39), None, 0.5),
+        'sleeve_sas': fabric((0.045, 0.045, 0.055), (0.1, 0.1, 0.12), None, 0.5),
+        'sleeve_gign': fabric((0.07, 0.1, 0.21), (0.13, 0.17, 0.33), None, 0.5),
         'skin':    (lambda g, co, x, y, z, e: (g.mix(n3(g, co, 3.0, 3, 91), rgb(0.72, 0.52, 0.40), rgb(0.62, 0.43, 0.32)), 0.55, g.mul(n3(g, co, 20.0, 2, 92), 0.1), 0.1)),
     }
     MATS[name] = material(name, table[name])
@@ -810,9 +818,20 @@ def finger(tag, pts, radii, mat):
         capsule(f'{tag}{k}', pts[k], pts[k + 1], radii[k], 'g', mat, segs=10, r2=radii[k + 1] if k + 1 < len(radii) else radii[k] * 0.9)
 
 
-def hand_right(team):
+# first-person gloves + sleeves: per skin (M19), else per team
+HAND_GLOVE = {'leet': 'glove_ct'}
+HAND_SLEEVE = {'guerilla': 'skin'}            # bare forearms
+
+
+def hand_mats(team, skin=None):
     t = team == 'T'
-    gl, sl = M('glove_t' if t else 'glove_ct'), M('sleeve_t' if t else 'sleeve_ct')
+    if skin:
+        return M(HAND_GLOVE.get(skin, 'glove_t' if t else 'glove_ct')), M(HAND_SLEEVE.get(skin, 'sleeve_' + skin))
+    return M('glove_t' if t else 'glove_ct'), M('sleeve_t' if t else 'sleeve_ct')
+
+
+def hand_right(team, skin=None):
+    gl, sl = hand_mats(team, skin)
     # palm + back of the hand on the grip's right side, knuckle ridge in front
     box('palm', (1.05, -0.35, -0.15), (0.9, 2.9, 3.6), 'g', gl, bevel=0.42, taper=(1.0, 0.94))
     capsule('knuckles', (1.08, 0.95, 1.55), (1.08, 0.85, -1.75), 0.44, 'g', gl, segs=10)
@@ -830,9 +849,8 @@ def hand_right(team):
     capsule('roll', (2.35, -5.0, -2.5), (2.6, -6.3, -3.0), 1.75, 'g', sl, segs=14)
 
 
-def hand_left(team):
-    t = team == 'T'
-    gl, sl = M('glove_t' if t else 'glove_ct'), M('sleeve_t' if t else 'sleeve_ct')
+def hand_left(team, skin=None):
+    gl, sl = hand_mats(team, skin)
     # palm under the handguard, fingers over the far (+X) side, thumb on the near side
     box('palm', (0.05, -0.25, -1.62), (2.7, 3.0, 0.85), 'g', gl, bevel=0.4)
     capsule('knuckles', (1.3, 1.25, -1.4), (1.3, -1.7, -1.35), 0.44, 'g', gl, segs=10)
@@ -896,7 +914,31 @@ def finish(name, size=1024, metallic=0.35):
     return ob
 
 
+SKIN_TEAMS = {'phoenix': 'T', 'leet': 'T', 'arctic': 'T', 'guerilla': 'T', 'seal': 'CT', 'gsg9': 'CT', 'sas': 'CT', 'gign': 'CT'}
+
+
+def main_hands():
+    """--hands: hands.glb, a pair per skin (hand_r_<skin> / hand_l_<skin>),
+    loaded after startup; weapons.glb keeps the per-team pair as fallback."""
+    reset_scene()
+    roots = []
+    for skin, team in SKIN_TEAMS.items():
+        hand_right(team, skin)
+        roots.append(finish('hand_r_' + skin, 512, 0.0))
+        hand_left(team, skin)
+        roots.append(finish('hand_l_' + skin, 512, 0.0))
+    for ob in roots:
+        ob.location = (0, 0, 0)
+    bpy.ops.object.select_all(action='SELECT')
+    path = os.path.join(OUT, 'hands.glb')
+    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_yup=True,
+                              export_image_format='JPEG', export_jpeg_quality=86, export_animations=False)
+    print('wrote', path, f'{os.path.getsize(path) / 1024:.0f} KB')
+
+
 def main():
+    if '--hands' in sys.argv:
+        return main_hands()
     reset_scene()
     roots = []
     for gid, fn in GUNS.items():
