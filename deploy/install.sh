@@ -7,7 +7,7 @@
 #       deploy/install.sh --dry-run          show what would happen
 #
 #  Installs the game server as the `battle-aq` systemd service, listening on
-#  127.0.0.1:PORT. The arcade (capy-leap's installer) owns nginx and routes
+#  127.0.0.1:PORT. The arcade (amnajb/arcade, edge/install.sh) owns nginx and routes
 #  /battle/ -> 127.0.0.1:PORT, so after the first install run the arcade
 #  installer once to add the route and the picker card.
 #
@@ -133,4 +133,4 @@ ssh "${SSH_OPTS[@]}" "$HOST" "cat > /tmp/battle-aq-remote.sh" < "$WORK/remote.sh
 ssh -t "${SSH_OPTS[@]}" "$HOST" "STAMP=$STAMP PORT=$PORT bash /tmp/battle-aq-remote.sh"
 c_ok "deployed $REV"
 echo "If the output above ends in NOT_ROUTED, add the arcade route + card once:"
-echo "    cd ~/capyleap-arcade && git pull && ./install.sh"
+echo "    cd ~/arcade && git pull && edge/install.sh"
