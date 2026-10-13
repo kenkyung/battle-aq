@@ -56,6 +56,16 @@ Play starts in fullscreen with Keyboard Lock (setting), so Ctrl combos and Esc
 stay in the game; hold Esc to leave fullscreen. The buy menu keeps the mouse
 captured and shows its own cursor.
 
+**Controller** (names as printed on the Onikuma Iruka / Switch-style pads; the
+arcade's shared `web/public/vendor/capy-pad.js` maps them, and Settings can
+switch to Xbox or PlayStation labels): left stick move (light tilt or L3 =
+walk) · right stick look (deadzone, curve, acceleration; speed + invert in
+Settings) · ZR fire · ZL scope / silencer / burst (hold to aim) · A jump ·
+B crouch · X reload · Y next weapon (hold: drop) · L grenades · R use / defuse ·
+D-pad ▲ primary ◀ pistol ▶ knife ▼ buy · R3 radio (again: next radio menu) ·
+− scores · + pause. Every menu works with D-pad + A, B goes back. No pointer
+lock needed, and no aim assist. Test: `node web/tools/pad-test.mjs`.
+
 ## How a match works
 
 - **Online** rooms are per map and fill up with bots to 5v5 (or 4v4 / 3v3 /
