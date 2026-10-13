@@ -26,6 +26,7 @@ import { tagModifier } from '../shared/ballistics.js';
 import { RADIO } from '../shared/radio.js';
 import { Snow, underWater } from './weather.js';
 import { swatchURL } from './finishes.js';
+import { PadControls, padText } from './pad.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -149,13 +150,72 @@ let round = { phase: 'warmup', endsAt: 0, buyEndsAt: -1, round: 0, practice: fal
 let bomb = { state: 'none' };
 const roster = new Map(); // id -> { id, name, team, alive, k, d, pos }
 let spectating = null;    // id of the player we watch while dead
-let scoresHeld = false;
+let scoresHeld = false, scoresPad = false;
 let mode = store.get('baq_mode', 'online');
 // ?cam=x,y,z,yaw,pitch pins the camera (screenshots / debugging)
 const debugCam = params.get('cam') ? params.get('cam').split(',').map(Number) : null;
+// ?render=0 skips drawing the 3D view (headless input tests on a busy machine:
+// swiftshader can take seconds per frame); the game, HUD and menus still run
+const noRender = params.get('render') === '0';
 
 const sens = parseFloat(store.get('baq_sens', '2.2'));
 input.sensitivity = sens / 1000;
+
+// ------------------------------------------------------------------ controller (pad.js)
+
+const pad = new PadControls(input, {
+  menuRoot: padMenuRoot,
+  back: padBack,
+  start: (root) => { if (root === $('pause')) resumeGame(); else if (root === $('menuCard')) { if (!playBtn.disabled) join(); } else padBack(root); },
+  buy: () => toggleBuy(),
+  radio: () => cycleRadio(),
+  radioOpen: () => !!radioMenu,
+  pause: () => { if (!running) return; showPause(true); if (document.pointerLockElement) document.exitPointerLock(); },
+  scores: (on) => { scoresPad = on; },
+  unzoom: () => { if (player && player.zoom > 0) player.setZoom(0); },
+  anyPress: () => { if (!$('motd').classList.contains('hidden')) $('motd').classList.add('hidden'); },
+  modeChanged: (on) => { document.body.classList.toggle('pad', on); refreshPadHints(); },
+  toast: (t) => { hud.centerMsg(t); clearTimeout(padToastT); padToastT = setTimeout(() => hud.centerMsg(''), 1200); },
+});
+let padToastT = 0;
+pad.sens = parseFloat(store.get('baq_padsens', '5')) || 5;
+pad.invert = store.get('baq_padinv', '0') === '1';
+window.__pad = pad;
+// key hints follow the device in use: the keyboard key, or the pad's printed button
+const kh = (key, padBtn) => (input.padMode && pad.connected ? pad.label(padBtn) : key);
+function refreshPadHints() {
+  for (const el of document.querySelectorAll('[data-padhint]')) el.textContent = padText(el.dataset.padhint);
+}
+window.addEventListener('capypadlayout', refreshPadHints);
+refreshPadHints();
+// the overlay a controller is steering right now (null while playing)
+function padMenuRoot() {
+  if (!running) return menu.classList.contains('hidden') ? null : $('menuCard');
+  if (con.isOpen()) return null;
+  if (!$('reconnect').classList.contains('hidden')) return $('reconnect');
+  if (teamMenuOpen()) return $('teammenu');
+  if (skinMenuOpen()) return $('skinmenu');
+  if (sideVoteOpen()) return $('sidevote');
+  if (vetoMine()) return $('veto');
+  if (pauseVisible()) return $('pause');
+  if (hud.matchEndOpen()) return $('matchend');
+  if (hud.buyOpen()) return $('buymenu');
+  if (radioMenu) return $('radioMenu');
+  return null;
+}
+function padBack(root) {
+  if (root === $('buymenu')) { hud.closeBuy(); input.lock(); }
+  else if (root === $('pause')) resumeGame();
+  else if (root === $('teammenu')) openTeamMenu(false);
+  else if (root === $('skinmenu')) openSkinMenu(0);
+  else if (root === $('sidevote')) openSideVote(false);
+  else if (root === $('radioMenu')) closeRadio();
+  else if (root === $('menuCard')) {
+    // B folds the open section (settings, server browser, …) back up
+    const d = document.activeElement && document.activeElement.closest && document.activeElement.closest('details[open]');
+    if (d) { d.open = false; if (pad.nav) pad.nav.focus(d.querySelector('summary')); }
+  }
+}
 
 // ------------------------------------------------------------------ menu + settings
 
@@ -198,6 +258,22 @@ for (const [vid, lid, rid] of [['vol', 'volVal', 'radioOn'], ['pVol', 'pVolVal',
     sfx.radioOn = e.target.checked; store.set('baq_radio', e.target.checked ? '1' : '0');
     $('radioOn').checked = $('pRadioOn').checked = e.target.checked;
   });
+}
+for (const [sid, lid, iid] of [['padSens', 'padSensVal', 'padInv'], ['pPadSens', 'pPadSensVal', 'pPadInv']]) {
+  $(sid).value = pad.sens; $(lid).textContent = pad.sens.toFixed(1);
+  $(iid).checked = pad.invert;
+  $(sid).addEventListener('input', (e) => {
+    pad.sens = parseFloat(e.target.value) || 5; store.set('baq_padsens', String(pad.sens));
+    for (const [a, b] of [['padSens', 'padSensVal'], ['pPadSens', 'pPadSensVal']]) { $(a).value = pad.sens; $(b).textContent = pad.sens.toFixed(1); }
+  });
+  $(iid).addEventListener('change', (e) => {
+    pad.invert = e.target.checked; store.set('baq_padinv', pad.invert ? '1' : '0');
+    $('padInv').checked = $('pPadInv').checked = pad.invert;
+  });
+}
+if (window.CapyPad) {
+  $('padLayout').value = window.CapyPad.preference();
+  $('padLayout').addEventListener('change', (e) => { window.CapyPad.setLayout(e.target.value); });
 }
 let fsOn = store.get('baq_fs', '1') === '1';
 $('fsOn').checked = fsOn;
@@ -695,6 +771,7 @@ net.on('hit', (msg) => {
     hud.damageFrom(-ang);
     if (!(msg.part === 'head' && msg.helmet)) sfx.play(msg.weapon === 'knife' ? 'knife_hit' : 'hit_flesh', { volume: 0.9 });
     player.flinch(Math.min(4, 0.6 + msg.dmg / 25)); // CS view punch on damage
+    pad.rumble(Math.min(1, 0.3 + msg.dmg / 60), 0.4, 160);
     if (msg.attacker !== myId) tag(player.state, tagModifier(msg.weapon, msg.part, player.state.crouching));
   }
 });
@@ -744,7 +821,7 @@ net.on('inv', (msg) => {
   }
   if (hud.buyOpen()) hud.refreshBuy(buyContext());
   if (msg.weapon !== had) hud.showSlots(player.inv, player.weapon);
-  if (msg.c4 && !hadC4) { hud.centerMsg('you have the bomb — press 5, then hold fire in a bombsite'); setTimeout(() => hud.centerMsg(''), 3500); }
+  if (msg.c4 && !hadC4) { hud.centerMsg(`you have the bomb — ${input.padMode ? `${kh('5', 3)} to it` : 'press 5'}, then hold fire in a bombsite`); setTimeout(() => hud.centerMsg(''), 3500); }
 });
 
 net.on('ammo', (msg) => { if (player) player.applyAmmo(msg); });
@@ -843,8 +920,8 @@ function applyRound(r) {
   hud.setScore(r.scoreT, r.scoreCT);
   if (r.phase === 'warmup') hud.centerMsg('WARMUP — the match starts when both teams have a player');
   else if (r.phase === 'freeze') {
-    hud.centerMsg(round.mode === 'hostage' && myTeam === TEAM.CT ? 'buy your gear (B), then rescue the hostages: walk up and press E'
-      : round.mode === 'hostage' ? 'buy your gear (B), then guard the hostages' : 'buy your gear: press B');
+    hud.centerMsg(round.mode === 'hostage' && myTeam === TEAM.CT ? `buy your gear (${kh('B', 13)}), then rescue the hostages: walk up and press ${kh('E', 5)}`
+      : round.mode === 'hostage' ? `buy your gear (${kh('B', 13)}), then guard the hostages` : `buy your gear: press ${kh('B', 13)}`);
     bomb = { state: 'none' };
     if (nadeView) nadeView.clear();
   }
@@ -882,7 +959,7 @@ function drawMatchBar() {
     if (m.ready.startIn !== null && m.ready.startIn !== undefined) html = `ALL READY — MATCH STARTS IN ${Math.max(0, Math.ceil(m.ready.startIn - since(m.ready)))}`;
     else {
       const auto = m.ready.autoIn !== null && m.ready.autoIn !== undefined ? Math.max(0, Math.ceil(m.ready.autoIn - since(m.ready))) : null;
-      html = `WARMUP — ${n}/${tot} READY<small>${mine ? 'you are ready · F3 to unready' : 'press F3 or type !ready'}${auto !== null ? ` · starts anyway in ${auto} s` : ''}</small>`;
+      html = `WARMUP — ${n}/${tot} READY<small>${mine ? (input.padMode ? `you are ready · ${pad.label(9)} → NOT READY` : 'you are ready · F3 to unready') : (input.padMode ? `${pad.label(9)} → READY UP` : 'press F3 or type !ready')}${auto !== null ? ` · starts anyway in ${auto} s` : ''}</small>`;
     }
   } else if (m.knife) html = 'KNIFE ROUND<small>the winners choose sides</small>';
   else if (round.phase === 'sidevote' && m.sideWin) html = `${esc(m.sideWin.name || '').toUpperCase()} WON THE KNIFE ROUND<small>choosing sides…</small>`;
@@ -1104,6 +1181,9 @@ function showPause(on) {
   $('pause').classList.toggle('hidden', !on);
   if (on) {
     $('pauseSub').textContent = round.practice ? 'practice vs bots' : `${roster.size} player${roster.size === 1 ? '' : 's'} online`;
+    const mine = matchState.ready && matchState.ready.ready.includes(myId);
+    $('readyBtn').classList.toggle('hidden', !(round.readyup && round.phase === 'warmup'));
+    $('readyBtn').textContent = mine ? 'NOT READY' : 'READY UP';
     if (player && (player.planting || player.defusing)) {
       if (player.planting) net.send({ t: 'plant', on: false });
       if (player.defusing) net.send({ t: 'defuse', on: false });
@@ -1119,7 +1199,10 @@ input.onLockChange = (locked) => {
   if (locked) showPause(false);
   else if (!hud.buyOpen() && !input.typing && !hud.matchEndOpen()) showPause(true);
 };
-$('resumeBtn').addEventListener('click', () => { showPause(false); input.lock(); });
+function resumeGame() { showPause(false); input.lock(); }
+$('resumeBtn').addEventListener('click', resumeGame);
+$('teamBtn').addEventListener('click', () => { showPause(false); openTeamMenu(true); });
+$('readyBtn').addEventListener('click', () => { showPause(false); toggleReady(); input.lock(); });
 $('fullscreenBtn').addEventListener('click', async () => { try { await input.toggleFullscreen(); } catch { /* denied */ } input.lock(); });
 $('leaveBtn').addEventListener('click', () => { showPause(false); leave(); });
 document.addEventListener('fullscreenchange', () => {
@@ -1441,9 +1524,21 @@ function openRadio(menu) {
   if (radioMenu === menu) { closeRadio(); return; }
   radioMenu = menu;
   input.radioOpen = true;
-  const title = { z: 'RADIO COMMANDS (Z)', x: 'GROUP RADIO COMMANDS (X)', c: 'RADIO RESPONSES/REPORTS (V)' }[menu];
-  $('radioMenu').innerHTML = `<h5>${title}</h5>` + RADIO[menu].map((t, i) => `<div><b>${i + 1}</b>${t}</div>`).join('') + '<div><b>0</b>Exit</div>';
+  const title = { z: 'RADIO COMMANDS', x: 'GROUP RADIO COMMANDS', c: 'RADIO RESPONSES/REPORTS' }[menu]
+    + (input.padMode && pad.connected ? ` (${pad.label(11)}: next menu)` : ` (${{ z: 'Z', x: 'X', c: 'V' }[menu]})`);
+  $('radioMenu').innerHTML = `<h5>${title}</h5>` + RADIO[menu].map((t, i) => `<button data-i="${i}"><b>${i + 1}</b>${t}</button>`).join('') + '<button data-i="-1" data-pad-back><b>0</b>Exit</button>';
+  for (const b of $('radioMenu').querySelectorAll('button')) b.addEventListener('click', () => sendRadio(parseInt(b.dataset.i, 10)));
   $('radioMenu').classList.remove('hidden');
+}
+function sendRadio(i) {
+  if (radioMenu && i >= 0 && RADIO[radioMenu][i]) net.send({ t: 'radio', menu: radioMenu, i });
+  closeRadio();
+}
+// controller: R3 opens the radio, again for the next menu, then closes it
+function cycleRadio() {
+  if (input.typing || hud.buyOpen() || !player || !player.alive) return;
+  const order = ['z', 'x', 'c'], i = radioMenu ? order.indexOf(radioMenu) : -1;
+  if (i === order.length - 1) closeRadio(); else openRadio(order[i + 1]);
 }
 function closeRadio() { radioMenu = null; input.radioOpen = false; $('radioMenu').classList.add('hidden'); }
 net.on('radio', (msg) => {
@@ -1453,6 +1548,18 @@ net.on('radio', (msg) => {
   if (msg.menu === 'c' && msg.i === 1) radarPings.push({ pos: msg.pos, until: performance.now() / 1000 + 4 });
 });
 const radarPings = [];
+
+function toggleBuy() {
+  if (!running || input.typing) return;
+  if (hud.buyOpen()) { hud.closeBuy(); input.lock(); }
+  else if (canBuy()) {
+    if (radioMenu) closeRadio();
+    hud.openBuy(buyContext(), (item) => net.send({ t: 'buy', item }));
+    hud._input = input; input.buyOpen = true;
+    // the mouse stays captured: an in-game cursor points at the items
+    hud.showCursor(input.locked);
+  } else { hud.centerMsg(round.phase === 'end' ? 'the round is over' : 'you can only buy in your spawn during buy time'); setTimeout(() => hud.centerMsg(''), 1800); }
+}
 
 input.onKey = (code, e, down) => {
   if (code === 'Backquote') { if (down) { e.preventDefault(); con.toggle(); } return; }
@@ -1487,9 +1594,7 @@ input.onKey = (code, e, down) => {
   if (code === 'Tab') { scoresHeld = down; return; }
   if (!down) return;
   if (radioMenu && code.startsWith('Digit')) {
-    const n = parseInt(code.slice(5), 10);
-    if (n > 0 && RADIO[radioMenu][n - 1]) net.send({ t: 'radio', menu: radioMenu, i: n - 1 });
-    closeRadio();
+    sendRadio(parseInt(code.slice(5), 10) - 1);
     return;
   }
   // radio on Z / X / V (C is crouch): menus keep CS's z / x / c names
@@ -1501,13 +1606,7 @@ input.onKey = (code, e, down) => {
     chatInput.classList.remove('hidden');
     setTimeout(() => chatInput.focus(), 0);
   } else if (code === 'KeyB') {
-    if (hud.buyOpen()) { hud.closeBuy(); input.lock(); }
-    else if (canBuy()) {
-      hud.openBuy(buyContext(), (item) => net.send({ t: 'buy', item }));
-      hud._input = input; input.buyOpen = true;
-      // the mouse stays captured: an in-game cursor points at the items
-      hud.showCursor(input.locked);
-    } else { hud.centerMsg(round.phase === 'end' ? 'the round is over' : 'you can only buy in your spawn during buy time'); setTimeout(() => hud.centerMsg(''), 1800); }
+    toggleBuy();
   } else if (code === 'F1' || code === 'F2' || code === 'Comma' || code === 'Period') {
     // CS 1.6 quick-buy binds: F1 autobuy, F2 rebuy, "," primary ammo, "." pistol ammo
     if (input.typing) return;
@@ -1551,7 +1650,7 @@ const SPEC_MODES = ['first', 'chase', 'free', 'overview'];
 const spec = { mode: 'first', yaw: 0, pitch: -0.2, jumpWas: false, pos: null };
 function updateSpectate(dt) {
   const list = spectateTargets();
-  const jump = input.keys.has('Space');
+  const jump = input.keys.has('Space') || input.pad.jump;
   if (jump && !spec.jumpWas) {
     spec.mode = SPEC_MODES[(SPEC_MODES.indexOf(spec.mode) + 1) % SPEC_MODES.length];
     if (spec.mode === 'free') spec.pos = [camera.position.x, camera.position.y, camera.position.z];
@@ -1572,7 +1671,7 @@ function updateSpectate(dt) {
     remotes.hiddenId = null;
     drawOverview();
     overview(dt, 0.04);
-    hud.setSpectate('overview  ·  jump: first person');
+    hud.setSpectate(`overview  ·  ${kh('jump', 0)}: first person`);
     return;
   }
   if (spec.mode === 'free') {
@@ -1586,7 +1685,7 @@ function updateSpectate(dt) {
     for (let i = 0; i < 3; i++) spec.pos[i] += (f[i] * mv + rgt[i] * st) * sp;
     camera.position.set(...spec.pos);
     camera.rotation.set(spec.pitch, spec.yaw, 0);
-    hud.setSpectate('free look  ·  WASD fly  ·  jump: first person');
+    hud.setSpectate(`free look  ·  ${input.padMode && pad.connected ? 'left stick' : 'WASD'} fly  ·  ${kh('jump', 0)}: first person`);
     return;
   }
   const r = spectating != null ? remotes.players.get(spectating) : null;
@@ -1595,7 +1694,7 @@ function updateSpectate(dt) {
     const eye = r.icrouch ?? r.tgt.crouching ? PLAYER.crouchEye : PLAYER.standEye;
     camera.position.set(r.cur.pos[0], r.cur.pos[1] + eye, r.cur.pos[2]);
     camera.rotation.set(r.cur.pitch, r.cur.yaw, 0);
-    hud.setSpectate(`${r.name}  ·  click: next player  ·  jump: chase cam`);
+    hud.setSpectate(`${r.name}  ·  ${kh('click', 7)}: next player  ·  ${kh('jump', 0)}: chase cam`);
   } else if (r) {
     // chase cam: orbit the player at 110 u, pulled in before walls
     remotes.hiddenId = null;
@@ -1606,7 +1705,7 @@ function updateSpectate(dt) {
     const d = hit ? Math.max(20, hit.t - 8) : 110;
     camera.position.set(c[0] + back[0] * d, c[1] + back[1] * d, c[2] + back[2] * d);
     camera.lookAt(c[0], c[1], c[2]);
-    hud.setSpectate(`${r.name}  ·  chase cam  ·  click: next player  ·  jump: free look`);
+    hud.setSpectate(`${r.name}  ·  chase cam  ·  ${kh('click', 7)}: next player  ·  ${kh('jump', 0)}: free look`);
   } else {
     remotes.hiddenId = null;
     overview(dt, 0.08);
@@ -1676,6 +1775,7 @@ function crosshair(dt) {
 
 let last = performance.now();
 let radarT = 0;
+let padShots = 0;
 let fpsT = 0, fpsN = 0;
 
 function frame(now) {
@@ -1691,20 +1791,22 @@ function frame(now) {
   fpsN++; fpsT += dt;
   if (fpsT >= 1) { window.__fps = fpsN / fpsT; fpsN = 0; fpsT = 0; }
 
+  pad.poll(dt);
   if (world) world.update(t);
   if (fx) fx.update(dt);
 
   if (!running || !player) {
     if (map) overview(dt);
     renderer.clear();
-    renderer.render(scene, camera);
+    if (!noRender) renderer.render(scene, camera);
     return;
   }
 
   const menuOpen = hud.buyOpen() || pauseVisible() || hud.matchEndOpen();
   player.frozen = round.phase === 'freeze' || round.phase === 'matchend';
   if (demo.playing) { demoTick(dt); player.applyCamera(dt); }
-  else player.update(dt, input, { canAct: !menuOpen && input.locked && !input.typing });
+  else player.update(dt, input, { canAct: !menuOpen && (input.locked || input.padMode) && !input.typing });
+  if (player.shotCount !== padShots) { if (player.shotCount > padShots) pad.rumble(0.12, 0.3, 50); padShots = player.shotCount; }
   if (demo.rec) demoPose();
   remotes.update(dt, camera);
   if (bomb.state === 'planted' && bomb.localLeft !== undefined) bomb.localLeft -= dt;
@@ -1714,8 +1816,8 @@ function frame(now) {
     // E opens doors: say so when one is in reach
     if (player && player.alive && dynWorld.doors.size) {
       const d = dynWorld.nearDoor(player.state.pos);
-      const txt = d ? 'E: open / close the door' : '';
-      if (txt !== useHint && (txt || useHint.startsWith('E: open'))) { useHint = txt; hud.setHint(txt); }
+      const txt = d ? `${kh('E', 5)}: open / close the door` : '';
+      if (txt !== useHint && (txt || useHint.includes(': open / close'))) { useHint = txt; hud.setHint(txt); }
     }
   }
   if (hostageView) {
@@ -1724,7 +1826,7 @@ function frame(now) {
     if (round.mode === 'hostage' && player && player.alive && myTeam === TEAM.CT && round.phase === 'round') {
       const p = player.state.pos;
       const near = hostageView.alive().find((e) => Math.hypot(e.cur.pos[0] - p[0], e.cur.pos[2] - p[2]) < HOSTAGE.useReach);
-      const txt = near ? (near.leader === myId ? 'E: tell the hostage to stay' : 'E: take the hostage (lead it to a rescue zone)') : '';
+      const txt = near ? (near.leader === myId ? `${kh('E', 5)}: tell the hostage to stay` : `${kh('E', 5)}: take the hostage (lead it to a rescue zone)`) : '';
       if (txt !== useHint) { useHint = txt; hud.setHint(txt); }
     } else if (useHint) { useHint = ''; hud.setHint(''); }
   }
@@ -1764,7 +1866,7 @@ function frame(now) {
   const xh = crosshair(dt);
   hud.setCrosshair(xh.gap, xh.len, player.alive && !scoped);
   if (hud.buyOpen() && !buyable) hud.closeBuy();
-  hud.setHint(!input.locked && !menuOpen && !input.typing ? 'click to play' : '');
+  hud.setHint(!input.locked && !input.padMode && !menuOpen && !input.typing ? 'click to play' : '');
   tickBombHud();
   if (hud.matchEndOpen()) hud.tickVote();
 
@@ -1773,7 +1875,7 @@ function frame(now) {
     if (r.team === TEAM.T) { tN++; if (r.alive) tA++; } else if (r.team === TEAM.CT) { cN++; if (r.alive) cA++; }
   }
   hud.setAlive(tA, tN, cA, cN);
-  if (scoresHeld) hud.showScores(true, [...roster.values()], myId, { map: map ? map.id : '', rules: round.rulesName, round: round.round, maxRounds: round.maxRounds });
+  if (scoresHeld || scoresPad) hud.showScores(true, [...roster.values()], myId, { map: map ? map.id : '', rules: round.rulesName, round: round.round, maxRounds: round.maxRounds });
   else hud.showScores(false);
 
   radarT -= dt;
@@ -1802,8 +1904,7 @@ function frame(now) {
   envFx(dt);
   connIndicators();
   gpuTimer.begin();
-  renderer.render(scene, camera);
-  vm.render(renderer);
+  if (!noRender) { renderer.render(scene, camera); vm.render(renderer); }
   gpuTimer.end();
   if (nvOn && !player.alive) toggleNightvision(false);
   netStats.calls = renderer.info.render.calls; netStats.tris = renderer.info.render.triangles;
@@ -1850,6 +1951,7 @@ function lightProbe(dt) {
 }
 
 requestAnimationFrame(frame);
+pad.startNav();
 boot();
 
 // installable app (PWA): the service worker lives next to index.html

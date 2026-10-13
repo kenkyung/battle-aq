@@ -55,6 +55,10 @@ export class Input {
     this._el = null;
     this.binds = { ...DEFAULT_BINDS };
     this.held = new Map();     // canonical key -> physical keys holding it
+    // controller (pad.js writes these every frame; capy-pad.js maps the pad).
+    // look is in radians, already scaled by the controller sensitivity.
+    this.pad = { f: false, b: false, l: false, r: false, walk: false, jump: false, crouch: false, use: false, lookX: 0, lookY: 0 };
+    this.padMode = false;      // the controller was used last: no pointer lock needed to play
   }
 
   // physical key -> the canonical key of its bound action (or null)
@@ -68,6 +72,7 @@ export class Input {
 
     window.addEventListener('keydown', (e) => {
       if (this.typing) return;
+      this.padMode = false;
       // Crouch is Ctrl, so Ctrl+D (strafe right) would open Chrome's bookmark
       // dialog, Ctrl+S "save page", etc. While playing, the game owns the
       // keyboard. (Ctrl+W can only be blocked in fullscreen: see lockKeys.)
@@ -103,6 +108,7 @@ export class Input {
     window.addEventListener('blur', () => { this.keys.clear(); this.held.clear(); this.fireHeld = false; });
 
     el.addEventListener('mousedown', (e) => {
+      this.padMode = false;
       if (!this.locked) { this.lock(); return; }
       // the buy menu keeps the mouse captured and drives an in-game cursor
       if (this.buyOpen && this.onCursorClick) { if (e.button === 0) this.onCursorClick(); return; }
@@ -121,6 +127,7 @@ export class Input {
 
     document.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
+      if (this.padMode && Math.abs(e.movementX || 0) + Math.abs(e.movementY || 0) > 6) this.padMode = false;
       if (this.buyOpen && this.onCursor) { this.onCursor(e.movementX || 0, e.movementY || 0); return; }
       this.lookX += e.movementX || 0;
       this.lookY += e.movementY || 0;
@@ -157,20 +164,21 @@ export class Input {
 
   // Movement key snapshot for the player controller.
   moveKeys() {
-    const k = this.keys;
+    const k = this.keys, p = this.pad;
     if (this.typing) return { f: 0, b: 0, l: 0, r: 0, jump: 0, crouch: 0, walk: 0 };
     return {
-      f: k.has('KeyW'), b: k.has('KeyS'), l: k.has('KeyA'), r: k.has('KeyD'),
-      jump: k.has('Space'), crouch: k.has('KeyC'), walk: k.has('ShiftLeft'),
+      f: k.has('KeyW') || p.f, b: k.has('KeyS') || p.b, l: k.has('KeyA') || p.l, r: k.has('KeyD') || p.r,
+      jump: k.has('Space') || p.jump, crouch: k.has('KeyC') || p.crouch, walk: k.has('ShiftLeft') || p.walk,
     };
   }
 
   // Consume accumulated mouse-look deltas (radians), applying sensitivity.
   consumeLook() {
     const s = this.sensitivity * this.fovScale;
-    const dx = this.lookX * s;
-    const dy = this.lookY * s * (this.pitchSign || 1);   // m_pitch < 0: inverted
-    this.lookX = 0; this.lookY = 0;
+    // the controller's turn rate follows the zoom like the mouse does
+    const dx = this.lookX * s + this.pad.lookX * this.fovScale;
+    const dy = (this.lookY * s + this.pad.lookY * this.fovScale) * (this.pitchSign || 1);   // m_pitch < 0: inverted
+    this.lookX = 0; this.lookY = 0; this.pad.lookX = 0; this.pad.lookY = 0;
     this.lastLookX = dx; this.lastLookY = dy;
     return [dx, dy];
   }
@@ -182,5 +190,5 @@ export class Input {
   consumeLastWeapon() { const v = this.lastWeapon; this.lastWeapon = false; return v; }
   consumeWheel() { const v = this.wheel; this.wheel = 0; return v; }
   consumeDrop() { const v = this.dropPressed; this.dropPressed = false; return v; }
-  useHeld() { return !this.typing && this.keys.has('KeyE'); }
+  useHeld() { return !this.typing && (this.keys.has('KeyE') || this.pad.use); }
 }

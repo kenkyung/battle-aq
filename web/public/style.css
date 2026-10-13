@@ -241,6 +241,10 @@ label.check input { accent-color: var(--t); }
   padding: 10px 14px; font-size: 14px; line-height: 1.7; }
 #radioMenu h5 { font-size: 10px; letter-spacing: 2px; color: var(--hud-dim); margin-bottom: 4px; }
 #radioMenu b { color: var(--t); margin-right: 8px; }
+#radioMenu button { display: block; width: 100%; background: none; border: 0; padding: 0 4px; color: inherit; font: inherit; line-height: inherit; text-align: left; cursor: pointer; pointer-events: auto; }
+#radioMenu button:hover { background: rgba(255,255,255,.08); }
+/* key hints: keyboard text, or the controller's printed buttons once a pad is in use */
+body:not(.pad) .padhint, body.pad .kbhint { display: none !important; }
 .chat.radio .n { color: #7dff6a !important; }
 
 .bcol h4 b { color: var(--t); margin-right: 4px; }

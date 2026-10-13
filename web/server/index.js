@@ -95,6 +95,7 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
 const indexHtml = () => fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
   .replace('href="style.css"', `href="v/${BUILD}/style.css"`)
   .replace('src="js/main.js"', `src="v/${BUILD}/js/main.js"`)
+  .replace('src="vendor/capy-pad.js"', `src="v/${BUILD}/vendor/capy-pad.js"`)
   .replace('"./vendor/three.module.js"', `"./v/${BUILD}/vendor/three.module.js"`);
 
 const server = http.createServer((req, res) => {
