@@ -1,4 +1,4 @@
-/* capy-pad.js — APFORGE Arcade shared controller layer  (v1, 2026-10-12)
+/* capy-pad.js — APFORGE Arcade shared controller layer  (v2, 2026-10-14)
  *
  * Canonical copy: amnajb/arcade pad/capy-pad.js. Every game vendors this
  * file unchanged; update it there and copy it out with pad/sync.sh.
@@ -22,7 +22,10 @@
  * 2. Odd drivers are flattened to the W3C standard layout: Firefox-on-
  *    Windows XInput (triggers on axes 2/5, right stick on 3/4), D-pads that
  *    arrive as a hat switch (axes[9]) or a pair of axes (6/7). Games always
- *    see mapping 'standard', 17 buttons, 4 axes.
+ *    see mapping 'standard', 17 buttons, 4 axes. Bluetooth / DirectInput
+ *    pads (hat on axes[9]) carry the right stick on axes 2/5. Any stick axis
+ *    that sits pinned near +-1 is held at 0 until it has been seen centred,
+ *    so a trigger or unused axis can never spin the camera.
  *
  * 3. CapyPad.nav(): D-pad / left-stick menu navigation for HTML menus.
  *    A clicks the focused control, B presses the screen's back button.
@@ -70,22 +73,47 @@
   }
   function mkBtn(v){ return { pressed: v > 0.5, touched: v > 0.05, value: v }; }
 
+  /* Stick calibration. A real stick rests near 0; an axis that rests pinned
+     near +-1 is a trigger or an unused slot the driver put there (the Iruka
+     over Bluetooth does this), and reading it as a stick spins the camera
+     and tilts it at the sky. Such an axis reads 0 until it has sat centred
+     for CALM_MS. */
+  var CAL = {}, CALM_MS = 400;
+  function now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  function calFor(gp){
+    var k = gp.index + '|' + gp.id;
+    return CAL[k] || (CAL[k] = { live: [], calmAt: [] });
+  }
+  function live(c, ax, j){
+    var v = ax[j];
+    if (v === undefined || v !== v) return false;
+    if (c.live[j]) return true;
+    if (Math.abs(v) < 0.25){
+      if (c.calmAt[j] === undefined) c.calmAt[j] = now();
+      if (now() - c.calmAt[j] >= CALM_MS) c.live[j] = true;
+    } else c.calmAt[j] = undefined;
+    return !!c.live[j];
+  }
+  function stick(c, ax, j){ return live(c, ax, j) ? ax[j] : 0; }
+
   function standardise(gp){
-    var bt = gp.buttons || [], ax = gp.axes || [];
+    var bt = gp.buttons || [], ax = gp.axes || [], c = calFor(gp), rx = 2, ry = 3;
     var std = gp.mapping === 'standard';
     var v = new Array(17), a = [0, 0, 0, 0], i;
     for (i = 0; i < 17; i++) v[i] = 0;
     for (i = 0; i < 12 && i < bt.length; i++) v[i] = btnVal(bt[i]);
-    a[0] = ax[0] || 0; a[1] = ax[1] || 0;
     if (std){
       for (i = 12; i < 17 && i < bt.length; i++) v[i] = btnVal(bt[i]);
-      a[2] = ax[2] || 0; a[3] = ax[3] || 0;
     } else {
-      if (ax.length >= 6){                 /* Firefox-on-Windows XInput */
-        a[2] = ax[3] || 0; a[3] = ax[4] || 0;
+      if (ax.length >= 9){                 /* DirectInput / Bluetooth: Z + Rz */
+        rx = 2; ry = 5;
+        live(c, ax, 2); live(c, ax, 5); live(c, ax, 3); live(c, ax, 4);
+        if (!(c.live[2] && c.live[5]) && c.live[3] && c.live[4]){ rx = 3; ry = 4; }
+      } else if (ax.length >= 6){          /* Firefox-on-Windows XInput */
+        rx = 3; ry = 4;
         v[6] = Math.max(v[6], trigAx(ax[2]));
         v[7] = Math.max(v[7], trigAx(ax[5]));
-      } else { a[2] = ax[2] || 0; a[3] = ax[3] || 0; }
+      }
       if (bt.length >= 16){
         for (i = 12; i < 17 && i < bt.length; i++) v[i] = btnVal(bt[i]);
       } else if (bt.length >= 13){
@@ -106,6 +134,8 @@
         if (d >= 5 && d <= 7) v[14] = 1;
       }
     }
+    a[0] = stick(c, ax, 0); a[1] = stick(c, ax, 1);
+    a[2] = stick(c, ax, rx); a[3] = stick(c, ax, ry);
     return { v: v, a: a };
   }
 
